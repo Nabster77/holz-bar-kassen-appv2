@@ -24,7 +24,7 @@ const DENOMINATIONS: { label: string; value: number }[] = [
 interface Props {
   session: CashSession;
   transactions: Transaction[];
-  onClose: (closingBalance?: number) => void;
+  onClose: (closingBalance?: number, employeeCode?: string) => void;
   onCancel: () => void;
 }
 
@@ -33,6 +33,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
   const [manualBalance, setManualBalance] = useState('');
   const [useCounting, setUseCounting] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
+  const [employeeCode, setEmployeeCode] = useState(session.employeeCode ?? '');
 
   const sessionTx = useMemo(
     () => transactions.filter((t) => {
@@ -67,13 +68,13 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
   const diff = closingBalance - expected;
 
   function handleClose() {
-    if (isNaN(closingBalance) || closingBalance < 0 || !confirmed) return;
-    onClose(Math.round(closingBalance * 100) / 100);
+    if (isNaN(closingBalance) || closingBalance < 0 || !confirmed || !employeeCode.trim()) return;
+    onClose(Math.round(closingBalance * 100) / 100, employeeCode.trim().toUpperCase());
   }
 
   function handlePDFExport() {
     const b = hasInput && !isNaN(closingBalance) ? closingBalance : expected;
-    generatePDF(session, sessionTx, { txTotal, taxByRate: Object.fromEntries(taxByRate), totalNet, deposits, withdrawals, expected, closingBalance: b, difference: b - expected });
+    generatePDF({ ...session, closingEmployeeCode: employeeCode.trim().toUpperCase() || session.employeeCode }, sessionTx, { txTotal, taxByRate: Object.fromEntries(taxByRate), totalNet, deposits, withdrawals, expected, closingBalance: b, difference: b - expected });
   }
 
   return (
@@ -137,7 +138,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
               <div className="space-y-1">
                 {session.corrections.map((c) => (
                   <div key={c.id} className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                    <span>{formatTime(c.timestamp)}: {formatCurrency(c.oldAmount)} → {formatCurrency(c.newAmount)}</span>
+                    <span>{formatTime(c.timestamp)}: {formatCurrency(c.oldAmount)} → {formatCurrency(c.newAmount)} · Kürzel: <b>{c.employeeCode ?? session.employeeCode ?? '—'}</b></span>
                   </div>
                 ))}
                 {session.corrections.map((c) => (
@@ -154,7 +155,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
               <div className="space-y-1">
                 {session.entries.map((e) => (
                   <div key={e.id} className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                    <span>{formatTime(e.timestamp)} · {e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}: {e.reason}</span>
+                    <span>{formatTime(e.timestamp)} · {e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}: {e.reason} · Kürzel: <b>{e.employeeCode ?? session.employeeCode ?? '—'}</b></span>
                     <span className={e.type === 'deposit' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
                       {e.type === 'deposit' ? '+' : '-'}{formatCurrency(e.amount)}
                     </span>
@@ -163,6 +164,13 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
               </div>
             </div>
           )}
+
+          <div className="mb-4 rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <label className="mb-1 block text-base font-bold text-blue-900 dark:text-blue-100">Mitarbeiter-Kürzel für den Tagesabschluss</label>
+            <input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())} maxLength={8} autoCapitalize="characters" placeholder="z.B. AB"
+              className="w-full rounded-xl border border-blue-300 bg-white px-3 py-2.5 text-lg font-bold uppercase text-blue-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-100" />
+            <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">Dieses Kürzel wird im Tagesabschluss gespeichert und hervorgehoben ausgegeben.</p>
+          </div>
 
           {/* Closing balance: counting or manual */}
           <div className="mb-3">
@@ -263,7 +271,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
             <FileDown className="h-4 w-4" /> PDF-Export
           </button>
-          <button onClick={handleClose} disabled={isNaN(closingBalance) || closingBalance < 0 || !confirmed}
+          <button onClick={handleClose} disabled={isNaN(closingBalance) || closingBalance < 0 || !confirmed || !employeeCode.trim()}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
             <Check className="h-4 w-4" /> Endgültig abschließen
           </button>
@@ -298,23 +306,43 @@ function generatePDF(
     .sort((a, b) => a.timestamp - b.timestamp)
     .map((tx, i) => {
       const txTax = [...getTaxByRate(tx).values()].reduce((s, v) => s + v, 0);
-      return `<tr><td>${i + 1}</td><td>${formatTime(tx.timestamp)}</td><td>${tx.items.length}</td><td>${formatCurrency(tx.total)}</td><td>${formatCurrency(txTax)}</td></tr>`;
+      return `<tr><td>${i + 1}</td><td>${formatTime(tx.timestamp)}</td><td>${tx.items.length}</td><td>${formatCurrency(tx.total)}</td><td>${formatCurrency(txTax)}</td><td>${escapeHtml(tx.employeeCode ?? session.employeeCode ?? '—')}</td></tr>`;
     })
     .join('');
 
   const corrections = session.corrections
-    .map((c) => `<tr><td>${formatTime(c.timestamp)}</td><td>${formatCurrency(c.oldAmount)}</td><td>${formatCurrency(c.newAmount)}</td><td>${escapeHtml(c.reason)}</td></tr>`)
+    .map((c) => `<tr><td>${formatTime(c.timestamp)}</td><td>${formatCurrency(c.oldAmount)}</td><td>${formatCurrency(c.newAmount)}</td><td>${escapeHtml(c.reason)}</td><td>${escapeHtml(c.employeeCode ?? session.employeeCode ?? '—')}</td></tr>`)
     .join('');
 
   const entries = session.entries
-    .map((e) => `<tr><td>${formatTime(e.timestamp)}</td><td>${e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}</td><td>${formatCurrency(e.amount)}</td><td>${escapeHtml(e.reason)}</td></tr>`)
+    .map((e) => `<tr><td>${formatTime(e.timestamp)}</td><td>${e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}</td><td>${formatCurrency(e.amount)}</td><td>${escapeHtml(e.reason)}</td><td>${escapeHtml(e.employeeCode ?? session.employeeCode ?? '—')}</td></tr>`)
+    .join('');
+
+  const auditRows = [
+    ...session.entries.map((entry) => ({
+      timestamp: entry.timestamp,
+      kind: entry.type === 'deposit' ? 'Einlage' : 'Ausgabe',
+      value: `${entry.type === 'deposit' ? '+' : '-'}${formatCurrency(entry.amount)}`,
+      reason: entry.reason,
+      employeeCode: entry.employeeCode ?? session.employeeCode ?? '—',
+    })),
+    ...session.corrections.map((correction) => ({
+      timestamp: correction.timestamp,
+      kind: 'Korrektur',
+      value: `${formatCurrency(correction.oldAmount)} → ${formatCurrency(correction.newAmount)}`,
+      reason: correction.reason,
+      employeeCode: correction.employeeCode ?? session.employeeCode ?? '—',
+    })),
+  ].sort((a, b) => a.timestamp - b.timestamp)
+    .map((row) => `<tr><td>${formatWeekdayShort(row.timestamp)}, ${new Date(row.timestamp).toLocaleDateString('de-DE')} ${formatTime(row.timestamp)}</td><td>${row.kind}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.employeeCode)}</td></tr>`)
     .join('');
 
   const taxLines = taxEntries.map(([rate, amt]) => `<div class="sum"><span>davon MwSt ${rate}%</span><span>${formatCurrency(amt)}</span></div>`).join('');
 
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
-  <title>Tagesabschluss ${escapeHtml(session.date)}</title>
+  <title>Tagesabschluss_${escapeHtml(session.location)}_${escapeHtml(session.date)}</title>
   <style>
+    @page { size: A4; margin: 25mm 14mm 20mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.5; }
     h1 { font-size: 22px; margin-bottom: 4px; }
@@ -332,13 +360,26 @@ function generatePDF(
     .sales-box .sum { font-size: 14px; padding: 6px 0; }
     .sales-box .sum.headline { font-size: 18px; font-weight: bold; color: #047857; padding: 8px 0; border-bottom: 1px solid #a7f3d0; margin-bottom: 4px; }
     .sales-box .sum.bold { border-top: 1px solid #a7f3d0; color: #047857; }
-    @media print { body { padding: 20px; } }
+    .print-running-header, .print-running-footer { display: none; }
+    @media print {
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { padding: 0; }
+      .print-running-header { display: flex; position: fixed; top: 6mm; left: 0; right: 0; justify-content: space-between; border-bottom: 1px solid #94a3b8; padding-bottom: 3mm; color: #1e3a5f; font-size: 9pt; }
+      .print-running-footer { display: flex; position: fixed; bottom: 6mm; left: 0; right: 0; justify-content: space-between; border-top: 1px solid #cbd5e1; padding-top: 3mm; color: #64748b; font-size: 8pt; }
+      .print-running-footer .page-count::after { content: 'Seite ' counter(page) ' von ' counter(pages); }
+      h2 { break-after: avoid; page-break-after: avoid; }
+      thead { display: table-header-group; }
+      tr, td, th, .highlight, .sales-box { break-inside: avoid; page-break-inside: avoid; }
+    }
   </style></head><body>
+  <div class="print-running-header"><strong>Tagesabschluss</strong><span>${escapeHtml(session.location)} · ${escapeHtml(session.date)}</span></div>
+  <div class="print-running-footer"><span>Kassenabschluss automatisch generiert</span><span class="page-count"></span></div>
   <h1>Tagesabschluss</h1>
   <div class="info">
     Datum: ${formatWeekdayShort(session.openedAt)}, ${escapeHtml(session.date)} | Standort: ${escapeHtml(session.location)} | Eröffnet: ${formatTime(session.openedAt)}<br>
     Geschlossen: ${session.closedAt ? formatTime(session.closedAt) : 'Entwurf'}
   </div>
+  <div class="highlight"><div class="sum bold"><span>Mitarbeiter-Kürzel Tagesabschluss</span><span>${escapeHtml(session.closingEmployeeCode ?? session.employeeCode ?? '—')}</span></div></div>
   <div class="sales-box">
     <h2>Tagesumsatz</h2>
     <div class="sum headline"><span>Brutto-Umsatz (inkl. MwSt.)</span><span>${formatCurrency(sums.txTotal)}</span></div>
@@ -357,9 +398,10 @@ function generatePDF(
     <div class="sum bold"><span>Differenz</span><span>${formatCurrency(sums.difference)}</span></div>
   </div>
   <h2>Transaktionen (${txList.length})</h2>
-  <table><thead><tr><th>#</th><th>Uhrzeit</th><th>Artikel</th><th>Betrag</th><th>MwSt</th></tr></thead><tbody>${rows}</tbody></table>
-  ${corrections ? `<h2>Anfangsbestand-Korrekturen</h2><table><thead><tr><th>Uhrzeit</th><th>Alt</th><th>Neu</th><th>Grund</th></tr></thead><tbody>${corrections}</tbody></table>` : ''}
-  ${entries ? `<h2>Einlagen / Ausgaben</h2><table><thead><tr><th>Uhrzeit</th><th>Typ</th><th>Betrag</th><th>Grund</th></tr></thead><tbody>${entries}</tbody></table>` : ''}
+  <table><thead><tr><th>#</th><th>Uhrzeit</th><th>Artikel</th><th>Betrag</th><th>MwSt</th><th>Kürzel</th></tr></thead><tbody>${rows}</tbody></table>
+  ${auditRows ? `<h2>Kassenbewegungen und Korrekturen – Mitarbeitende</h2><table><thead><tr><th>Datum/Zeit</th><th>Vorgang</th><th>Betrag / Änderung</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${auditRows}</tbody></table>` : ''}
+  ${corrections ? `<h2>Anfangsbestand-Korrekturen</h2><table><thead><tr><th>Uhrzeit</th><th>Alt</th><th>Neu</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${corrections}</tbody></table>` : ''}
+  ${entries ? `<h2>Einlagen / Ausgaben</h2><table><thead><tr><th>Uhrzeit</th><th>Typ</th><th>Betrag</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${entries}</tbody></table>` : ''}
   </body></html>`;
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });

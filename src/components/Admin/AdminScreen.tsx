@@ -2,9 +2,8 @@ import { useRef, useState, useMemo } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings } from '@/types';
 import { formatCurrency, formatDateISO, formatTime } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
-import { JournalPreviewDialog } from '@/components/Journal/JournalPreviewDialog';
 import { buildDailyReport } from '@/lib/dailyReport';
-import type { JournalReportData } from '@/lib/journalPdf';
+import { exportJournalPdf, openJournalPrintDialog } from '@/lib/journalPdfFile';
 import { DynamicIcon, availableIconNames } from '@/components/DynamicIcon';
 import { importFileToDataURL, isSupported, ACCEPTED_TYPES } from '@/lib/imageImport';
 import { uploadArticleImage } from '@/lib/imageUpload';
@@ -677,7 +676,6 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
 }) {
   const [selectedDate, setSelectedDate] = useState<string>(formatDateISO(Date.now()));
   const [infoLocation, setInfoLocation] = useState<Location | null>(null);
-  const [exportData, setExportData] = useState<JournalReportData | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isToday = selectedDate === formatDateISO(Date.now());
@@ -722,8 +720,16 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
     });
   }, [transactions, cashSessions, selectedDate]);
 
+  function reportForLocation(loc: Location, txToday: Transaction[]) {
+    return buildDailyReport(loc, selectedDate, txToday, categories, cashSessions.filter((session) => session.location === loc && session.date === selectedDate));
+  }
+
   function exportLocation(loc: Location, txToday: Transaction[]) {
-    setExportData(buildDailyReport(loc, selectedDate, txToday, categories));
+    void exportJournalPdf(reportForLocation(loc, txToday));
+  }
+
+  function printLocation(loc: Location, txToday: Transaction[]) {
+    openJournalPrintDialog(reportForLocation(loc, txToday));
   }
 
   const dateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
@@ -778,6 +784,7 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
             isSelected={selectedLocation === data.loc}
             isHistoric={!isToday}
             onExport={() => exportLocation(data.loc, data.txToday)}
+            onPrint={() => printLocation(data.loc, data.txToday)}
             onSwitch={() => handleSwitch(data.loc)}
             onInfo={() => setInfoLocation(data.loc)}
           />
@@ -790,12 +797,6 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
           </div>
         )}
       </div>
-      {exportData && (
-        <JournalPreviewDialog
-          data={exportData}
-          onClose={() => setExportData(null)}
-        />
-      )}
       {infoLocation && (
         <DayInfoDialog
           location={infoLocation}
@@ -810,7 +811,7 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
   );
 }
 
-function LocationSessionCard({ loc, session, total, count, totalNet, totalTax, totalPfand, cashBalance, taxByRateMap, txToday, isActive, isSelected, isHistoric, onExport, onSwitch, onInfo }: {
+function LocationSessionCard({ loc, session, total, count, totalNet, totalTax, totalPfand, cashBalance, taxByRateMap, txToday, isActive, isSelected, isHistoric, onExport, onPrint, onSwitch, onInfo }: {
   loc: Location;
   session: CashSession | null;
   total: number;
@@ -825,6 +826,7 @@ function LocationSessionCard({ loc, session, total, count, totalNet, totalTax, t
   isSelected: boolean;
   isHistoric: boolean;
   onExport: () => void;
+  onPrint: () => void;
   onSwitch: () => void;
   onInfo: () => void;
 }) {
@@ -969,7 +971,7 @@ function LocationSessionCard({ loc, session, total, count, totalNet, totalTax, t
         </div>
         <div className="flex gap-2">
           <button
-            onClick={onExport}
+            onClick={onPrint}
             disabled={txToday.length === 0}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >

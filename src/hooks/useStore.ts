@@ -151,7 +151,7 @@ export function useStore() {
     }
   }, [activeSession, selectedLocation]);
 
-  const openCashSession = useCallback((location: Location, openingBalance: number) => {
+  const openCashSession = useCallback((location: Location, openingBalance: number, employeeCode: string) => {
     setSelectedLocation(location);
     const session: CashSession = {
       id: uid('session'),
@@ -159,6 +159,7 @@ export function useStore() {
       location,
       openingBalance,
       openedAt: Date.now(),
+      employeeCode,
       corrections: [],
       entries: [],
       closed: false,
@@ -166,7 +167,7 @@ export function useStore() {
     setCashSessions((ss) => [...ss.filter((s) => !(s.date === session.date && s.location === location && !s.closed)), session]);
   }, []);
 
-  const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string) => {
+  const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, employeeCode: string) => {
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
@@ -176,6 +177,7 @@ export function useStore() {
           newAmount,
           reason,
           timestamp: Date.now(),
+          employeeCode,
         };
         return {
           ...s,
@@ -186,13 +188,14 @@ export function useStore() {
     );
   }, []);
 
-  const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure = false) => {
+  const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, employeeCode: string, isPfandRetoure = false) => {
     const entry: CashEntry = {
       id: uid('entry'),
       type,
       amount,
       reason,
       timestamp: Date.now(),
+      employeeCode,
       isPfandRetoure,
     };
     setCashSessions((ss) =>
@@ -200,7 +203,7 @@ export function useStore() {
     );
   }, []);
 
-  const closeCashSession = useCallback((sessionId: string, closingBalance: number) => {
+  const closeCashSession = useCallback((sessionId: string, closingBalance: number, closingEmployeeCode?: string) => {
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
@@ -219,6 +222,7 @@ export function useStore() {
           closingBalance,
           expectedBalance: expected,
           difference: closingBalance - expected,
+          closingEmployeeCode: closingEmployeeCode || s.employeeCode,
         };
       }),
     );

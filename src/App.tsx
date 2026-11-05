@@ -196,17 +196,17 @@ export default function App() {
             transactions={store.transactions}
             onCheckout={store.addTransaction}
             onOpenCash={store.openCashSession}
-            onCorrectOpening={(amt, reason) => {
-              if (store.activeSession) store.correctOpeningBalance(store.activeSession.id, amt, reason);
+            onCorrectOpening={(amt, reason, employeeCode) => {
+              if (store.activeSession) store.correctOpeningBalance(store.activeSession.id, amt, reason, employeeCode);
             }}
-            onCashEntry={(type, amt, reason, isPfandRetoure = false) => {
-              if (store.activeSession) store.addCashEntry(store.activeSession.id, type, amt, reason, isPfandRetoure);
+            onCashEntry={(type, amt, reason, employeeCode, isPfandRetoure = false) => {
+              if (store.activeSession) store.addCashEntry(store.activeSession.id, type, amt, reason, employeeCode, isPfandRetoure);
             }}
-            onCloseCash={(bal) => {
+            onCloseCash={(bal, closingEmployeeCode) => {
               const session = store.activeSession;
               if (!session) return;
-              store.closeCashSession(session.id, bal);
-              void saveJournalPdf(closedSessionReport(session, store.transactions, store.categories)).catch(() =>
+              store.closeCashSession(session.id, bal, closingEmployeeCode);
+              void saveJournalPdf(closedSessionReport({ ...session, closed: true, closedAt: Date.now(), closingEmployeeCode: closingEmployeeCode || session.employeeCode }, store.transactions, store.categories)).catch(() =>
                 alert('Der Tagesbericht-PDF konnte nicht erstellt werden. Er kann im Journal nachträglich exportiert werden.'),
               );
             }}

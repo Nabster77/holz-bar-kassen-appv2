@@ -4,7 +4,7 @@ import type { Location } from '@/types';
 import { verifyAdminPassword } from '@/lib/adminGate';
 
 interface Props {
-  onSave: (location: Location, openingBalance: number) => void;
+  onSave: (location: Location, openingBalance: number, employeeCode: string) => void;
   onClose: () => void;
   onEnterAdmin?: () => void;
   defaultLocation?: Location;
@@ -16,6 +16,7 @@ export function CashOpeningDialog({ onSave, onClose, onEnterAdmin, defaultLocati
   void onClose;
   const [location, setLocation] = useState<Location>(defaultLocation ?? 'Friedrichshafen');
   const [balance, setBalance] = useState('');
+  const [employeeCode, setEmployeeCode] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState('');
   const [adminError, setAdminError] = useState<'wrong' | 'unavailable' | null>(null);
@@ -23,8 +24,8 @@ export function CashOpeningDialog({ onSave, onClose, onEnterAdmin, defaultLocati
 
   function handleSave() {
     const b = parseFloat(balance.replace(',', '.'));
-    if (isNaN(b) || b < 0) return;
-    onSave(location, b);
+    if (isNaN(b) || b < 0 || !employeeCode.trim()) return;
+    onSave(location, b, employeeCode.trim().toUpperCase());
   }
 
   async function handleAdminSubmit() {
@@ -83,7 +84,15 @@ export function CashOpeningDialog({ onSave, onClose, onEnterAdmin, defaultLocati
                 <input value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="z.B. 150,00" inputMode="decimal" autoFocus
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
               </div>
-              <button onClick={handleSave} disabled={!balance}
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Mitarbeiter-Kürzel
+                </label>
+                <input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())} placeholder="z.B. AB" maxLength={8} autoCapitalize="characters"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base font-semibold uppercase text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Pflichtfeld. Das Kürzel wird bei Verkäufen und Kassenbewegungen gespeichert.</p>
+              </div>
+              <button onClick={handleSave} disabled={!balance || !employeeCode.trim()}
                 className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
                 <Check className="mr-1.5 inline h-5 w-5" /> Kasse eröffnen
               </button>

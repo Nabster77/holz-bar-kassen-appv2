@@ -7,8 +7,8 @@ import {
   monthLabel, yearLabel, getWeekNumber,
 } from '@/lib/format';
 import { DynamicIcon } from '@/components/DynamicIcon';
-import { JournalPreviewDialog } from '@/components/Journal/JournalPreviewDialog';
-import { buildJournalFileName } from '@/lib/journalPdfFile';
+import { buildJournalFileName, exportJournalPdf, openJournalPrintDialog } from '@/lib/journalPdfFile';
+import { cashAuditRecordsFromSessions } from '@/lib/dailyReport';
 import { mergeTaxByRate, getTaxByRate, isTaxFreeItem, isReducedRate, sortedRateKeys } from '@/lib/tax';
 import {
   Calendar, TrendingUp, Clock, Receipt, ChevronDown, ChevronUp,
@@ -35,7 +35,6 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(defaultLocation);
   const [customFrom, setCustomFrom] = useState(formatDateISO(Date.now() - 6 * 86400000));
   const [customTo, setCustomTo] = useState(formatDateISO(Date.now()));
-  const [showPreview, setShowPreview] = useState(false);
 
   const { start, end, headerLabel } = useMemo(() => {
     const now = Date.now();
@@ -101,6 +100,16 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
 
   const totalOpeningBalance = relevantSessions.reduce((s, sess) => s + sess.openingBalance, 0);
   const sessionLocationLabel = locationFilter === 'all' ? 'Alle Standorte' : locationFilter;
+  const reportData = () => ({
+    headerLabel,
+    location: sessionLocationLabel,
+    transactions: filteredTx,
+    categories,
+    fileName: buildJournalFileName(period, start, end, locationFilter),
+    cashAuditRecords: cashAuditRecordsFromSessions(relevantSessions),
+  });
+  const exportReport = () => void exportJournalPdf(reportData());
+  const printReport = () => openJournalPrintDialog(reportData());
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain pb-4">
@@ -108,14 +117,14 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{headerLabel}</h2>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowPreview(true)}
+            onClick={exportReport}
             disabled={filteredTx.length === 0}
             className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <FileDown className="h-3.5 w-3.5" /> PDF-Export
           </button>
           <button
-            onClick={() => setShowPreview(true)}
+            onClick={printReport}
             disabled={filteredTx.length === 0}
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
           >
@@ -226,19 +235,6 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
         ) : null}
         <StatCard label="Verkäufe" value={String(stats.count)} icon={<Receipt className="h-4 w-4" />} color="text-green-600 dark:text-green-400" />
       </div>
-
-      {showPreview && (
-        <JournalPreviewDialog
-          data={{
-            headerLabel,
-            location: sessionLocationLabel,
-            transactions: filteredTx,
-            categories,
-            fileName: buildJournalFileName(period, start, end, locationFilter),
-          }}
-          onClose={() => setShowPreview(false)}
-        />
-      )}
 
       <div>
         {filteredTx.length === 0 ? (

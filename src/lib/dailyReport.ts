@@ -1,6 +1,6 @@
 import type { Category, CashSession, Location, Transaction } from '@/types';
 import { buildJournalFileName } from '@/lib/journalPdfFile';
-import type { JournalReportData } from '@/lib/journalPdf';
+import type { CashAuditRecord, JournalReportData } from '@/lib/journalPdf';
 import { endOfDay, startOfDay } from '@/lib/format';
 
 export function dayTransactions(transactions: Transaction[], date: string, loc: Location): Transaction[] {
@@ -11,7 +11,20 @@ export function dayTransactions(transactions: Transaction[], date: string, loc: 
   });
 }
 
-export function buildDailyReport(loc: Location, date: string, transactions: Transaction[], categories: Category[]): JournalReportData {
+export function cashAuditRecordsFromSessions(sessions: CashSession[]): CashAuditRecord[] {
+  return sessions.flatMap((session) => [
+    ...session.entries.map((entry): CashAuditRecord => ({
+      location: session.location, timestamp: entry.timestamp, kind: entry.type === 'deposit' ? 'Einlage' : 'Ausgabe',
+      amount: entry.amount, reason: entry.reason, employeeCode: entry.employeeCode ?? session.employeeCode ?? '—',
+    })),
+    ...session.corrections.map((correction): CashAuditRecord => ({
+      location: session.location, timestamp: correction.timestamp, kind: 'Korrektur', oldAmount: correction.oldAmount,
+      newAmount: correction.newAmount, reason: correction.reason, employeeCode: correction.employeeCode ?? session.employeeCode ?? '—',
+    })),
+  ]);
+}
+
+export function buildDailyReport(loc: Location, date: string, transactions: Transaction[], categories: Category[], sessions: CashSession[] = []): JournalReportData {
   const day = new Date(date + 'T00:00:00');
   return {
     headerLabel: `Tagesübersicht ${loc} — ${day.toLocaleDateString('de-DE')}`,
@@ -19,9 +32,13 @@ export function buildDailyReport(loc: Location, date: string, transactions: Tran
     transactions,
     categories,
     fileName: buildJournalFileName('daily', startOfDay(day.getTime()), endOfDay(day.getTime()), loc),
+    cashAuditRecords: cashAuditRecordsFromSessions(sessions),
   };
 }
 
 export function closedSessionReport(session: CashSession, transactions: Transaction[], categories: Category[]): JournalReportData {
-  return buildDailyReport(session.location, session.date, dayTransactions(transactions, session.date, session.location), categories);
+  return {
+    ...buildDailyReport(session.location, session.date, dayTransactions(transactions, session.date, session.location), categories, [session]),
+    employeeCode: session.closingEmployeeCode ?? session.employeeCode,
+  };
 }

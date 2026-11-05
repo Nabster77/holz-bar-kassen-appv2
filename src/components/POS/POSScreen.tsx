@@ -24,10 +24,10 @@ interface Props {
   products: Product[];
   activeSession: CashSession | null;
   onCheckout: (tx: Transaction) => void;
-  onOpenCash: (location: Location, openingBalance: number) => void;
-  onCorrectOpening: (newAmount: number, reason: string) => void;
-  onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure?: boolean) => void;
-  onCloseCash: (closingBalance: number) => void;
+  onOpenCash: (location: Location, openingBalance: number, employeeCode: string) => void;
+  onCorrectOpening: (newAmount: number, reason: string, employeeCode: string) => void;
+  onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, employeeCode: string, isPfandRetoure?: boolean) => void;
+  onCloseCash: (closingBalance: number, employeeCode?: string) => void;
   transactions: Transaction[];
   onEnterAdmin?: () => void;
   onMoveProduct?: (sourceId: string, targetId: string) => void;
@@ -171,7 +171,7 @@ export function POSScreen({
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
   function handleCheckoutComplete(tx: Transaction) {
-    onCheckout(tx);
+    onCheckout({ ...tx, employeeCode: activeSession?.employeeCode });
     setCart([]);
   }
 
@@ -359,13 +359,13 @@ export function POSScreen({
 
       {/* Dialogs */}
       {showOpenDialog && (
-        <CashOpeningDialog onSave={(loc, bal) => { onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} />
+        <CashOpeningDialog onSave={(loc, bal, code) => { onOpenCash(loc, bal, code); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} />
       )}
       {showCorrection && activeSession && (
-        <CashCorrectionDialog session={activeSession} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
+        <CashCorrectionDialog session={activeSession} onSave={(amt, reason, code) => { onCorrectOpening(amt, reason, code); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
       )}
       {cashEntryType && activeSession && (
-        <CashEntryDialog session={activeSession} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
+        <CashEntryDialog session={activeSession} type={cashEntryType} onSave={(amt, reason, code) => { onCashEntry(cashEntryType, amt, reason, code); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
       )}
       {showPfandRetoure && activeSession && (
         <PfandRetoureDialog
@@ -379,7 +379,7 @@ export function POSScreen({
         />
       )}
       {showCloseDialog && activeSession && (
-        <DailyCloseDialog session={activeSession} transactions={transactions} onClose={(bal) => { if (bal !== undefined) { onCloseCash(bal); setShowCloseDialog(false); } }} onCancel={() => setShowCloseDialog(false)} />
+        <DailyCloseDialog session={activeSession} transactions={transactions} onClose={(bal, code) => { if (bal !== undefined) { onCloseCash(bal, code); setShowCloseDialog(false); } }} onCancel={() => setShowCloseDialog(false)} />
       )}
       {shotProduct && (
         <ShotSelectionDialog product={shotProduct} onSelect={handleShotSelect} onCancel={() => setShotProduct(null)} />

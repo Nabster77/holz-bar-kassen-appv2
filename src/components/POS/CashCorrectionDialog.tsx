@@ -5,18 +5,19 @@ import type { CashSession } from '@/types';
 
 interface Props {
   session: CashSession;
-  onSave: (newAmount: number, reason: string) => void;
+  onSave: (newAmount: number, reason: string, employeeCode: string) => void;
   onClose: () => void;
 }
 
 export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
   const [newAmount, setNewAmount] = useState(String(session.openingBalance));
   const [reason, setReason] = useState('');
+  const [employeeCode, setEmployeeCode] = useState(session.employeeCode ?? '');
 
   function handleSave() {
     const a = parseFloat(newAmount.replace(',', '.'));
-    if (isNaN(a) || a < 0 || !reason.trim()) return;
-    onSave(a, reason.trim());
+    if (isNaN(a) || a < 0 || !reason.trim() || !employeeCode.trim()) return;
+    onSave(a, reason.trim(), employeeCode.trim().toUpperCase());
   }
 
   return (
@@ -44,7 +45,12 @@ export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="z.B. Zählfehler bei Eröffnung" rows={2}
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
-          <button onClick={handleSave} disabled={!newAmount || !reason.trim()}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Mitarbeiter-Kürzel</label>
+            <input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())} placeholder="z.B. AB" maxLength={8} autoCapitalize="characters"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold uppercase text-gray-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+          </div>
+          <button onClick={handleSave} disabled={!newAmount || !reason.trim() || !employeeCode.trim()}
             className="w-full rounded-xl bg-amber-600 py-3 text-base font-semibold text-white shadow-md transition hover:bg-amber-700 active:scale-95 disabled:opacity-50">
             <Check className="mr-1.5 inline h-4 w-4" /> Korrektur speichern
           </button>

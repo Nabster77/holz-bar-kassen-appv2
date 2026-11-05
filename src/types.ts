@@ -78,6 +78,8 @@ export interface Transaction {
   amountPaid?: number; // cash given
   change?: number; // change returned
   location: Location;
+  /** Kürzel der Person, die den Verkauf gebucht hat. */
+  employeeCode?: string;
   // Legacy fields, kept for backward compatibility with old stored transactions
   tax7?: number;
   tax19?: number;
@@ -91,6 +93,7 @@ export interface CashEntry {
   amount: number;
   reason: string;
   timestamp: number;
+  employeeCode?: string;
   isPfandRetoure?: boolean;
 }
 
@@ -100,6 +103,7 @@ export interface CashCorrection {
   newAmount: number;
   reason: string;
   timestamp: number;
+  employeeCode?: string;
 }
 
 export interface CashSession {
@@ -108,6 +112,8 @@ export interface CashSession {
   location: Location;
   openingBalance: number;
   openedAt: number;
+  /** Pflichtangabe ab Kasseneröffnung; alte Daten dürfen leer bleiben. */
+  employeeCode?: string;
   corrections: CashCorrection[];
   entries: CashEntry[];
   closed: boolean;
@@ -115,4 +121,5 @@ export interface CashSession {
   closingBalance?: number;
   expectedBalance?: number;
   difference?: number;
+  closingEmployeeCode?: string;
 }
