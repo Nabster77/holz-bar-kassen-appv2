@@ -1,0 +1,117 @@
+Erstelle eine moderne, voll funktionsfähige Web-Kassen-App (POS) für Tablets. Die gesamte App muss vollständig auf Deutsch sein.
+
+## 1. Tech-Stack & Design-Vorgaben
+- **UI/UX:** Optimiert für Touchscreen-Tablets, modernes Responsive-Design, helles/dunkles Design (Light/Dark-Mode).
+- **Styling:** Tailwind CSS und Lucide-Icons.
+- **Datenhaltung:** Sämtliche Daten (Artikel, Transaktionen, Kassenstände, Journal-Einträge) werden lokal im Browser (localStorage) gespeichert.
+- **Beispieldaten:** Die App muss beim ersten Start mit vorgefertigten Warengruppen und Beispielartikeln (mit 7% und 19% MwSt.) gefüllt sein, damit sie sofort einsatzbereit ist.
+
+---
+
+## 2. Standortabhängige Preise & Pfand
+- **Zwei Standorte:** Friedrichshafen und Bregenz, jeder mit eigenen Preisen und Pfandbeträgen pro Artikel.
+- Bei der Kasseneröffnung wird der Standort ausgewählt (Dropdown mit Friedrichshafen / Bregenz).
+- Die Kasse zeigt danach die Preise des gewählten Standorts an.
+- **Pfand:** Artikel können einen Pfandbetrag haben (z. B. 0,25€ pro Flasche). Pfand wird beim Verkauf automatisch zum Preis addiert und in den Journalen separat ausgewiesen.
+- **Pfand-Retoure:** Ein Button in der Kassenleiste ermöglicht die Pfand-Rücknahme. Es öffnet sich ein Dialog, in dem die Anzahl der zurückgegebenen Pfandartikel eingegeben wird. Der Pfandbetrag wird als Ausgabe (withdrawal) in der Kasse verbucht und im Journal als „Pfand-Retoure" vermerkt.
+
+---
+
+## 3. Kasseneröffnung, Kassenstand & Tagesabschluss
+- **Kasseneröffnung (Pflicht vor Verkauf):**
+  - Beim Starten der App erscheint automatisch ein nicht-schließbarer Dialog zur Kasseneröffnung, wenn für den heutigen Tag noch keine Kasse eröffnet wurde.
+  - Der Dialog kann nicht durch Klick außerhalb oder einen Abbrechen-Button geschlossen werden.
+  - Abgefragte Felder: **Standort** (Dropdown: Friedrichshafen / Bregenz) und **Kassen-Anfangsbestand** (Bar-Startkapital in €).
+  - Erst nach erfolgreicher Eröffnung werden die Artikel-Kacheln anklickbar und der Bezahlen-Button aktiviert.
+- **Anfangsbestand-Korrektur:**
+  - Der Anfangsbestand kann nachträglich nur über eine explizite Korrektur-Funktion geändert werden.
+  - **Pflichtfeld:** Eingabe einer Begründung für die Korrektur. Jede Korrektur wird im Journal protokolliert.
+- **Einlagen & Ausgaben:**
+  - Buttons für „Bargeld-Einlage" und „Bargeld-Ausgabe".
+  - Eingabe von Betrag und Beschreibung/Grund.
+  - Anzeige des aktuellen Kassenbestands.
+- **Pfand-Retoure-Button:** In der Kassenleiste, öffnet einen Dialog zur Pfand-Rücknahme.
+- **Tagesabschluss & PDF:**
+  - Tagesabschluss kann zuerst als Entwurf eingesehen werden.
+  - Eingabe des tatsächlichen Kassenbestands, Vergleich mit dem Soll-Bestand, Anzeige einer Differenz.
+  - Bestätigungs-Checkbox Pflicht, bevor der Abschluss endgültig ist.
+  - Ein „Sichern"-Button speichert den Abschluss.
+  - Nach dem Abschließen ist der Tagesabschluss gesperrt und unveränderbar.
+  - PDF-Export des Tagesabschlusses über Browser-Druckfunktion.
+
+---
+
+## 4. Kassen-Oberfläche (POS Main Screen)
+- **Kopfbereich / Cash-Management-Leiste:**
+  - Zeigt den aktuellen Standort, den Kassenbestand und den Anfangsbestand.
+  - Quick-Buttons: Einlage/Ausgabe, Pfand-Retoure, Korrektur, Tagesabschluss.
+  - Ohne Kasseneröffnung: Hinweis und Button „Kasse eröffnen".
+- **Verkaufssperre ohne Kasseneröffnung:**
+  - Artikel-Kacheln sind ausgegraut und nicht anklickbar.
+  - Hinweisbanner über dem Artikelraster.
+  - Bezahlen-Button zeigt „Kasse erst eröffnen" und ist deaktiviert.
+- **Linke Seite (Artikel & Warengruppen):**
+  - **Warengruppen-Tabs:** Filter nach Warengruppen.
+  - **Artikel-Kacheln:** Große Touch-Kacheln mit Bild, Name und Preis (inkl. Pfand falls vorhanden).
+  - **Schuss-Auswahl-Popup:** Bei bestimmten Artikeln (z. B. Weißwein) erscheint beim Antippen ein Popup-Fenster mit Schuss-Auswahl-Buttons: Nein / Rum / Whiskey / Amaretto / Amaretto alkoholfrei. Der ausgewählte Schuss wird als Zusatz zum Artikel in den Warenkorb gelegt (mit Aufpreis).
+  - **Suchfunktion:** Suchleiste zum Filtern nach Name.
+- **Rechte Seite (Warenkorb):**
+  - Dynamische Aktualisierung bei Artikelauswahl.
+  - Mengenänderung über + / - Buttons.
+  - Löschen-Button und Warenkorb leeren.
+  - **Berechnung:** Zwischensumme (netto), MwSt 7% und 19% getrennt, MwSt gesamt, Pfand gesamt, Gesamtsumme (inkl. MwSt + Pfand).
+  - Großer Button **„Bezahlen / Kassiervorgang abschließen"**.
+
+---
+
+## 5. Bezahlvorgang (Checkout)
+- Beim Antippen des Bezahlen-Buttons öffnet sich ein Popup-Fenster mit der Artikelübersicht, MwSt-Aufschlüsselung, Pfand und Gesamtbetrag.
+- **Zahlart-Auswahl:** Buttons **BAR** oder **KARTE**.
+  - Wird **BAR** ausgewählt, erscheint ein Eingabefeld **„Gegeben"** für manuelle Eingabe des gegebenen Betrags.
+  - Das System errechnet automatisch das **Rückgeld** (Gegeben − Gesamt).
+  - Wird der gegebene Betrag passend eingegeben (gleich dem Gesamtbetrag), wird „Passend" angezeigt.
+  - Wird **KARTE** ausgewählt, entfällt die Gegeben-Eingabe.
+- Nach Bestätigung: Erfolgsmeldung, Transaktion wird im Journal gespeichert (inkl. Zahlart BAR/KARTE), Warenkorb wird geleert.
+
+---
+
+## 6. Passwortschutz
+- **Verwaltung:** Der Verwaltungsbereich ist durch ein Passwort geschützt. Beim Wechsel auf den Verwaltungs-Tab erscheint ein Passwort-Dialog. Erst nach korrekter Eingabe wird die Verwaltung sichtbar.
+- **Journal:** Der Journalbereich ist ebenfalls durch ein Passwort geschützt. Beim Wechsel auf den Journal-Tab erscheint ein Passwort-Dialog.
+- Standard-Passwort: „kasse" (in der App hinterlegt, nicht vom Nutzer konfigurierbar).
+
+---
+
+## 7. Stammdaten-Verwaltung (Artikel & Warengruppen)
+- **Warengruppen-Verwaltung:** Anlegen, Bearbeiten und Löschen von Kategorien (Icon- und Farbauswahl).
+- **Artikel-Verwaltung:**
+  - Anlegen & Bearbeiten (Name, MwSt-Umschalter 7%/19%, Warengruppe, Bild-Import).
+  - **Standortabhängige Preise:** Pro Artikel können separate Preise für Friedrichshafen und Bregenz eingegeben werden.
+  - **Pfand-Betrag:** Pro Artikel und Standort kann ein Pfandbetrag eingegeben werden.
+  - **Schuss-Aktivierung:** Ein Artikel kann als „Schuss-Artikel" markiert werden (z. B. Weißwein), wodurch beim Antippen in der Kasse das Schuss-Auswahl-Popup erscheint.
+  - Verfügbar/Unavailable-Umschalter.
+- **Kachelposition verschiebbar:** In der Verwaltung können Warengruppen und Artikel per Drag-and-Drop oder Auf/Ab-Buttons in ihrer Reihenfolge verschoben werden. Die neue Sortierung wird gespeichert und in der Kasse übernommen.
+- **Alle Daten zurücksetzen:** Button im Verwaltungsbereich. Nach Sicherheitsabfrage werden alle Daten zurückgesetzt, Beispieldaten neu geladen.
+
+---
+
+## 8. Journal & Berichte
+- **Dynamische Header-Anzeige:** Präzise Anzeige des aktiven Zeitraums.
+- **Zeitraum-Filter:** Täglich, Wöchentlich, Monatlich, Jährlich, freies Zeitintervall.
+- **Ansichten & Gruppierung:**
+  1. Nach Warengruppen (Standard)
+  2. Nach Einzelartikeln
+  3. Nach MwSt-Klassen
+  4. Bestseller-Analyse (Häufigkeit)
+  5. Einzel-Bons / Transaktionen (inkl. Zahlart BAR/KARTE)
+- **Pfand im Journal:** Pfand-Beträge werden in allen Ansichten separat ausgewiesen und in den Transaktionsdetails angezeigt.
+- **Zusammenfassungs-Kacheln:** Umsatz (inkl. MwSt), Netto, MwSt 7%, MwSt 19%, Pfand, Anzahl Verkäufe.
+
+---
+
+## 9. Allgemeine Anforderungen
+- **Dark/Light-Mode:** Umschaltbarer Theme-Toggle.
+- **Navigation:** Drei Hauptbereiche — Kasse, Journale (passwortgeschützt), Verwaltung (passwortgeschützt).
+- **Responsive-Design:** Optimiert für Tablet-Bildschirme aller Größen.
+- **Mikro-Interaktionen:** Hover-States, Active-Scale-Animationen, sanfte Übergänge.
+- **Lokale Speicherung:** Alle Daten im localStorage.
