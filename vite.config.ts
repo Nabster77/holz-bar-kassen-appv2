@@ -14,8 +14,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Tablet-Kasse',
-        short_name: 'Kasse',
+        name: 'WOODMO Kassen-App V2.0',
+        short_name: 'WOODMO Kasse',
         description: 'Kassensystem für Friedrichshafen & Bregenz — installierbar als App auf Tablet & Smartphone.',
         theme_color: '#2563eb',
         background_color: '#0f172a',
