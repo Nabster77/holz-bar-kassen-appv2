@@ -4,6 +4,30 @@ export type TaxRate = number;
 
 export type Location = 'Friedrichshafen' | 'Bregenz';
 
+export type StaffRole = 'administrator' | 'employee';
+
+export interface StaffUser {
+  id: string;
+  name: string;
+  role: StaffRole;
+  active: boolean;
+  passwordSalt: string | null;
+  passwordHash: string | null;
+  updatedAt: number;
+}
+
+export type StaffActivityType = 'login' | 'logout' | 'cash_opened' | 'cash_closed' | 'sale' | 'deposit' | 'withdrawal' | 'correction';
+
+export interface StaffActivity {
+  id: string;
+  type: StaffActivityType;
+  staffId: string;
+  staffName: string;
+  timestamp: number;
+  amount?: number;
+  reason?: string;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -78,11 +102,11 @@ export interface Transaction {
   amountPaid?: number; // cash given
   change?: number; // change returned
   location: Location;
-  /** Kürzel der Person, die den Verkauf gebucht hat. */
-  employeeCode?: string;
   // Legacy fields, kept for backward compatibility with old stored transactions
   tax7?: number;
   tax19?: number;
+  employeeId?: string;
+  employeeName?: string;
 }
 
 export type CashEntryType = 'deposit' | 'withdrawal';
@@ -93,8 +117,9 @@ export interface CashEntry {
   amount: number;
   reason: string;
   timestamp: number;
-  employeeCode?: string;
   isPfandRetoure?: boolean;
+  employeeId?: string;
+  employeeName?: string;
 }
 
 export interface CashCorrection {
@@ -103,15 +128,8 @@ export interface CashCorrection {
   newAmount: number;
   reason: string;
   timestamp: number;
-  employeeCode?: string;
-}
-
-/** Nachvollziehbare Anmeldung bzw. Abmeldung an einer weiterhin offenen Kasse. */
-export interface CashEmployeeEvent {
-  id: string;
-  type: 'login' | 'logout';
-  employeeCode: string;
-  timestamp: number;
+  employeeId?: string;
+  employeeName?: string;
 }
 
 export interface CashSession {
@@ -120,11 +138,6 @@ export interface CashSession {
   location: Location;
   openingBalance: number;
   openedAt: number;
-  /** Pflichtangabe ab Kasseneröffnung; alte Daten dürfen leer bleiben. */
-  employeeCode?: string;
-  /** Aktuell angemeldete Person. null bedeutet: Kasse ist offen, aber gesperrt. */
-  activeEmployeeCode?: string | null;
-  employeeEvents?: CashEmployeeEvent[];
   corrections: CashCorrection[];
   entries: CashEntry[];
   closed: boolean;
@@ -132,5 +145,9 @@ export interface CashSession {
   closingBalance?: number;
   expectedBalance?: number;
   difference?: number;
-  closingEmployeeCode?: string;
+  openedById?: string;
+  openedByName?: string;
+  closedById?: string;
+  closedByName?: string;
+  activities?: StaffActivity[];
 }

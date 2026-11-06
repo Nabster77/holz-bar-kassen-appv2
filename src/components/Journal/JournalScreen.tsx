@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Category, CashSession, Transaction } from '@/types';
+import type { Category, CashSession, StaffUser, Transaction } from '@/types';
 import {
   formatCurrency, formatDate, formatDateISO, formatDateLong,
   formatTime,
@@ -27,9 +27,10 @@ interface Props {
   categories: Category[];
   cashSessions: CashSession[];
   defaultLocation?: Exclude<LocationFilter, 'all'>;
+  currentStaff?: StaffUser | null;
 }
 
-export function JournalScreen({ transactions, categories, cashSessions, defaultLocation = 'Friedrichshafen' }: Props) {
+export function JournalScreen({ transactions, categories, cashSessions, defaultLocation = 'Friedrichshafen', currentStaff }: Props) {
   const [period, setPeriod] = useState<Period>('daily');
   const [groupMode, setGroupMode] = useState<GroupMode>('category');
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(defaultLocation);
@@ -106,6 +107,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     transactions: filteredTx,
     categories,
     fileName: buildJournalFileName(period, start, end, locationFilter),
+    exportedByName: currentStaff?.name,
     cashAuditRecords: cashAuditRecordsFromSessions(relevantSessions),
   });
   const exportReport = () => void exportJournalPdf(reportData());

@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { Lock, Check, X, Loader2 } from 'lucide-react';
-import { verifyAdminPassword } from '@/lib/adminGate';
+import { verifyManagerPassword } from '@/lib/managerAuth';
+import { verifyStaffPassword } from '@/lib/staffDirectory';
+import type { StaffUser } from '@/types';
 
 interface Props {
   onSuccess: () => void;
   title: string;
+  onStaffLogin?: () => void;
+  administrators?: StaffUser[];
 }
 
 type GateError = 'wrong' | 'unavailable' | null;
 
-export function PasswordGate({ onSuccess, title }: Props) {
+export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = [] }: Props) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
@@ -19,9 +23,23 @@ export function PasswordGate({ onSuccess, title }: Props) {
     setChecking(true);
     setError(null);
     try {
-      const ok = await verifyAdminPassword(input);
-      if (ok) onSuccess();
-      else setError('wrong');
+      const ok = await verifyManagerPassword(input);
+      if (ok) {
+        onSuccess();
+      } else {
+        let authenticatedAdministrator: StaffUser | null = null;
+        for (const user of administrators) {
+          if (user.active && user.role === 'administrator' && await verifyStaffPassword(user, input)) {
+            authenticatedAdministrator = user;
+            break;
+          }
+        }
+        if (authenticatedAdministrator) {
+          onSuccess();
+        } else {
+          setError('wrong');
+        }
+      }
     } catch {
       setError('unavailable');
     } finally {
@@ -46,7 +64,7 @@ export function PasswordGate({ onSuccess, title }: Props) {
             value={input}
             onChange={(e) => { setInput(e.target.value); setError(null); }}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-            placeholder="Passwort eingeben"
+            placeholder="Passwort"
             autoFocus
             className={`w-full rounded-xl border px-3 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 dark:bg-gray-900 dark:text-gray-100 ${
               error
@@ -71,6 +89,7 @@ export function PasswordGate({ onSuccess, title }: Props) {
           >
             {checking ? <Loader2 className="mr-1.5 inline h-5 w-5 animate-spin" /> : <Check className="mr-1.5 inline h-5 w-5" />} Entsperren
           </button>
+          {onStaffLogin && <button onClick={onStaffLogin} className="w-full rounded-xl border border-blue-300 bg-blue-50 py-2.5 text-sm font-semibold text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300">Als Administrator anmelden</button>}
         </div>
       </div>
     </div>

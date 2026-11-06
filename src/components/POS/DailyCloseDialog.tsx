@@ -24,7 +24,7 @@ const DENOMINATIONS: { label: string; value: number }[] = [
 interface Props {
   session: CashSession;
   transactions: Transaction[];
-  onClose: (closingBalance?: number, employeeCode?: string) => void;
+  onClose: (closingBalance?: number) => void;
   onCancel: () => void;
 }
 
@@ -33,7 +33,6 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
   const [manualBalance, setManualBalance] = useState('');
   const [useCounting, setUseCounting] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
-  const employeeCode = session.employeeCode ?? '—';
 
   const sessionTx = useMemo(
     () => transactions.filter((t) => {
@@ -69,12 +68,12 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
 
   function handleClose() {
     if (isNaN(closingBalance) || closingBalance < 0 || !confirmed) return;
-    onClose(Math.round(closingBalance * 100) / 100, session.employeeCode);
+    onClose(Math.round(closingBalance * 100) / 100);
   }
 
   function handlePDFExport() {
     const b = hasInput && !isNaN(closingBalance) ? closingBalance : expected;
-    generatePDF({ ...session, closed: true, closedAt: Date.now(), closingEmployeeCode: session.employeeCode }, sessionTx, { txTotal, taxByRate: Object.fromEntries(taxByRate), totalNet, deposits, withdrawals, expected, closingBalance: b, difference: b - expected });
+    generatePDF({ ...session, closed: true, closedAt: Date.now() }, sessionTx, { txTotal, taxByRate: Object.fromEntries(taxByRate), totalNet, deposits, withdrawals, expected, closingBalance: b, difference: b - expected });
   }
 
   return (
@@ -138,7 +137,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
               <div className="space-y-1">
                 {session.corrections.map((c) => (
                   <div key={c.id} className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                    <span>{formatTime(c.timestamp)}: {formatCurrency(c.oldAmount)} → {formatCurrency(c.newAmount)} · Kürzel: <b>{c.employeeCode ?? session.employeeCode ?? '—'}</b></span>
+                    <span>{formatTime(c.timestamp)}: {formatCurrency(c.oldAmount)} → {formatCurrency(c.newAmount)}</span>
                   </div>
                 ))}
                 {session.corrections.map((c) => (
@@ -155,7 +154,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
               <div className="space-y-1">
                 {session.entries.map((e) => (
                   <div key={e.id} className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                    <span>{formatTime(e.timestamp)} · {e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}: {e.reason} · Kürzel: <b>{e.employeeCode ?? session.employeeCode ?? '—'}</b></span>
+                    <span>{formatTime(e.timestamp)} · {e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}: {e.reason}</span>
                     <span className={e.type === 'deposit' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
                       {e.type === 'deposit' ? '+' : '-'}{formatCurrency(e.amount)}
                     </span>
@@ -164,25 +163,6 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
               </div>
             </div>
           )}
-
-          {(session.employeeEvents?.length ?? 0) > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Mitarbeiter-An- und Abmeldungen</p>
-              <div className="space-y-1">
-                {session.employeeEvents!.map((event) => (
-                  <div key={event.id} className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                    <span>{formatTime(event.timestamp)} · Mitarbeiter {event.type === 'login' ? 'angemeldet' : 'abgemeldet'} · Kürzel: <b>{event.employeeCode}</b></span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mb-4 rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-            <p className="text-base font-bold text-blue-900 dark:text-blue-100">Kasse eröffnet durch</p>
-            <p className="mt-1 text-2xl font-bold uppercase text-blue-700 dark:text-blue-300">{employeeCode}</p>
-            <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">Das Eröffnungskürzel ist im Tagesabschluss fest gespeichert und kann nicht geändert werden.</p>
-          </div>
 
           {/* Closing balance: counting or manual */}
           <div className="mb-3">
@@ -318,16 +298,16 @@ function generatePDF(
     .sort((a, b) => a.timestamp - b.timestamp)
     .map((tx, i) => {
       const txTax = [...getTaxByRate(tx).values()].reduce((s, v) => s + v, 0);
-      return `<tr><td>${i + 1}</td><td>${formatTime(tx.timestamp)}</td><td>${tx.items.length}</td><td>${formatCurrency(tx.total)}</td><td>${formatCurrency(txTax)}</td><td>${escapeHtml(tx.employeeCode ?? session.employeeCode ?? '—')}</td></tr>`;
+      return `<tr><td>${i + 1}</td><td>${formatTime(tx.timestamp)}</td><td>${tx.items.length}</td><td>${formatCurrency(tx.total)}</td><td>${formatCurrency(txTax)}</td></tr>`;
     })
     .join('');
 
   const corrections = session.corrections
-    .map((c) => `<tr><td>${formatTime(c.timestamp)}</td><td>${formatCurrency(c.oldAmount)}</td><td>${formatCurrency(c.newAmount)}</td><td>${escapeHtml(c.reason)}</td><td>${escapeHtml(c.employeeCode ?? session.employeeCode ?? '—')}</td></tr>`)
+    .map((c) => `<tr><td>${formatTime(c.timestamp)}</td><td>${formatCurrency(c.oldAmount)}</td><td>${formatCurrency(c.newAmount)}</td><td>${escapeHtml(c.reason)}</td></tr>`)
     .join('');
 
   const entries = session.entries
-    .map((e) => `<tr><td>${formatTime(e.timestamp)}</td><td>${e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}</td><td>${formatCurrency(e.amount)}</td><td>${escapeHtml(e.reason)}</td><td>${escapeHtml(e.employeeCode ?? session.employeeCode ?? '—')}</td></tr>`)
+    .map((e) => `<tr><td>${formatTime(e.timestamp)}</td><td>${e.type === 'deposit' ? 'Einlage' : 'Ausgabe'}</td><td>${formatCurrency(e.amount)}</td><td>${escapeHtml(e.reason)}</td></tr>`)
     .join('');
 
   const auditRows = [
@@ -336,24 +316,15 @@ function generatePDF(
       kind: entry.type === 'deposit' ? 'Einlage' : 'Ausgabe',
       value: `${entry.type === 'deposit' ? '+' : '-'}${formatCurrency(entry.amount)}`,
       reason: entry.reason,
-      employeeCode: entry.employeeCode ?? session.employeeCode ?? '—',
     })),
     ...session.corrections.map((correction) => ({
       timestamp: correction.timestamp,
       kind: 'Korrektur',
       value: `${formatCurrency(correction.oldAmount)} → ${formatCurrency(correction.newAmount)}`,
       reason: correction.reason,
-      employeeCode: correction.employeeCode ?? session.employeeCode ?? '—',
-    })),
-    ...(session.employeeEvents ?? []).map((event) => ({
-      timestamp: event.timestamp,
-      kind: event.type === 'login' ? 'Mitarbeiter angemeldet' : 'Mitarbeiter abgemeldet',
-      value: '—',
-      reason: event.type === 'login' ? 'Anmeldung an der aktiven Kasse' : 'Abmeldung von der aktiven Kasse',
-      employeeCode: event.employeeCode,
     })),
   ].sort((a, b) => a.timestamp - b.timestamp)
-    .map((row) => `<tr><td>${formatWeekdayShort(row.timestamp)}, ${new Date(row.timestamp).toLocaleDateString('de-DE')} ${formatTime(row.timestamp)}</td><td>${row.kind}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.employeeCode)}</td></tr>`)
+    .map((row) => `<tr><td>${formatWeekdayShort(row.timestamp)}, ${new Date(row.timestamp).toLocaleDateString('de-DE')} ${formatTime(row.timestamp)}</td><td>${row.kind}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td></tr>`)
     .join('');
 
   const taxLines = taxEntries.map(([rate, amt]) => `<div class="sum"><span>davon MwSt ${rate}%</span><span>${formatCurrency(amt)}</span></div>`).join('');
@@ -398,7 +369,6 @@ function generatePDF(
     Datum: ${formatWeekdayShort(session.openedAt)}, ${escapeHtml(session.date)} | Standort: ${escapeHtml(session.location)} | Eröffnet: ${formatTime(session.openedAt)}<br>
     Geschlossen: ${session.closedAt ? formatTime(session.closedAt) : 'Entwurf'}
   </div>
-  <div class="highlight"><div class="sum bold"><span>Mitarbeiter-Kürzel Tagesabschluss</span><span>${escapeHtml(session.closingEmployeeCode ?? session.employeeCode ?? '—')}</span></div></div>
   <div class="sales-box">
     <h2>Tagesumsatz</h2>
     <div class="sum headline"><span>Brutto-Umsatz (inkl. MwSt.)</span><span>${formatCurrency(sums.txTotal)}</span></div>
@@ -417,10 +387,10 @@ function generatePDF(
     <div class="sum bold"><span>Differenz</span><span>${formatCurrency(sums.difference)}</span></div>
   </div>
   <h2>Transaktionen (${txList.length})</h2>
-  <table><thead><tr><th>#</th><th>Uhrzeit</th><th>Artikel</th><th>Betrag</th><th>MwSt</th><th>Kürzel</th></tr></thead><tbody>${rows}</tbody></table>
-  ${auditRows ? `<h2>Kassenbewegungen und Korrekturen – Mitarbeitende</h2><table><thead><tr><th>Datum/Zeit</th><th>Vorgang</th><th>Betrag / Änderung</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${auditRows}</tbody></table>` : ''}
-  ${corrections ? `<h2>Anfangsbestand-Korrekturen</h2><table><thead><tr><th>Uhrzeit</th><th>Alt</th><th>Neu</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${corrections}</tbody></table>` : ''}
-  ${entries ? `<h2>Einlagen / Ausgaben</h2><table><thead><tr><th>Uhrzeit</th><th>Typ</th><th>Betrag</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${entries}</tbody></table>` : ''}
+  <table><thead><tr><th>#</th><th>Uhrzeit</th><th>Artikel</th><th>Betrag</th><th>MwSt</th></tr></thead><tbody>${rows}</tbody></table>
+  ${auditRows ? `<h2>Kassenbewegungen und Korrekturen</h2><table><thead><tr><th>Datum/Zeit</th><th>Vorgang</th><th>Betrag / Änderung</th><th>Grund</th></tr></thead><tbody>${auditRows}</tbody></table>` : ''}
+  ${corrections ? `<h2>Anfangsbestand-Korrekturen</h2><table><thead><tr><th>Uhrzeit</th><th>Alt</th><th>Neu</th><th>Grund</th></tr></thead><tbody>${corrections}</tbody></table>` : ''}
+  ${entries ? `<h2>Einlagen / Ausgaben</h2><table><thead><tr><th>Uhrzeit</th><th>Typ</th><th>Betrag</th><th>Grund</th></tr></thead><tbody>${entries}</tbody></table>` : ''}
   </body></html>`;
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });

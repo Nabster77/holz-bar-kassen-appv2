@@ -34,6 +34,11 @@ export const STORAGE_KEYS = {
   catalogSync: 'pos_catalog_sync',
   catalogBackupPrefix: 'pos_catalog_backup_',
   bookingResetAt: 'pos_booking_reset_at',
+  staffUsers: 'pos_staff_users',
+  lastStaffId: 'pos_last_staff_id',
+  managerCredential: 'pos_manager_credential',
+  rootPasswordChanged: 'pos_root_password_changed',
+  rootPasswordNoticeDismissed: 'pos_root_password_notice_dismissed',
 } as const;
 
 // In test mode, bookings (transactions + cash sessions) are ephemeral:

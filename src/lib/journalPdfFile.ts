@@ -175,6 +175,14 @@ function getSafeBreaks(doc: Document, maxPageHeightPx: number): number[] {
     .map((el) => Math.round(el.getBoundingClientRect().top - bodyRect.top))
     .filter((top) => top > 0 && top < totalHeight)
     .sort((a, b) => a - b);
+  const tableSections = [...doc.querySelectorAll<HTMLElement>('.report-table-section')].map((section) => {
+    const sectionTop = Math.round(section.getBoundingClientRect().top - bodyRect.top);
+    const firstRow = section.querySelector<HTMLElement>('tbody tr');
+    const firstRowBottom = firstRow
+      ? Math.round(firstRow.getBoundingClientRect().bottom - bodyRect.top)
+      : sectionTop;
+    return { sectionTop, firstRowBottom };
+  });
 
   const breaks: number[] = [];
   let from = 0;
@@ -188,7 +196,13 @@ function getSafeBreaks(doc: Document, maxPageHeightPx: number): number[] {
     // Do not create nearly empty pages. A content boundary is useful only if
     // the current page already contains a meaningful amount of content.
     const minimum = from + Math.min(220, maxPageHeightPx * 0.35);
-    const safe = candidates.filter((point) => point >= minimum && point <= target).pop();
+    // A table heading must never be stranded at the bottom of a page. If the
+    // heading and its first table row no longer fit, begin the entire section
+    // on the following page instead.
+    const sectionToMove = tableSections.find((section) =>
+      section.sectionTop >= minimum && section.sectionTop < target && section.firstRowBottom > target,
+    );
+    const safe = sectionToMove?.sectionTop ?? candidates.filter((point) => point >= minimum && point <= target).pop();
     const next = safe ?? target;
     breaks.push(next);
     from = next;
@@ -262,24 +276,8 @@ async function renderJournalPdf(data: JournalReportData): Promise<Blob> {
   }
 }
 
-/** Creates a real PDF download with permanent page numbers. */
-export async function exportJournalPdf(data: JournalReportData): Promise<void> {
-  // This is intentionally requested before rendering. Directory pickers need
-  // to be called directly from the user's PDF-Export click.
-  const exportFolder = await chooseExportFolder();
-  if (exportFolder === null) return;
-  const blob = await renderJournalPdf(data);
-
-  if (exportFolder) {
-    try {
-      await saveIntoJournalFolder(exportFolder, data, blob);
-      return;
-    } catch {
-      // Permission may have expired; continue with the ordinary browser save
-      // dialog rather than losing the generated PDF.
-    }
-  }
-
+/** Opens the browser/system save flow. This never uses the automatic journal folder. */
+async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promise<void> {
   const file = new File([blob], data.fileName, { type: 'application/pdf' });
   const showSaveFilePicker = (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
 
@@ -311,6 +309,15 @@ export async function exportJournalPdf(data: JournalReportData): Promise<void> {
   downloadBlob(blob, data.fileName);
 }
 
+/**
+ * Manual journal export: the person exporting chooses the destination. No
+ * location folder is created and no app-managed automatic save is attempted.
+ */
+export async function exportJournalPdf(data: JournalReportData): Promise<void> {
+  const blob = await renderJournalPdf(data);
+  await savePdfWithUserChoice(data, blob);
+}
+
 // Browsers intentionally control printer selection and the "Save as PDF"
 // destination. The document title supplies the native dialog's file-name
 // suggestion without bypassing that browser safety boundary.
@@ -335,7 +342,23 @@ export function openJournalPrintDialog(data: JournalReportData): void {
   window.setTimeout(print, 250);
 }
 
-// The daily-close flow should produce the same properly paginated PDF.
+// The daily-close flow is the sole automatic export. It stores the report in
+// the selected year/date/location folder; when a browser cannot provide that
+// capability, it falls back to the normal system save flow.
 export async function saveJournalPdf(data: JournalReportData): Promise<void> {
-  await exportJournalPdf(data);
+  const exportFolder = await chooseExportFolder();
+  if (exportFolder === null) return;
+  const blob = await renderJournalPdf(data);
+
+  if (exportFolder) {
+    try {
+      await saveIntoJournalFolder(exportFolder, data, blob);
+      return;
+    } catch {
+      // The stored folder may no longer be available. Preserve the PDF by
+      // offering the user's normal browser/system save choice instead.
+    }
+  }
+
+  await savePdfWithUserChoice(data, blob);
 }

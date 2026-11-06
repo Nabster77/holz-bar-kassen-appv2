@@ -1,6 +1,6 @@
-import { useRef, useState, useMemo } from 'react';
-import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings } from '@/types';
-import { formatCurrency, formatDateISO, formatTime } from '@/lib/format';
+import { useRef, useState, useMemo, type ReactNode } from 'react';
+import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffUser } from '@/types';
+import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
 import { buildDailyReport } from '@/lib/dailyReport';
 import { exportJournalPdf, openJournalPrintDialog } from '@/lib/journalPdfFile';
@@ -10,6 +10,7 @@ import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, ChevronUp, ChevronDown, Wine, Recycle, MonitorDot, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, ArrowRightLeft, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
 import { SHOT_OPTIONS } from '@/lib/seed';
+import { StaffManager } from '@/components/Admin/StaffManager';
 
 interface Props {
   categories: Category[];
@@ -35,6 +36,15 @@ interface Props {
   pfandSettings: PfandSettings;
   onUpdatePfandSettings: (settings: PfandSettings) => void;
   getProductPfand: (product: Product, loc: Location) => number;
+  staffUsers?: StaffUser[];
+  staffOnline?: boolean;
+  onCreateStaff?: (name: string, role: StaffRole, initialPassword?: string) => Promise<unknown>;
+  onUpdateStaff?: (user: StaffUser) => Promise<unknown>;
+  onSetStaffPassword?: (id: string, password: string) => Promise<unknown>;
+  onDeleteStaff?: (id: string) => Promise<unknown>;
+  onChangeManagerPassword?: (currentPassword: string, nextPassword: string) => Promise<unknown>;
+  administratorTools?: ReactNode;
+  currentStaff?: StaffUser | null;
 }
 
 const COLOR_OPTIONS = [
@@ -51,7 +61,7 @@ const COLOR_OPTIONS = [
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
 export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, onExportBackup, onImportBackup, ...props }: Props) {
-  const [tab, setTab] = useState<'sessions' | 'categories' | 'products'>('sessions');
+  const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'staff'>('sessions');
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -82,6 +92,14 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
             }`}
           >
             <Package className="h-4 w-4" /> Artikel
+          </button>
+          <button
+            onClick={() => setTab('staff')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+              tab === 'staff' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" /> Benutzer
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -115,8 +133,10 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {tab === 'sessions' ? <LiveSessionOverview transactions={props.transactions} cashSessions={props.cashSessions} categories={props.categories} activeSession={props.activeSession} selectedLocation={props.selectedLocation} onSwitchLocation={props.onSwitchLocation} />
-          : tab === 'categories' ? <CategoryManager {...props} /> : <ProductManager {...props} />}
+        {tab === 'sessions' ? <LiveSessionOverview transactions={props.transactions} cashSessions={props.cashSessions} categories={props.categories} activeSession={props.activeSession} selectedLocation={props.selectedLocation} onSwitchLocation={props.onSwitchLocation} exportedByName={props.currentStaff?.name} />
+          : tab === 'categories' ? <CategoryManager {...props} />
+            : tab === 'products' ? <ProductManager {...props} />
+              : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
       {showReset && (
         <ResetConfirmDialog
@@ -666,15 +686,17 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
 
 // ---- Live Session Overview ----
 
-function LiveSessionOverview({ transactions, cashSessions, categories, activeSession, selectedLocation, onSwitchLocation }: {
+function LiveSessionOverview({ transactions, cashSessions, categories, activeSession, selectedLocation, onSwitchLocation, exportedByName }: {
   transactions: Transaction[];
   cashSessions: CashSession[];
   categories: Category[];
   activeSession: CashSession | null;
   selectedLocation: Location;
   onSwitchLocation: (loc: Location) => void;
+  exportedByName?: string;
 }) {
   const [selectedDate, setSelectedDate] = useState<string>(formatDateISO(Date.now()));
+  const [dateInput, setDateInput] = useState<string>(() => formatDateGermanFromISO(formatDateISO(Date.now())));
   const [infoLocation, setInfoLocation] = useState<Location | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -691,7 +713,12 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
   function shiftDate(days: number) {
     const d = new Date(selectedDate + 'T00:00:00');
     d.setDate(d.getDate() + days);
-    setSelectedDate(formatDateISO(d.getTime()));
+    setOverviewDate(formatDateISO(d.getTime()));
+  }
+
+  function setOverviewDate(next: string) {
+    setSelectedDate(next);
+    setDateInput(formatDateGermanFromISO(next));
   }
 
   const locationData = useMemo(() => {
@@ -721,7 +748,7 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
   }, [transactions, cashSessions, selectedDate]);
 
   function reportForLocation(loc: Location, txToday: Transaction[]) {
-    return buildDailyReport(loc, selectedDate, txToday, categories, cashSessions.filter((session) => session.location === loc && session.date === selectedDate));
+    return buildDailyReport(loc, selectedDate, txToday, categories, cashSessions.filter((session) => session.location === loc && session.date === selectedDate), exportedByName);
   }
 
   function exportLocation(loc: Location, txToday: Transaction[]) {
@@ -748,18 +775,26 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
           <div className="flex items-center gap-1.5 px-1">
             <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <input
-              type="date"
-              value={selectedDate}
-              max={formatDateISO(Date.now())}
-              onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-              className="bg-transparent text-sm font-semibold text-gray-900 focus:outline-none dark:text-gray-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer dark:[&::-webkit-calendar-picker-indicator]:invert"
+              type="text"
+              inputMode="numeric"
+              value={dateInput}
+              placeholder="TT.MM.JJJJ"
+              aria-label="Datum im Format Tag Monat Jahr"
+              onChange={(e) => {
+                const value = e.target.value;
+                setDateInput(value);
+                const parsed = parseGermanDate(value);
+                if (parsed && parsed <= formatDateISO(Date.now())) setSelectedDate(parsed);
+              }}
+              onBlur={() => setDateInput(formatDateGermanFromISO(selectedDate))}
+              className="w-24 bg-transparent text-center text-sm font-semibold text-gray-900 focus:outline-none dark:text-gray-100"
             />
           </div>
           <button onClick={() => shiftDate(1)} disabled={isToday} className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700" aria-label="Nächster Tag">
             <ChevronRight className="h-4 w-4" />
           </button>
           {!isToday && (
-            <button onClick={() => setSelectedDate(formatDateISO(Date.now()))} className="ml-1 rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40">
+            <button onClick={() => setOverviewDate(formatDateISO(Date.now()))} className="ml-1 rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40">
               Heute
             </button>
           )}
@@ -1260,12 +1295,12 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Tagesbuchungen zurücksetzen?</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Verkäufe und Kassensitzungen werden gelöscht</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Buchungen, Kassensitzungen und Benutzer werden zurückgesetzt</p>
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Dadurch werden <strong>alle Transaktionen und Kassensitzungen</strong> (Anfangsbestände, Einlagen, Abschlüsse) entfernt. Ihre <strong>Artikel und Warengruppen bleiben erhalten</strong>.<br /><br />
-          Die Löschung gilt auch in der Cloud. Alle verbundenen Geräte entfernen ihre alten Buchungen bei der nächsten Synchronisierung.<br /><br />
+          Dadurch werden <strong>alle Transaktionen und Kassensitzungen</strong> (Anfangsbestände, Einlagen, Abschlüsse) entfernt. Außerdem werden <strong>alle Mitarbeiter, Administratoren und deren persönliche Passwörter</strong> gelöscht. Das Passwort für Verwaltung und Journal wird wieder auf <strong>kasse</strong> gesetzt; der Cloud-Hauptzugang wird auf <strong>Admin / 123456</strong> zurückgesetzt.<br /><br />
+          Ihre <strong>Artikel, Warengruppen, Preise, Bilder und sonstigen Katalogdaten bleiben erhalten</strong>. Die Löschung gilt auch in der Cloud. Alle verbundenen Geräte übernehmen den Reset bei der nächsten Synchronisierung. Danach wird die Cloud-Anmeldung beendet; melden Sie sich anschließend wieder mit <strong>Admin / 123456</strong> an.<br /><br />
           <strong>Empfehlung:</strong> Sichern Sie die Daten zuerst als Backup-Datei, damit Sie sie später jederzeit wieder importieren und auswerten können — auch noch in kommenden Jahren.
         </p>
         {error && (
@@ -1288,7 +1323,7 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
             disabled={busy}
             className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
           >
-            <RotateCcw className="h-4 w-4" /> {busy ? 'Wird gelöscht …' : 'Buchungen jetzt löschen'}
+            <RotateCcw className="h-4 w-4" /> {busy ? 'Wird zurückgesetzt …' : 'Jetzt vollständig zurücksetzen'}
           </button>
           <button onClick={onCancel} disabled={busy} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
             Abbrechen

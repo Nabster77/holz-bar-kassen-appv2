@@ -9,19 +9,20 @@ export interface JournalReportData {
   transactions: Transaction[];
   categories: Category[];
   fileName: string;
-  employeeCode?: string;
+  /** Person, die den Export bzw. Druck ausgelöst hat. */
+  exportedByName?: string;
   cashAuditRecords?: CashAuditRecord[];
 }
 
 export interface CashAuditRecord {
   location: Location;
   timestamp: number;
-  kind: 'Einlage' | 'Ausgabe' | 'Korrektur' | 'Mitarbeiter angemeldet' | 'Mitarbeiter abgemeldet';
+  kind: 'Einlage' | 'Ausgabe' | 'Korrektur';
   amount?: number;
   oldAmount?: number;
   newAmount?: number;
   reason: string;
-  employeeCode: string;
+  employeeName?: string;
 }
 
 interface LocationStats {
@@ -142,26 +143,33 @@ function transactionRows(txs: Transaction[]): string {
   return [...txs].sort((a, b) => a.timestamp - b.timestamp)
     .map((tx, i) => {
       const txTax = [...getTaxByRate(tx).values()].reduce((s, v) => s + v, 0);
-      return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)} ${formatTime(tx.timestamp)}</td><td>${tx.items.length}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td><td>${tx.paymentMethod === 'cash' ? 'BAR' : 'KARTE'}</td><td>${escapeHtml(tx.employeeCode ?? '—')}</td></tr>`;
+      return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)}</td><td>${formatTime(tx.timestamp)}</td><td>${escapeHtml(tx.employeeName ?? '—')}</td><td>${tx.items.length}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td><td>${tx.paymentMethod === 'cash' ? 'BAR' : 'KARTE'}</td></tr>`;
     })
     .join('');
+}
+
+function transactionSection(txs: Transaction[], title: string): string {
+  return `<section class="report-table-section">
+    <h2>${title}</h2>
+    <table class="transaction-table"><thead><tr><th>#</th><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Artikel</th><th style="text-align:right">Betrag</th><th style="text-align:right">MwSt</th><th>Zahlart</th></tr></thead><tbody>${transactionRows(txs)}</tbody></table>
+  </section>`;
 }
 
 function auditRows(records: CashAuditRecord[]): string {
   return [...records].sort((a, b) => a.timestamp - b.timestamp).map((record) => {
     const value = record.kind === 'Korrektur'
       ? `${formatCurrency(record.oldAmount ?? 0)} → ${formatCurrency(record.newAmount ?? 0)}`
-      : record.kind === 'Einlage' || record.kind === 'Ausgabe'
-        ? `${record.kind === 'Einlage' ? '+' : '-'}${formatCurrency(record.amount ?? 0)}`
-        : '—';
-    return `<tr><td>${formatDate(record.timestamp)} ${formatTime(record.timestamp)}</td><td>${record.kind}</td><td style="text-align:right"><b>${value}</b></td><td>${escapeHtml(record.reason)}</td><td>${escapeHtml(record.employeeCode)}</td></tr>`;
+      : `${record.kind === 'Einlage' ? '+' : '-'}${formatCurrency(record.amount ?? 0)}`;
+    return `<tr><td>${formatDate(record.timestamp)}</td><td>${formatTime(record.timestamp)}</td><td>${escapeHtml(record.employeeName ?? '—')}</td><td>${record.kind}</td><td style="text-align:right"><b>${value}</b></td><td>${escapeHtml(record.reason)}</td></tr>`;
   }).join('');
 }
 
 function auditSection(records: CashAuditRecord[]): string {
   if (records.length === 0) return '';
-  return `<h2>Kassenbewegungen und Korrekturen – Mitarbeitende</h2>
-    <table class="audit-table"><thead><tr><th>Datum/Zeit</th><th>Vorgang</th><th style="text-align:right">Betrag / Änderung</th><th>Grund</th><th>Kürzel</th></tr></thead><tbody>${auditRows(records)}</tbody></table>`;
+  return `<section class="report-table-section">
+    <h2>Kassenbewegungen und Korrekturen</h2>
+    <table class="audit-table"><thead><tr><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Vorgang</th><th style="text-align:right">Betrag / Änderung</th><th>Grund</th></tr></thead><tbody>${auditRows(records)}</tbody></table>
+  </section>`;
 }
 
 function pfandSaldoDisplay(saldo: number): string {
@@ -210,7 +218,6 @@ function locationSection(loc: Location, txs: Transaction[], categories: Category
   const cats = categoryRows(txs, categories);
   const { rows: arts, bestRows } = articleRows(txs);
   const { cards: taxCds, columns } = taxCards(txs);
-  const txRows = transactionRows(txs);
   const isEmpty = txs.length === 0;
 
   return `<div class="loc-section" style="border-color:${meta.bar}">
@@ -231,8 +238,7 @@ function locationSection(loc: Location, txs: Transaction[], categories: Category
       <table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>
       <h2 style="color:${meta.color}">Bestseller (Top 10)</h2>
       <table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>
-      <h2 style="color:${meta.color}">Einzel-Bons (${txs.length})</h2>
-      <table><thead><tr><th>#</th><th>Datum/Zeit</th><th>Artikel</th><th style="text-align:right">Betrag</th><th style="text-align:right">MwSt</th><th>Zahlart</th><th>Kürzel</th></tr></thead><tbody>${txRows}</tbody></table>
+      ${transactionSection(txs, `Einzel-Bons (${txs.length})`).replace('<h2>', `<h2 style="color:${meta.color}">`)}
       ${auditSection(auditRecords)}
       `}
       ${isEmpty ? auditSection(auditRecords) : ''}
@@ -244,7 +250,6 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
   const cats = categoryRows(transactions, categories);
   const { rows: arts, bestRows } = articleRows(transactions);
   const { cards: taxCds, columns } = taxCards(transactions);
-  const txRows = transactionRows(transactions);
   const taxSummaryLine = Object.keys(stats.taxByRate).length > 0
     ? Object.entries(stats.taxByRate).map(([r, v]) => `MwSt ${r}%: ${formatCurrency(v)}`).join(' · ')
     : '—';
@@ -275,15 +280,14 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
       <table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>
       <h2>Bestseller (Top 10)</h2>
       <table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>
-      <h2>Einzel-Bons (${transactions.length})</h2>
-      <table><thead><tr><th>#</th><th>Datum/Zeit</th><th>Artikel</th><th style="text-align:right">Betrag</th><th style="text-align:right">MwSt</th><th>Zahlart</th><th>Kürzel</th></tr></thead><tbody>${txRows}</tbody></table>
+      ${transactionSection(transactions, `Einzel-Bons (${transactions.length})`)}
       ${auditSection(auditRecords)}
     </div>
   </div>`;
 }
 
 export function buildJournalHTML(data: JournalReportData): string {
-  const { headerLabel, location, transactions, categories, fileName, employeeCode, cashAuditRecords = [] } = data;
+  const { headerLabel, location, transactions, categories, fileName, exportedByName, cashAuditRecords = [] } = data;
   const generatedAt = new Date().toLocaleString('de-DE');
   const generatedTime = new Date().toLocaleTimeString('de-DE');
   const isBregenzReport = location.toLowerCase().includes('bregenz');
@@ -343,6 +347,7 @@ export function buildJournalHTML(data: JournalReportData): string {
     .header .report-details { display: flex; justify-content: center; align-items: center; gap: 14px; font-size: 17px; font-weight: 700; }
     .header .report-location, .header .report-time { color: var(--report-accent); }
     .header .report-time::before { content: '·'; color: #94a3b8; margin-right: 14px; }
+    .header .report-employee { margin-top: 6px; color: #334155; font-size: 13px; font-weight: 600; }
     .print-running-header, .print-running-footer { display: none; }
     h2 { font-size: 16px; margin-top: 20px; margin-bottom: 8px; color: #1e3a5f; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
@@ -385,6 +390,7 @@ export function buildJournalHTML(data: JournalReportData): string {
       .header h1 { font-size: 22pt; margin-bottom: 2mm; }
       .header .report-period { font-size: 13pt; margin-bottom: 2mm; }
       .header .report-details { font-size: 13pt; gap: 3mm; }
+      .header .report-employee { margin-top: 2mm; font-size: 10pt; }
       .footer { display: block; margin-top: 7mm; padding-top: 3mm; font-size: 8pt; }
       .loc-section { border: 0 !important; border-radius: 0; overflow: visible; margin: 0 0 8mm; }
       .loc-header { break-after: avoid; page-break-after: avoid; border-radius: 3mm; padding: 4mm 5mm; }
@@ -396,6 +402,8 @@ export function buildJournalHTML(data: JournalReportData): string {
       .tax-section { gap: 3mm; margin-bottom: 4mm; break-inside: avoid; page-break-inside: avoid; }
       .tax-card .row { font-size: 9pt; }
       h2 { break-after: avoid; page-break-after: avoid; margin-top: 5mm; margin-bottom: 2mm; font-size: 13pt; }
+      .report-table-section { break-inside: auto; page-break-inside: auto; }
+      .report-table-section > h2 { break-after: avoid; page-break-after: avoid; }
       table { margin-bottom: 4mm; font-size: 9.5pt; }
       thead { display: table-header-group; }
       tr, td, th { break-inside: avoid; page-break-inside: avoid; }
@@ -414,7 +422,7 @@ export function buildJournalHTML(data: JournalReportData): string {
       ${location ? `<span class="report-location">${escapeHtml(location)}</span>` : ''}
       <span class="report-time">${generatedTime} Uhr</span>
     </div>
-    ${employeeCode ? `<div class="report-period" style="color:${reportAccent}; margin-top:7px">Tagesabschluss-Kürzel: ${escapeHtml(employeeCode)}</div>` : ''}
+    <div class="report-employee">Mitarbeiter: ${escapeHtml(exportedByName ?? 'Nicht angemeldet')}</div>
   </div>
   ${body}
   <div class="footer">Kassenjournal automatisch generiert | ${generatedAt}</div>

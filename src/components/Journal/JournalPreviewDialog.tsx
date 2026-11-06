@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Printer, Download, Loader2 } from 'lucide-react';
 import { buildJournalHTML, type JournalReportData } from '@/lib/journalPdf';
-import { saveJournalPdf } from '@/lib/journalPdfFile';
+import { exportJournalPdf } from '@/lib/journalPdfFile';
 
 export function JournalPreviewDialog({ data, onClose }: { data: JournalReportData; onClose: () => void }) {
   const html = useMemo(() => buildJournalHTML(data), [data]);
@@ -28,7 +28,7 @@ export function JournalPreviewDialog({ data, onClose }: { data: JournalReportDat
     setSaving(true);
     setError(null);
     try {
-      await saveJournalPdf(data);
+      await exportJournalPdf(data);
     } catch {
       setError('Die PDF-Datei konnte nicht erstellt werden. Bitte erneut versuchen.');
     } finally {

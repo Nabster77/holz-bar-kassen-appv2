@@ -1,9 +1,17 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useStore } from '@/hooks/useStore';
 import { useCloudSync } from '@/hooks/useCloudSync';
 import { useCatalogSync } from '@/hooks/useCatalogSync';
 import { useAuthUser } from '@/hooks/useAuthUser';
+import { useStaffDirectory } from '@/hooks/useStaffDirectory';
+import { StaffLoginDialog } from '@/components/StaffLoginDialog';
+import { RootPasswordWarning } from '@/components/RootPasswordWarning';
+import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
+import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
+import { changeManagerPassword, resetManagerPassword } from '@/lib/managerAuth';
+import { supabase } from '@/lib/supabaseClient';
+import type { StaffUser } from '@/types';
 import { POSScreen } from '@/components/POS/POSScreen';
 import { AdminScreen } from '@/components/Admin/AdminScreen';
 import { JournalScreen } from '@/components/Journal/JournalScreen';
@@ -16,7 +24,7 @@ import { rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
 import { discardEntriesBeforeGeneration } from '@/lib/outbox';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
-import { isTestMode, setTestMode, clearBookings } from '@/lib/storage';
+import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { formatDateISO } from '@/lib/format';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon, Lock,
@@ -30,11 +38,6 @@ type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
 export default function App() {
   const { theme, toggle } = useTheme();
   const store = useStore();
-  const activeEmployeeIsLoggedIn = Boolean(
-    store.activeSession?.activeEmployeeCode === undefined
-      ? store.activeSession?.employeeCode
-      : store.activeSession?.activeEmployeeCode,
-  );
   const [tab, setTab] = useState<Tab>('pos');
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
@@ -43,7 +46,12 @@ export default function App() {
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const closeSyncToast = useCallback(() => setSyncedAt(null), []);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
+  const [lastStaffId, setLastStaffId] = useState<string | null>(() => loadJSON<string | null>(STORAGE_KEYS.lastStaffId, null));
+  const [staffAdminLoginOpen, setStaffAdminLoginOpen] = useState(false);
+  const [rootWarningOpen, setRootWarningOpen] = useState(() => !loadJSON<boolean>(STORAGE_KEYS.rootPasswordChanged, false) && !loadJSON<boolean>(STORAGE_KEYS.rootPasswordNoticeDismissed, false));
   const signedInUser = useAuthUser();
+  const staff = useStaffDirectory();
   const catalog = useCatalogSync({
     categories: store.categories,
     products: store.products,
@@ -60,6 +68,22 @@ export default function App() {
     catalog.syncCatalog,
     store.applyCloudBookingReset,
   );
+
+  // The browser profile may be new while the personnel list already exists in
+  // the cloud. Load it again once the cloud session is definitely available.
+  useEffect(() => {
+    if (signedInUser && online) void staff.sync().catch(() => undefined);
+  }, [online, signedInUser, staff.sync]);
+
+  const syncEverything = useCallback(async () => {
+    const result = await syncNow();
+    try {
+      await staff.sync();
+      return result;
+    } catch (cause) {
+      return { ok: false, error: readableSyncError(cause) };
+    }
+  }, [staff.sync, syncNow]);
 
   // The store reads test-mode at module init; switching requires a reload.
   function applyModeChange() {
@@ -82,6 +106,13 @@ export default function App() {
   }
 
   async function resetBookings() {
+    // This is the explicit, administrator-triggered complete operating reset.
+    // Product/catalog data is intentionally not touched here.
+    if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+    const { error: passwordError } = await supabase.auth.updateUser({ password: '123456' });
+    // Supabase rejects a no-op password change. For the reset that simply
+    // means the required default password is already in place.
+    if (passwordError && !/different from the old password/i.test(passwordError.message)) throw passwordError;
     if (!testMode) {
       const reset = await resetCloudBookings();
       // Do not leave pre-reset offline uploads behind on the device that
@@ -89,12 +120,47 @@ export default function App() {
       await discardEntriesBeforeGeneration(reset.generation);
       rememberBookingReset(reset);
     }
+    await staff.resetAll();
     store.resetAllData();
+    resetManagerPassword();
+    saveJSON(STORAGE_KEYS.rootPasswordChanged, false);
+    saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, false);
+    setCurrentStaff(null);
+    setLastStaffId(null);
+    saveJSON(STORAGE_KEYS.lastStaffId, null);
+    setAdminUnlocked(false);
+    // End the current cloud session so the restored Admin / 123456 access is
+    // actually required on the next app start.
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+    if (signOutError) throw signOutError;
   }
 
   function navigateTo(nextTab: Tab) {
     if (nextTab === 'pos') setAdminUnlocked(false);
     setTab(nextTab);
+  }
+
+  function recordStaff(type: 'login' | 'logout', user: StaffUser) {
+    if (!store.activeSession) return;
+    store.recordStaffActivity(store.activeSession.id, {
+      id: `activity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      staffId: user.id,
+      staffName: user.name,
+      timestamp: Date.now(),
+    });
+  }
+
+  function handleStaffAuthenticated(user: StaffUser) {
+    setCurrentStaff(user);
+    setLastStaffId(user.id);
+    saveJSON(STORAGE_KEYS.lastStaffId, user.id);
+    recordStaff('login', user);
+  }
+
+  function handleStaffLogout() {
+    if (currentStaff) recordStaff('logout', currentStaff);
+    setCurrentStaff(null);
   }
 
   return (
@@ -119,7 +185,7 @@ export default function App() {
           <TabButton active={tab === 'pos'} onClick={() => navigateTo('pos')} icon={<ShoppingCart className="h-4 w-4" />} label="Kasse" />
 
           {/* Cash management buttons - only when on POS tab and session is open */}
-          {tab === 'pos' && store.activeSession && activeEmployeeIsLoggedIn && (
+          {tab === 'pos' && store.activeSession && currentStaff && (
             <>
               <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
               <CashActionButton
@@ -199,34 +265,40 @@ export default function App() {
             products={store.products}
             activeSession={store.activeSession}
             transactions={store.transactions}
-            onCheckout={store.addTransaction}
-            onOpenCash={store.openCashSession}
-            onCorrectOpening={(amt, reason, employeeCode) => {
-              if (store.activeSession) store.correctOpeningBalance(store.activeSession.id, amt, reason, employeeCode);
+            onCheckout={(tx) => {
+              if (!currentStaff) return;
+              store.addTransaction({ ...tx, employeeId: currentStaff.id, employeeName: currentStaff.name });
+              if (store.activeSession) store.recordStaffActivity(store.activeSession.id, { id: `activity-${Date.now().toString(36)}`, type: 'sale', staffId: currentStaff.id, staffName: currentStaff.name, timestamp: tx.timestamp, amount: tx.total });
             }}
-            onCashEntry={(type, amt, reason, employeeCode, isPfandRetoure = false) => {
-              if (store.activeSession) store.addCashEntry(store.activeSession.id, type, amt, reason, employeeCode, isPfandRetoure);
+            onOpenCash={(location, balance) => currentStaff && store.openCashSession(location, balance, currentStaff)}
+            onCorrectOpening={(amt, reason) => {
+              if (store.activeSession && currentStaff) store.correctOpeningBalance(store.activeSession.id, amt, reason, currentStaff);
             }}
-            onEmployeeLogout={() => {
-              if (store.activeSession) store.logoutEmployee(store.activeSession.id);
+            onCashEntry={(type, amt, reason, isPfandRetoure = false) => {
+              if (store.activeSession && currentStaff) store.addCashEntry(store.activeSession.id, type, amt, reason, isPfandRetoure, currentStaff);
             }}
-            onEmployeeLogin={(employeeCode) => {
-              if (store.activeSession) store.loginEmployee(store.activeSession.id, employeeCode);
-            }}
-            onCloseCash={(bal, closingEmployeeCode) => {
+            onCloseCash={(bal) => {
               const session = store.activeSession;
-              if (!session) return;
-              store.closeCashSession(session.id, bal, closingEmployeeCode);
-              void saveJournalPdf(closedSessionReport({ ...session, closed: true, closedAt: Date.now(), closingEmployeeCode: closingEmployeeCode || session.employeeCode }, store.transactions, store.categories)).catch(() =>
+              if (!session || !currentStaff) return;
+              store.closeCashSession(session.id, bal, currentStaff);
+              void saveJournalPdf(closedSessionReport({ ...session, closed: true, closedAt: Date.now() }, store.transactions, store.categories, currentStaff.name)).catch(() =>
                 alert('Der Tagesbericht-PDF konnte nicht erstellt werden. Er kann im Journal nachträglich exportiert werden.'),
               );
             }}
-            onEnterAdmin={() => { setAdminUnlocked(true); navigateTo('admin'); }}
+            onEnterAdmin={() => navigateTo('admin')}
             onMoveProduct={(sourceId, targetId) => store.moveProductTo(sourceId, targetId)}
             headerAction={headerAction}
             onHeaderActionConsumed={() => setHeaderAction(null)}
             selectedLocation={store.selectedLocation}
             pfandSettings={store.pfandSettings}
+            staffUsers={staff.users}
+            currentStaff={currentStaff}
+            online={online}
+            onStaffAuthenticated={handleStaffAuthenticated}
+            onSetStaffPassword={staff.setPassword}
+            onResetStaffPassword={staff.resetPassword}
+            lastStaffId={lastStaffId}
+            onStaffLogout={handleStaffLogout}
           />
         )}
         {tab === 'admin' && (
@@ -251,6 +323,15 @@ export default function App() {
               pfandSettings={store.pfandSettings}
               onUpdatePfandSettings={store.updatePfandSettings}
               getProductPfand={store.getProductPfand}
+              staffUsers={staff.users}
+              staffOnline={online}
+              onCreateStaff={staff.create}
+              onUpdateStaff={staff.update}
+              onSetStaffPassword={staff.setPassword}
+              onDeleteStaff={staff.remove}
+              currentStaff={currentStaff}
+              onChangeManagerPassword={(currentPassword, nextPassword) => changeManagerPassword(currentPassword, nextPassword, staff.users.some((user) => user.role === 'administrator' && user.active && !!user.passwordHash))}
+              administratorTools={currentStaff?.role === 'administrator' ? <><ManagerPasswordPanel online={online} hasAdministrator={staff.users.some((user) => user.role === 'administrator' && user.active && !!user.passwordHash)} onChange={(currentPassword, nextPassword) => changeManagerPassword(currentPassword, nextPassword, true)} /><CloudPasswordPanel onChanged={() => { saveJSON(STORAGE_KEYS.rootPasswordChanged, true); saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); }} /></> : undefined}
               testMode={testMode}
               onToggleMode={() => setModeConfirm(testMode ? 'to-active' : 'to-test')}
               onExportBackup={() => {
@@ -281,7 +362,7 @@ export default function App() {
               }}
             />
           ) : (
-            <PasswordGate onSuccess={() => setAdminUnlocked(true)} title="Verwaltung — Passwort erforderlich" />
+            <AdminAccessGate onManagerSuccess={() => setAdminUnlocked(true)} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Verwaltung" />
           )
         )}
         {modeConfirm && (
@@ -298,18 +379,48 @@ export default function App() {
               categories={store.categories}
               cashSessions={store.cashSessions}
               defaultLocation={store.selectedLocation}
+              currentStaff={currentStaff}
             />
           ) : (
-            <PasswordGate onSuccess={() => setAdminUnlocked(true)} title="Journal — Passwort erforderlich" />
+            <AdminAccessGate onManagerSuccess={() => setAdminUnlocked(true)} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Journal" />
           )
         )}
       </main>
       {syncedAt !== null && <SyncToast key={syncedAt} onClose={closeSyncToast} />}
-      {syncOpen && <SyncDialog syncNow={syncNow} onClose={() => setSyncOpen(false)} />}
+      {syncOpen && <SyncDialog syncNow={syncEverything} onClose={() => setSyncOpen(false)} />}
       {catalog.conflict && <CatalogConflictDialog onChoose={catalog.resolveConflict} />}
+      {staffAdminLoginOpen && (
+        <StaffLoginDialog
+          users={staff.users}
+          allowedRoles={['administrator']}
+          online={online}
+          title="Administrator anmelden"
+          onAuthenticated={() => { setAdminUnlocked(true); setStaffAdminLoginOpen(false); }}
+          onSetPassword={staff.setPassword}
+          onResetPassword={staff.resetPassword}
+          initialStaffId={lastStaffId}
+          onCancel={() => setStaffAdminLoginOpen(false)}
+        />
+      )}
       <InstallPrompt />
+      <RootPasswordWarning visible={signedInUser === 'admin' && rootWarningOpen} onClose={() => { saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); setRootWarningOpen(false); }} />
     </div>
   );
+}
+
+function readableSyncError(cause: unknown): string {
+  if (cause instanceof Error) return cause.message;
+  if (typeof cause === 'object' && cause !== null) {
+    const error = cause as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const parts = [error.message, error.details, error.hint, error.code]
+      .filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
+    if (parts.length > 0) return parts.join(' · ');
+  }
+  return String(cause);
+}
+
+function AdminAccessGate({ onManagerSuccess, onStaffLogin, staffUsers, title }: { onManagerSuccess: () => void; onStaffLogin: () => void; staffUsers: StaffUser[]; title: string }) {
+  return <PasswordGate onSuccess={onManagerSuccess} onStaffLogin={onStaffLogin} administrators={staffUsers} title={title} />;
 }
 
 function TabButton({ active, onClick, icon, label, locked }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; locked?: boolean }) {

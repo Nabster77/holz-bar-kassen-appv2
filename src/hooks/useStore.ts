@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings } from '@/types';
+import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings, StaffActivity, StaffUser } from '@/types';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { seedCategories, seedProducts, DEFAULT_PFAND_SETTINGS } from '@/lib/seed';
 import { formatDateISO } from '@/lib/format';
@@ -151,7 +151,7 @@ export function useStore() {
     }
   }, [activeSession, selectedLocation]);
 
-  const openCashSession = useCallback((location: Location, openingBalance: number, employeeCode: string) => {
+  const openCashSession = useCallback((location: Location, openingBalance: number, staff?: StaffUser) => {
     setSelectedLocation(location);
     const openedAt = Date.now();
     const session: CashSession = {
@@ -160,43 +160,17 @@ export function useStore() {
       location,
       openingBalance,
       openedAt,
-      employeeCode,
-      activeEmployeeCode: employeeCode,
-      employeeEvents: [{ id: uid('employee'), type: 'login', employeeCode, timestamp: openedAt }],
       corrections: [],
       entries: [],
       closed: false,
+      openedById: staff?.id,
+      openedByName: staff?.name,
+      activities: staff ? [{ id: uid('activity'), type: 'cash_opened', staffId: staff.id, staffName: staff.name, timestamp: openedAt, amount: openingBalance }] : [],
     };
     setCashSessions((ss) => [...ss.filter((s) => !(s.date === session.date && s.location === location && !s.closed)), session]);
   }, []);
 
-  const logoutEmployee = useCallback((sessionId: string) => {
-    setCashSessions((ss) => ss.map((s) => {
-      if (s.id !== sessionId || s.closed) return s;
-      const employeeCode = s.activeEmployeeCode === undefined ? s.employeeCode : s.activeEmployeeCode;
-      if (!employeeCode) return s;
-      return {
-        ...s,
-        activeEmployeeCode: null,
-        employeeEvents: [...(s.employeeEvents ?? []), { id: uid('employee'), type: 'logout', employeeCode, timestamp: Date.now() }],
-      };
-    }));
-  }, []);
-
-  const loginEmployee = useCallback((sessionId: string, employeeCode: string) => {
-    const normalized = employeeCode.trim().toUpperCase();
-    if (!normalized) return;
-    setCashSessions((ss) => ss.map((s) => {
-      if (s.id !== sessionId || s.closed || s.activeEmployeeCode) return s;
-      return {
-        ...s,
-        activeEmployeeCode: normalized,
-        employeeEvents: [...(s.employeeEvents ?? []), { id: uid('employee'), type: 'login', employeeCode: normalized, timestamp: Date.now() }],
-      };
-    }));
-  }, []);
-
-  const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, employeeCode: string) => {
+  const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, staff?: StaffUser) => {
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
@@ -206,33 +180,36 @@ export function useStore() {
           newAmount,
           reason,
           timestamp: Date.now(),
-          employeeCode,
+          employeeId: staff?.id,
+          employeeName: staff?.name,
         };
         return {
           ...s,
           openingBalance: newAmount,
           corrections: [...s.corrections, correction],
+          activities: staff ? [...(s.activities ?? []), { id: uid('activity'), type: 'correction', staffId: staff.id, staffName: staff.name, timestamp: correction.timestamp, reason }] : s.activities,
         };
       }),
     );
   }, []);
 
-  const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, employeeCode: string, isPfandRetoure = false) => {
+  const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure = false, staff?: StaffUser) => {
     const entry: CashEntry = {
       id: uid('entry'),
       type,
       amount,
       reason,
       timestamp: Date.now(),
-      employeeCode,
       isPfandRetoure,
+      employeeId: staff?.id,
+      employeeName: staff?.name,
     };
     setCashSessions((ss) =>
-      ss.map((s) => (s.id === sessionId && !s.closed ? { ...s, entries: [...s.entries, entry] } : s)),
+      ss.map((s) => (s.id === sessionId && !s.closed ? { ...s, entries: [...s.entries, entry], activities: staff ? [...(s.activities ?? []), { id: uid('activity'), type, staffId: staff.id, staffName: staff.name, timestamp: entry.timestamp, amount, reason }] : s.activities } : s)),
     );
   }, []);
 
-  const closeCashSession = useCallback((sessionId: string, closingBalance: number, closingEmployeeCode?: string) => {
+  const closeCashSession = useCallback((sessionId: string, closingBalance: number, staff?: StaffUser) => {
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
@@ -251,11 +228,17 @@ export function useStore() {
           closingBalance,
           expectedBalance: expected,
           difference: closingBalance - expected,
-          closingEmployeeCode: closingEmployeeCode || s.employeeCode,
+          closedById: staff?.id,
+          closedByName: staff?.name,
+          activities: staff ? [...(s.activities ?? []), { id: uid('activity'), type: 'cash_closed', staffId: staff.id, staffName: staff.name, timestamp: Date.now(), amount: closingBalance }] : s.activities,
         };
       }),
     );
   }, [transactions]);
+
+  const recordStaffActivity = useCallback((sessionId: string, activity: StaffActivity) => {
+    setCashSessions((ss) => ss.map((session) => session.id === sessionId && !session.closed ? { ...session, activities: [...(session.activities ?? []), activity] } : session));
+  }, []);
 
   const resetAllData = useCallback(() => {
     setTransactions([]);
@@ -408,9 +391,8 @@ export function useStore() {
     openCashSession,
     correctOpeningBalance,
     addCashEntry,
-    logoutEmployee,
-    loginEmployee,
     closeCashSession,
+    recordStaffActivity,
     switchLocation,
     mergeCloudData,
     applyCatalogRows,
