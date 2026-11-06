@@ -16,7 +16,7 @@ export interface JournalReportData {
 export interface CashAuditRecord {
   location: Location;
   timestamp: number;
-  kind: 'Einlage' | 'Ausgabe' | 'Korrektur';
+  kind: 'Einlage' | 'Ausgabe' | 'Korrektur' | 'Mitarbeiter angemeldet' | 'Mitarbeiter abgemeldet';
   amount?: number;
   oldAmount?: number;
   newAmount?: number;
@@ -151,7 +151,9 @@ function auditRows(records: CashAuditRecord[]): string {
   return [...records].sort((a, b) => a.timestamp - b.timestamp).map((record) => {
     const value = record.kind === 'Korrektur'
       ? `${formatCurrency(record.oldAmount ?? 0)} → ${formatCurrency(record.newAmount ?? 0)}`
-      : `${record.kind === 'Einlage' ? '+' : '-'}${formatCurrency(record.amount ?? 0)}`;
+      : record.kind === 'Einlage' || record.kind === 'Ausgabe'
+        ? `${record.kind === 'Einlage' ? '+' : '-'}${formatCurrency(record.amount ?? 0)}`
+        : '—';
     return `<tr><td>${formatDate(record.timestamp)} ${formatTime(record.timestamp)}</td><td>${record.kind}</td><td style="text-align:right"><b>${value}</b></td><td>${escapeHtml(record.reason)}</td><td>${escapeHtml(record.employeeCode)}</td></tr>`;
   }).join('');
 }

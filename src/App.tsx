@@ -30,6 +30,11 @@ type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
 export default function App() {
   const { theme, toggle } = useTheme();
   const store = useStore();
+  const activeEmployeeIsLoggedIn = Boolean(
+    store.activeSession?.activeEmployeeCode === undefined
+      ? store.activeSession?.employeeCode
+      : store.activeSession?.activeEmployeeCode,
+  );
   const [tab, setTab] = useState<Tab>('pos');
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
@@ -114,7 +119,7 @@ export default function App() {
           <TabButton active={tab === 'pos'} onClick={() => navigateTo('pos')} icon={<ShoppingCart className="h-4 w-4" />} label="Kasse" />
 
           {/* Cash management buttons - only when on POS tab and session is open */}
-          {tab === 'pos' && store.activeSession && (
+          {tab === 'pos' && store.activeSession && activeEmployeeIsLoggedIn && (
             <>
               <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
               <CashActionButton
@@ -201,6 +206,12 @@ export default function App() {
             }}
             onCashEntry={(type, amt, reason, employeeCode, isPfandRetoure = false) => {
               if (store.activeSession) store.addCashEntry(store.activeSession.id, type, amt, reason, employeeCode, isPfandRetoure);
+            }}
+            onEmployeeLogout={() => {
+              if (store.activeSession) store.logoutEmployee(store.activeSession.id);
+            }}
+            onEmployeeLogin={(employeeCode) => {
+              if (store.activeSession) store.loginEmployee(store.activeSession.id, employeeCode);
             }}
             onCloseCash={(bal, closingEmployeeCode) => {
               const session = store.activeSession;

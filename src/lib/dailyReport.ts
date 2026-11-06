@@ -21,6 +21,13 @@ export function cashAuditRecordsFromSessions(sessions: CashSession[]): CashAudit
       location: session.location, timestamp: correction.timestamp, kind: 'Korrektur', oldAmount: correction.oldAmount,
       newAmount: correction.newAmount, reason: correction.reason, employeeCode: correction.employeeCode ?? session.employeeCode ?? '—',
     })),
+    ...(session.employeeEvents ?? []).map((event): CashAuditRecord => ({
+      location: session.location,
+      timestamp: event.timestamp,
+      kind: event.type === 'login' ? 'Mitarbeiter angemeldet' : 'Mitarbeiter abgemeldet',
+      reason: event.type === 'login' ? 'Anmeldung an der aktiven Kasse' : 'Abmeldung von der aktiven Kasse',
+      employeeCode: event.employeeCode,
+    })),
   ]);
 }
 

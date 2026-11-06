@@ -33,7 +33,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
   const [manualBalance, setManualBalance] = useState('');
   const [useCounting, setUseCounting] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
-  const [employeeCode, setEmployeeCode] = useState(session.employeeCode ?? '');
+  const employeeCode = session.employeeCode ?? '—';
 
   const sessionTx = useMemo(
     () => transactions.filter((t) => {
@@ -68,13 +68,13 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
   const diff = closingBalance - expected;
 
   function handleClose() {
-    if (isNaN(closingBalance) || closingBalance < 0 || !confirmed || !employeeCode.trim()) return;
-    onClose(Math.round(closingBalance * 100) / 100, employeeCode.trim().toUpperCase());
+    if (isNaN(closingBalance) || closingBalance < 0 || !confirmed) return;
+    onClose(Math.round(closingBalance * 100) / 100, session.employeeCode);
   }
 
   function handlePDFExport() {
     const b = hasInput && !isNaN(closingBalance) ? closingBalance : expected;
-    generatePDF({ ...session, closingEmployeeCode: employeeCode.trim().toUpperCase() || session.employeeCode }, sessionTx, { txTotal, taxByRate: Object.fromEntries(taxByRate), totalNet, deposits, withdrawals, expected, closingBalance: b, difference: b - expected });
+    generatePDF({ ...session, closed: true, closedAt: Date.now(), closingEmployeeCode: session.employeeCode }, sessionTx, { txTotal, taxByRate: Object.fromEntries(taxByRate), totalNet, deposits, withdrawals, expected, closingBalance: b, difference: b - expected });
   }
 
   return (
@@ -165,11 +165,23 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
             </div>
           )}
 
+          {(session.employeeEvents?.length ?? 0) > 0 && (
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Mitarbeiter-An- und Abmeldungen</p>
+              <div className="space-y-1">
+                {session.employeeEvents!.map((event) => (
+                  <div key={event.id} className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <span>{formatTime(event.timestamp)} · Mitarbeiter {event.type === 'login' ? 'angemeldet' : 'abgemeldet'} · Kürzel: <b>{event.employeeCode}</b></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mb-4 rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-            <label className="mb-1 block text-base font-bold text-blue-900 dark:text-blue-100">Mitarbeiter-Kürzel für den Tagesabschluss</label>
-            <input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())} maxLength={8} autoCapitalize="characters" placeholder="z.B. AB"
-              className="w-full rounded-xl border border-blue-300 bg-white px-3 py-2.5 text-lg font-bold uppercase text-blue-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-100" />
-            <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">Dieses Kürzel wird im Tagesabschluss gespeichert und hervorgehoben ausgegeben.</p>
+            <p className="text-base font-bold text-blue-900 dark:text-blue-100">Kasse eröffnet durch</p>
+            <p className="mt-1 text-2xl font-bold uppercase text-blue-700 dark:text-blue-300">{employeeCode}</p>
+            <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">Das Eröffnungskürzel ist im Tagesabschluss fest gespeichert und kann nicht geändert werden.</p>
           </div>
 
           {/* Closing balance: counting or manual */}
@@ -271,7 +283,7 @@ export function DailyCloseDialog({ session, transactions, onClose, onCancel }: P
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
             <FileDown className="h-4 w-4" /> PDF-Export
           </button>
-          <button onClick={handleClose} disabled={isNaN(closingBalance) || closingBalance < 0 || !confirmed || !employeeCode.trim()}
+          <button onClick={handleClose} disabled={isNaN(closingBalance) || closingBalance < 0 || !confirmed}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
             <Check className="h-4 w-4" /> Endgültig abschließen
           </button>
@@ -332,6 +344,13 @@ function generatePDF(
       value: `${formatCurrency(correction.oldAmount)} → ${formatCurrency(correction.newAmount)}`,
       reason: correction.reason,
       employeeCode: correction.employeeCode ?? session.employeeCode ?? '—',
+    })),
+    ...(session.employeeEvents ?? []).map((event) => ({
+      timestamp: event.timestamp,
+      kind: event.type === 'login' ? 'Mitarbeiter angemeldet' : 'Mitarbeiter abgemeldet',
+      value: '—',
+      reason: event.type === 'login' ? 'Anmeldung an der aktiven Kasse' : 'Abmeldung von der aktiven Kasse',
+      employeeCode: event.employeeCode,
     })),
   ].sort((a, b) => a.timestamp - b.timestamp)
     .map((row) => `<tr><td>${formatWeekdayShort(row.timestamp)}, ${new Date(row.timestamp).toLocaleDateString('de-DE')} ${formatTime(row.timestamp)}</td><td>${row.kind}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.employeeCode)}</td></tr>`)

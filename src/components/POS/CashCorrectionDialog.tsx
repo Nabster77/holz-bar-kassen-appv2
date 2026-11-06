@@ -12,7 +12,7 @@ interface Props {
 export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
   const [newAmount, setNewAmount] = useState(String(session.openingBalance));
   const [reason, setReason] = useState('');
-  const [employeeCode, setEmployeeCode] = useState(session.employeeCode ?? '');
+  const employeeCode = session.activeEmployeeCode ?? session.employeeCode ?? '';
 
   function handleSave() {
     const a = parseFloat(newAmount.replace(',', '.'));
@@ -45,10 +45,9 @@ export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="z.B. Zählfehler bei Eröffnung" rows={2}
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Mitarbeiter-Kürzel</label>
-            <input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())} placeholder="z.B. AB" maxLength={8} autoCapitalize="characters"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold uppercase text-gray-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Buchendes Mitarbeiter-Kürzel</p>
+            <p className="mt-1 text-xl font-bold uppercase text-amber-800 dark:text-amber-200">{employeeCode || '—'}</p>
           </div>
           <button onClick={handleSave} disabled={!newAmount || !reason.trim() || !employeeCode.trim()}
             className="w-full rounded-xl bg-amber-600 py-3 text-base font-semibold text-white shadow-md transition hover:bg-amber-700 active:scale-95 disabled:opacity-50">

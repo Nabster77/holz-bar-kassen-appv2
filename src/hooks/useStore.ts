@@ -153,18 +153,47 @@ export function useStore() {
 
   const openCashSession = useCallback((location: Location, openingBalance: number, employeeCode: string) => {
     setSelectedLocation(location);
+    const openedAt = Date.now();
     const session: CashSession = {
       id: uid('session'),
       date: formatDateISO(Date.now()),
       location,
       openingBalance,
-      openedAt: Date.now(),
+      openedAt,
       employeeCode,
+      activeEmployeeCode: employeeCode,
+      employeeEvents: [{ id: uid('employee'), type: 'login', employeeCode, timestamp: openedAt }],
       corrections: [],
       entries: [],
       closed: false,
     };
     setCashSessions((ss) => [...ss.filter((s) => !(s.date === session.date && s.location === location && !s.closed)), session]);
+  }, []);
+
+  const logoutEmployee = useCallback((sessionId: string) => {
+    setCashSessions((ss) => ss.map((s) => {
+      if (s.id !== sessionId || s.closed) return s;
+      const employeeCode = s.activeEmployeeCode === undefined ? s.employeeCode : s.activeEmployeeCode;
+      if (!employeeCode) return s;
+      return {
+        ...s,
+        activeEmployeeCode: null,
+        employeeEvents: [...(s.employeeEvents ?? []), { id: uid('employee'), type: 'logout', employeeCode, timestamp: Date.now() }],
+      };
+    }));
+  }, []);
+
+  const loginEmployee = useCallback((sessionId: string, employeeCode: string) => {
+    const normalized = employeeCode.trim().toUpperCase();
+    if (!normalized) return;
+    setCashSessions((ss) => ss.map((s) => {
+      if (s.id !== sessionId || s.closed || s.activeEmployeeCode) return s;
+      return {
+        ...s,
+        activeEmployeeCode: normalized,
+        employeeEvents: [...(s.employeeEvents ?? []), { id: uid('employee'), type: 'login', employeeCode: normalized, timestamp: Date.now() }],
+      };
+    }));
   }, []);
 
   const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, employeeCode: string) => {
@@ -379,6 +408,8 @@ export function useStore() {
     openCashSession,
     correctOpeningBalance,
     addCashEntry,
+    logoutEmployee,
+    loginEmployee,
     closeCashSession,
     switchLocation,
     mergeCloudData,

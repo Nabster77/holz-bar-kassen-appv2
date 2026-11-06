@@ -13,7 +13,7 @@ interface Props {
 export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
-  const [employeeCode, setEmployeeCode] = useState(session.employeeCode ?? '');
+  const employeeCode = session.activeEmployeeCode ?? session.employeeCode ?? '';
   const isDeposit = type === 'deposit';
 
   function handleSave() {
@@ -48,10 +48,9 @@ export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isDeposit ? 'z.B. Wechselgeld aufgefüllt' : 'z.B. Privatentnahme'}
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Mitarbeiter-Kürzel</label>
-            <input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value.toUpperCase())} placeholder="z.B. AB" maxLength={8} autoCapitalize="characters"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold uppercase text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Buchendes Mitarbeiter-Kürzel</p>
+            <p className="mt-1 text-xl font-bold uppercase text-blue-800 dark:text-blue-200">{employeeCode || '—'}</p>
           </div>
           <button onClick={handleSave} disabled={!amount || !reason.trim() || !employeeCode.trim()}
             className={`w-full rounded-xl py-3 text-base font-semibold text-white shadow-md transition active:scale-95 disabled:opacity-50 ${isDeposit ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}`}>

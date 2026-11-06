@@ -106,6 +106,14 @@ export interface CashCorrection {
   employeeCode?: string;
 }
 
+/** Nachvollziehbare Anmeldung bzw. Abmeldung an einer weiterhin offenen Kasse. */
+export interface CashEmployeeEvent {
+  id: string;
+  type: 'login' | 'logout';
+  employeeCode: string;
+  timestamp: number;
+}
+
 export interface CashSession {
   id: string;
   date: string; // ISO date string (YYYY-MM-DD)
@@ -114,6 +122,9 @@ export interface CashSession {
   openedAt: number;
   /** Pflichtangabe ab Kasseneröffnung; alte Daten dürfen leer bleiben. */
   employeeCode?: string;
+  /** Aktuell angemeldete Person. null bedeutet: Kasse ist offen, aber gesperrt. */
+  activeEmployeeCode?: string | null;
+  employeeEvents?: CashEmployeeEvent[];
   corrections: CashCorrection[];
   entries: CashEntry[];
   closed: boolean;

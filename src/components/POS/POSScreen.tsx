@@ -14,7 +14,7 @@ import { DynamicIcon } from '@/components/DynamicIcon';
 import { formatDateLong } from '@/lib/format';
 import { SHOT_OPTIONS } from '@/lib/seed';
 import {
-  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro,
+  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro, LogIn, LogOut, UserRound,
 } from 'lucide-react';
 
 type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
@@ -28,6 +28,8 @@ interface Props {
   onCorrectOpening: (newAmount: number, reason: string, employeeCode: string) => void;
   onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, employeeCode: string, isPfandRetoure?: boolean) => void;
   onCloseCash: (closingBalance: number, employeeCode?: string) => void;
+  onEmployeeLogout: () => void;
+  onEmployeeLogin: (employeeCode: string) => void;
   transactions: Transaction[];
   onEnterAdmin?: () => void;
   onMoveProduct?: (sourceId: string, targetId: string) => void;
@@ -52,7 +54,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 
 export function POSScreen({
   categories, products, activeSession, onCheckout,
-  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onEnterAdmin, onMoveProduct,
+  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, onEmployeeLogout, onEmployeeLogin, transactions, onEnterAdmin, onMoveProduct,
   headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
@@ -65,10 +67,17 @@ export function POSScreen({
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [shotProduct, setShotProduct] = useState<Product | null>(null);
   const [showPfandRetoure, setShowPfandRetoure] = useState(false);
+  const [showEmployeeLogin, setShowEmployeeLogin] = useState(false);
   const [priceEntryProduct, setPriceEntryProduct] = useState<Product | null>(null);
   const [dragMode, setDragMode] = useState(false);
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  // Undefined is legacy data: its opening employee remains active. null means
+  // explicitly logged out, so the open till is locked until another login.
+  const currentEmployeeCode = activeSession?.activeEmployeeCode === undefined
+    ? activeSession?.employeeCode
+    : activeSession?.activeEmployeeCode;
+  const employeeIsLoggedIn = Boolean(currentEmployeeCode);
 
   useEffect(() => {
     // When the session reaches this device asynchronously through cloud sync,
@@ -77,14 +86,14 @@ export function POSScreen({
   }, [activeSession]);
 
   useEffect(() => {
-    if (!headerAction) return;
+    if (!headerAction || !activeSession || !employeeIsLoggedIn) return;
     if (headerAction === 'deposit' || headerAction === 'withdrawal') {
       setCashEntryType(headerAction);
     } else if (headerAction === 'pfand') {
       setShowPfandRetoure(true);
     }
     onHeaderActionConsumed?.();
-  }, [headerAction, onHeaderActionConsumed]);
+  }, [headerAction, activeSession, employeeIsLoggedIn, onHeaderActionConsumed]);
 
   const currentLocation: Location = activeSession?.location ?? (selectedLocation ?? 'Friedrichshafen');
 
@@ -171,7 +180,8 @@ export function POSScreen({
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
   function handleCheckoutComplete(tx: Transaction) {
-    onCheckout({ ...tx, employeeCode: activeSession?.employeeCode });
+    if (!currentEmployeeCode) return;
+    onCheckout({ ...tx, employeeCode: currentEmployeeCode });
     setCart([]);
   }
 
@@ -188,11 +198,27 @@ export function POSScreen({
             <div className="text-sm text-gray-500 dark:text-gray-400">
               {formatDateLong(activeSession.openedAt)}
             </div>
+            <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold uppercase ${employeeIsLoggedIn ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'}`}>
+              <UserRound className="h-3.5 w-3.5" /> {employeeIsLoggedIn ? currentEmployeeCode : 'Kein Mitarbeiter angemeldet'}
+            </div>
             <div className="ml-auto flex items-center gap-1.5">
-              <button onClick={() => setShowCorrection(true)}
+              <button onClick={() => {
+                if (employeeIsLoggedIn) {
+                  // An uncompleted cart must never silently pass to the next employee.
+                  setCart([]);
+                  setShowCheckout(false);
+                  onEmployeeLogout();
+                } else {
+                  setShowEmployeeLogin(true);
+                }
+              }}
+                className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${employeeIsLoggedIn ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+                {employeeIsLoggedIn ? <><LogOut className="h-3.5 w-3.5" /> Mitarbeiter abmelden</> : <><LogIn className="h-3.5 w-3.5" /> Mitarbeiter anmelden</>}
+              </button>
+              {employeeIsLoggedIn && <button onClick={() => setShowCorrection(true)}
                 className="flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50">
                 Korrektur
-              </button>
+              </button>}
               <button onClick={() => setShowCloseDialog(true)}
                 className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700">
                 <Lock className="h-3.5 w-3.5" /> Tagesabschluss
@@ -293,7 +319,7 @@ export function POSScreen({
                     product={product}
                     location={currentLocation}
                     onAdd={handleProductTap}
-                    disabled={!activeSession}
+                    disabled={!activeSession || !employeeIsLoggedIn}
                     dragMode={dragMode}
                     onDragStart={(id) => setDragSource(id)}
                     onDragOver={(id) => setDragOver(id)}
@@ -310,11 +336,11 @@ export function POSScreen({
                 ))}
               </div>
             )}
-            {!activeSession && visibleProducts.length > 0 && (
+            {(!activeSession || !employeeIsLoggedIn) && visibleProducts.length > 0 && (
               <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-8">
                 <div className="pointer-events-auto flex items-center gap-2 rounded-xl bg-black/80 px-4 py-2.5 text-sm font-semibold text-white shadow-lg backdrop-blur">
                   <Lock className="h-4 w-4" />
-                  Bitte zuerst Kasse eröffnen, um Artikel zu verkaufen
+                  {activeSession ? 'Bitte Mitarbeiter anmelden, um Artikel zu verkaufen' : 'Bitte zuerst Kasse eröffnen, um Artikel zu verkaufen'}
                 </div>
               </div>
             )}
@@ -346,11 +372,11 @@ export function POSScreen({
             <CartSummary items={cart} location={currentLocation} />
             {cart.length > 0 && (
               <button
-                onClick={() => activeSession && setShowCheckout(true)}
-                disabled={!activeSession}
-                className={`mt-3 w-full rounded-xl py-4 text-lg font-bold text-white shadow-lg transition active:scale-95 ${activeSession ? 'bg-green-600 hover:bg-green-700' : 'cursor-not-allowed bg-gray-400 dark:bg-gray-600'}`}
+                onClick={() => activeSession && employeeIsLoggedIn && setShowCheckout(true)}
+                disabled={!activeSession || !employeeIsLoggedIn}
+                className={`mt-3 w-full rounded-xl py-4 text-lg font-bold text-white shadow-lg transition active:scale-95 ${activeSession && employeeIsLoggedIn ? 'bg-green-600 hover:bg-green-700' : 'cursor-not-allowed bg-gray-400 dark:bg-gray-600'}`}
               >
-                {activeSession ? 'Bezahlen / Kassiervorgang abschließen' : 'Kasse erst eröffnen'}
+                {activeSession ? employeeIsLoggedIn ? 'Bezahlen / Kassiervorgang abschließen' : 'Mitarbeiter anmelden' : 'Kasse erst eröffnen'}
               </button>
             )}
           </div>
@@ -360,6 +386,9 @@ export function POSScreen({
       {/* Dialogs */}
       {showOpenDialog && (
         <CashOpeningDialog onSave={(loc, bal, code) => { onOpenCash(loc, bal, code); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} />
+      )}
+      {showEmployeeLogin && activeSession && !employeeIsLoggedIn && (
+        <EmployeeLoginDialog onConfirm={(code) => { onEmployeeLogin(code); setShowEmployeeLogin(false); }} onCancel={() => setShowEmployeeLogin(false)} />
       )}
       {showCorrection && activeSession && (
         <CashCorrectionDialog session={activeSession} onSave={(amt, reason, code) => { onCorrectOpening(amt, reason, code); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
@@ -397,6 +426,25 @@ export function POSScreen({
       {showCheckout && cart.length > 0 && (
         <CheckoutModal items={cart} location={currentLocation} onComplete={handleCheckoutComplete} onCancel={() => setShowCheckout(false)} />
       )}
+    </div>
+  );
+}
+
+function EmployeeLoginDialog({ onConfirm, onCancel }: { onConfirm: (code: string) => void; onCancel: () => void }) {
+  const [code, setCode] = useState('');
+  const confirm = () => {
+    const normalized = code.trim().toUpperCase();
+    if (normalized) onConfirm(normalized);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center gap-2 text-gray-900 dark:text-gray-100"><LogIn className="h-5 w-5 text-green-600" /><h3 className="text-lg font-bold">Mitarbeiter anmelden</h3></div>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Die Kasse bleibt offen. Bitte das eigene Kürzel eingeben, bevor neue Buchungen erfolgen.</p>
+        <input autoFocus value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && confirm()} placeholder="z.B. AB" maxLength={8} autoCapitalize="characters"
+          className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-lg font-bold uppercase text-gray-900 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+        <div className="mt-4 flex gap-2"><button onClick={onCancel} className="flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Abbrechen</button><button onClick={confirm} disabled={!code.trim()} className="flex-1 rounded-xl bg-green-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">Anmelden</button></div>
+      </div>
     </div>
   );
 }
