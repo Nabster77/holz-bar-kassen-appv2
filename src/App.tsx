@@ -47,6 +47,9 @@ export default function App() {
   const closeSyncToast = useCallback(() => setSyncedAt(null), []);
   const [syncOpen, setSyncOpen] = useState(false);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
+  // This is deliberately separate from `currentStaff`: opening Verwaltung
+  // must never replace the person currently working at the cash register.
+  const [managementAdministrator, setManagementAdministrator] = useState<StaffUser | null>(null);
   const [lastStaffId, setLastStaffId] = useState<string | null>(() => loadJSON<string | null>(STORAGE_KEYS.lastStaffId, null));
   const [staffAdminLoginOpen, setStaffAdminLoginOpen] = useState(false);
   const [rootWarningOpen, setRootWarningOpen] = useState(() => !loadJSON<boolean>(STORAGE_KEYS.rootPasswordChanged, false) && !loadJSON<boolean>(STORAGE_KEYS.rootPasswordNoticeDismissed, false));
@@ -136,7 +139,10 @@ export default function App() {
   }
 
   function navigateTo(nextTab: Tab) {
-    if (nextTab === 'pos') setAdminUnlocked(false);
+    if (nextTab === 'pos') {
+      setAdminUnlocked(false);
+      setManagementAdministrator(null);
+    }
     setTab(nextTab);
   }
 
@@ -331,7 +337,7 @@ export default function App() {
               onDeleteStaff={staff.remove}
               currentStaff={currentStaff}
               onChangeManagerPassword={(currentPassword, nextPassword) => changeManagerPassword(currentPassword, nextPassword, staff.users.some((user) => user.role === 'administrator' && user.active && !!user.passwordHash))}
-              administratorTools={currentStaff?.role === 'administrator' ? <><ManagerPasswordPanel online={online} hasAdministrator={staff.users.some((user) => user.role === 'administrator' && user.active && !!user.passwordHash)} onChange={(currentPassword, nextPassword) => changeManagerPassword(currentPassword, nextPassword, true)} /><CloudPasswordPanel onChanged={() => { saveJSON(STORAGE_KEYS.rootPasswordChanged, true); saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); }} /></> : undefined}
+              administratorTools={managementAdministrator ? <><ManagerPasswordPanel online={online} hasAdministrator={staff.users.some((user) => user.role === 'administrator' && user.active && !!user.passwordHash)} onChange={(currentPassword, nextPassword) => changeManagerPassword(currentPassword, nextPassword, true)} /><CloudPasswordPanel onChanged={() => { saveJSON(STORAGE_KEYS.rootPasswordChanged, true); saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); }} /></> : undefined}
               testMode={testMode}
               onToggleMode={() => setModeConfirm(testMode ? 'to-active' : 'to-test')}
               onExportBackup={() => {
@@ -362,7 +368,7 @@ export default function App() {
               }}
             />
           ) : (
-            <AdminAccessGate onManagerSuccess={() => setAdminUnlocked(true)} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Verwaltung" />
+            <AdminAccessGate onManagerSuccess={(administrator) => { setManagementAdministrator(administrator ?? null); setAdminUnlocked(true); }} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Verwaltung" />
           )
         )}
         {modeConfirm && (
@@ -382,7 +388,7 @@ export default function App() {
               currentStaff={currentStaff}
             />
           ) : (
-            <AdminAccessGate onManagerSuccess={() => setAdminUnlocked(true)} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Journal" />
+            <AdminAccessGate onManagerSuccess={(administrator) => { setManagementAdministrator(administrator ?? null); setAdminUnlocked(true); }} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Journal" />
           )
         )}
       </main>
@@ -395,7 +401,7 @@ export default function App() {
           allowedRoles={['administrator']}
           online={online}
           title="Administrator anmelden"
-          onAuthenticated={() => { setAdminUnlocked(true); setStaffAdminLoginOpen(false); }}
+          onAuthenticated={(administrator) => { setManagementAdministrator(administrator); setAdminUnlocked(true); setStaffAdminLoginOpen(false); }}
           onSetPassword={staff.setPassword}
           onResetPassword={staff.resetPassword}
           initialStaffId={lastStaffId}
@@ -419,7 +425,7 @@ function readableSyncError(cause: unknown): string {
   return String(cause);
 }
 
-function AdminAccessGate({ onManagerSuccess, onStaffLogin, staffUsers, title }: { onManagerSuccess: () => void; onStaffLogin: () => void; staffUsers: StaffUser[]; title: string }) {
+function AdminAccessGate({ onManagerSuccess, onStaffLogin, staffUsers, title }: { onManagerSuccess: (administrator?: StaffUser) => void; onStaffLogin: () => void; staffUsers: StaffUser[]; title: string }) {
   return <PasswordGate onSuccess={onManagerSuccess} onStaffLogin={onStaffLogin} administrators={staffUsers} title={title} />;
 }
 

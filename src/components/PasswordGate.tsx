@@ -5,7 +5,9 @@ import { verifyStaffPassword } from '@/lib/staffDirectory';
 import type { StaffUser } from '@/types';
 
 interface Props {
-  onSuccess: () => void;
+  // `undefined` means that the shared Verwaltung/Journal password was used.
+  // A staff record means that a personal administrator password unlocked it.
+  onSuccess: (administrator?: StaffUser) => void;
   title: string;
   onStaffLogin?: () => void;
   administrators?: StaffUser[];
@@ -23,22 +25,19 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = 
     setChecking(true);
     setError(null);
     try {
-      const ok = await verifyManagerPassword(input);
-      if (ok) {
+      let authenticatedAdministrator: StaffUser | null = null;
+      for (const user of administrators) {
+        if (user.active && user.role === 'administrator' && await verifyStaffPassword(user, input)) {
+          authenticatedAdministrator = user;
+          break;
+        }
+      }
+      if (authenticatedAdministrator) {
+        onSuccess(authenticatedAdministrator);
+      } else if (await verifyManagerPassword(input)) {
         onSuccess();
       } else {
-        let authenticatedAdministrator: StaffUser | null = null;
-        for (const user of administrators) {
-          if (user.active && user.role === 'administrator' && await verifyStaffPassword(user, input)) {
-            authenticatedAdministrator = user;
-            break;
-          }
-        }
-        if (authenticatedAdministrator) {
-          onSuccess();
-        } else {
-          setError('wrong');
-        }
+        setError('wrong');
       }
     } catch {
       setError('unavailable');
