@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Category, CashSession, StaffUser, Transaction } from '@/types';
 import {
-  formatCurrency, formatDate, formatDateISO, formatDateLong,
+  formatCurrency, formatDate, formatDateGermanFromISO, formatDateISO, formatDateLong, parseGermanDate,
   formatTime,
   startOfDay, endOfDay, startOfWeek, startOfMonth, startOfYear,
   monthLabel, yearLabel, getWeekNumber,
@@ -23,6 +23,8 @@ type Period = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 
 type GroupMode = 'category' | 'article' | 'tax' | 'bestseller' | 'transaction' | 'dailyClose';
 type LocationFilter = 'all' | 'Friedrichshafen' | 'Bregenz';
+type DailyCloseStatus = 'all' | 'numbered' | 'pending';
+type JournalSort = 'newest' | 'oldest' | 'nameAsc' | 'nameDesc' | 'amountHigh' | 'amountLow' | 'quantityHigh' | 'quantityLow' | 'receiptAsc' | 'receiptDesc';
 
 
 interface Props {
@@ -41,6 +43,10 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   const [customTo, setCustomTo] = useState(formatDateISO(Date.now()));
   const [selectedCloseIds, setSelectedCloseIds] = useState<Set<string>>(() => new Set());
   const [previewReport, setPreviewReport] = useState<JournalReportData | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [journalSearch, setJournalSearch] = useState('');
+  const [dailyCloseStatus, setDailyCloseStatus] = useState<DailyCloseStatus>('all');
+  const [journalSort, setJournalSort] = useState<JournalSort>('newest');
 
   const { start, end, headerLabel } = useMemo(() => {
     const now = Date.now();
@@ -64,13 +70,19 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     }
   }, [period, customFrom, customTo]);
 
-  const filteredTx = useMemo(
-    () => transactions.filter((t) =>
-      t.timestamp >= start && t.timestamp <= end &&
-      (locationFilter === 'all' || t.location === locationFilter),
-    ),
-    [transactions, start, end, locationFilter],
-  );
+  const filteredTx = useMemo(() => {
+    const search = journalSearch.trim().toLocaleLowerCase('de-DE');
+    const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+    return transactions.filter((t) => {
+      if (t.timestamp < start || t.timestamp > end || (locationFilter !== 'all' && t.location !== locationFilter)) return false;
+      if (!search) return true;
+      const text = [
+        formatDate(t.timestamp), formatDateISO(t.timestamp), t.employeeName, t.paymentMethod,
+        ...t.items.flatMap((item) => [item.name, categoryNames.get(item.categoryId), `${item.taxRate}%`]),
+      ].filter(Boolean).join(' ').toLocaleLowerCase('de-DE');
+      return text.includes(search);
+    });
+  }, [transactions, start, end, locationFilter, journalSearch, categories]);
 
   const taxByRateMap = useMemo(() => mergeTaxByRate(filteredTx), [filteredTx]);
 
@@ -124,17 +136,43 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   });
   const exportReport = () => void exportJournalPdf(reportData());
   const printReport = () => openJournalPrintDialog(reportData());
-  const visibleDailyCloses = useMemo(() => cashSessions
-    .filter((session) => session.closed && (session.closedAt ?? session.openedAt) >= start && (session.closedAt ?? session.openedAt) <= end && (locationFilter === 'all' || session.location === locationFilter))
-    .sort((a, b) => (b.closedAt ?? b.openedAt) - (a.closedAt ?? a.openedAt)),
-  [cashSessions, start, end, locationFilter]);
+  const visibleDailyCloses = useMemo(() => {
+    const search = journalSearch.trim().toLocaleLowerCase('de-DE');
+    const receiptNumber = (session: CashSession) => session.dailyCloseReceiptNumber ?? null;
+    const searchableText = (session: CashSession) => {
+      const at = session.dailyCloseFinalizedAt ?? session.closedAt ?? session.openedAt;
+      const receipt = formatDailyCloseReceiptNumber(receiptNumber(session) ?? undefined, session.dailyCloseReceiptLocation ?? session.location, at, session.dailyCloseReceiptYear) ?? '';
+      return [receipt, session.location, session.dailyCloseFinalizedByName, session.closedByName, formatDate(at), formatDateISO(at)].filter(Boolean).join(' ').toLocaleLowerCase('de-DE');
+    };
+    const matches = cashSessions.filter((session) => {
+      if (!session.closed) return false;
+      const at = session.closedAt ?? session.openedAt;
+      if (at < start || at > end || (locationFilter !== 'all' && session.location !== locationFilter)) return false;
+      if (dailyCloseStatus === 'numbered' && receiptNumber(session) === null) return false;
+      if (dailyCloseStatus === 'pending' && receiptNumber(session) !== null) return false;
+      return !search || searchableText(session).includes(search);
+    });
+    return matches.sort((a, b) => {
+      const aAt = a.dailyCloseFinalizedAt ?? a.closedAt ?? a.openedAt;
+      const bAt = b.dailyCloseFinalizedAt ?? b.closedAt ?? b.openedAt;
+      if (journalSort === 'oldest') return aAt - bAt;
+      if (journalSort === 'receiptAsc') return (receiptNumber(a) ?? Number.MAX_SAFE_INTEGER) - (receiptNumber(b) ?? Number.MAX_SAFE_INTEGER) || bAt - aAt;
+      if (journalSort === 'receiptDesc') return (receiptNumber(b) ?? -1) - (receiptNumber(a) ?? -1) || bAt - aAt;
+      return bAt - aAt;
+    });
+  }, [cashSessions, start, end, locationFilter, journalSearch, dailyCloseStatus, journalSort]);
   const closeReport = (session: CashSession) => closedSessionReport(session, transactions, categories, currentStaff?.name);
   const selectedCloseReports = visibleDailyCloses.filter((session) => selectedCloseIds.has(session.id)).map(closeReport);
   const toggleClose = (id: string) => setSelectedCloseIds((current) => {
     const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
-  const toggleAllCloses = () => setSelectedCloseIds((current) => current.size === visibleDailyCloses.length
-    ? new Set() : new Set(visibleDailyCloses.map((session) => session.id)));
+  const toggleAllCloses = () => setSelectedCloseIds((current) => {
+    const allVisibleSelected = visibleDailyCloses.length > 0 && visibleDailyCloses.every((session) => current.has(session.id));
+    const next = new Set(current);
+    if (allVisibleSelected) visibleDailyCloses.forEach((session) => next.delete(session.id));
+    else visibleDailyCloses.forEach((session) => next.add(session.id));
+    return next;
+  });
   const selectedCloseFileName = `Tagesabschluesse_${locationFilter === 'all' ? 'Alle-Standorte' : locationFilter}_${formatDateISO(start)}_bis_${formatDateISO(end)}.pdf`;
   const exportSelectedCloses = () => void exportJournalPdfBatch(selectedCloseReports, selectedCloseFileName);
   const printSelectedCloses = () => openJournalPrintBatch(selectedCloseReports);
@@ -162,39 +200,12 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
-          {(['daily', 'weekly', 'monthly', 'yearly', 'custom'] as Period[]).map((p) => (
-            <button key={p} onClick={() => setPeriod(p)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                period === p ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-              }`}>
-              {p === 'daily' && <Clock className="h-3.5 w-3.5" />}
-              {p !== 'daily' && <Calendar className="h-3.5 w-3.5" />}
-              {p === 'daily' ? 'Täglich' : p === 'weekly' ? 'Wöchentlich' : p === 'monthly' ? 'Monatlich' : p === 'yearly' ? 'Jährlich' : 'Zeitraum'}
-            </button>
-          ))}
-        </div>
-
-        {period === 'custom' && (
-          <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-800">
-            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="bg-transparent text-xs text-gray-900 focus:outline-none dark:text-gray-100" />
-            <span className="text-xs text-gray-400">bis</span>
-            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="bg-transparent text-xs text-gray-900 focus:outline-none dark:text-gray-100" />
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
-          {(['Friedrichshafen', 'Bregenz', 'all'] as LocationFilter[]).map((loc) => (
-            <button key={loc} onClick={() => setLocationFilter(loc)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                locationFilter === loc ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-              }`}>
-              <MapPin className="h-3.5 w-3.5" />
-              {loc === 'all' ? 'Alle Standorte' : loc}
-            </button>
-          ))}
-        </div>
-
+        <button
+          onClick={() => setFiltersOpen((open) => !open)}
+          className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${filtersOpen ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+        >
+          <Filter className="h-3.5 w-3.5" /> Filter & Sortierung <ChevronDown className={`h-3.5 w-3.5 transition ${filtersOpen ? 'rotate-180' : ''}`} />
+        </button>
         <div className="flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
           <GroupBtn mode="category" active={groupMode} onClick={setGroupMode} icon={<Tag className="h-3.5 w-3.5" />} label="Warengruppen" />
           <GroupBtn mode="article" active={groupMode} onClick={setGroupMode} icon={<Package className="h-3.5 w-3.5" />} label="Einzelartikel" />
@@ -204,6 +215,35 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
           <GroupBtn mode="dailyClose" active={groupMode} onClick={setGroupMode} icon={<ClipboardCheck className="h-3.5 w-3.5" />} label="Tagesabschlüsse" />
         </div>
       </div>
+
+      {filtersOpen && (
+        <div className="mb-3 grid gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4 dark:border-gray-700 dark:bg-gray-800">
+          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Suchen
+            <input value={journalSearch} onChange={(event) => setJournalSearch(event.target.value)} placeholder={groupMode === 'dailyClose' ? 'Belegnummer, Mitarbeiter …' : groupMode === 'tax' ? 'Steuersatz suchen …' : 'Artikel, Warengruppe, Mitarbeiter …'} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 outline-none focus:border-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100" />
+          </label>
+          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Standort
+            <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value as LocationFilter)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+              <option value="all">Alle Standorte</option><option value="Friedrichshafen">Friedrichshafen</option><option value="Bregenz">Bregenz</option>
+            </select>
+          </label>
+          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Zeitraum
+            <select value={period} onChange={(event) => setPeriod(event.target.value as Period)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+              <option value="daily">Heute</option><option value="weekly">Diese Woche</option><option value="monthly">Dieser Monat</option><option value="yearly">Dieses Jahr</option><option value="custom">Datum von / bis</option>
+            </select>
+          </label>
+          {groupMode === 'dailyClose' && <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Status
+            <select value={dailyCloseStatus} onChange={(event) => setDailyCloseStatus(event.target.value as DailyCloseStatus)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+              <option value="all">Alle Belege</option><option value="numbered">Belegnummer vergeben</option><option value="pending">Belegnummer ausstehend</option>
+            </select>
+          </label>}
+          <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Sortierung
+            <select value={journalSort} onChange={(event) => setJournalSort(event.target.value as JournalSort)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+              {journalSortOptions(groupMode).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          {period === 'custom' && <div className="flex items-end gap-2 sm:col-span-2"><GermanDateField label="Von" value={customFrom} onChange={setCustomFrom} /><GermanDateField label="Bis" value={customTo} onChange={setCustomTo} /></div>}
+        </div>
+      )}
 
       {groupMode === 'dailyClose' ? (
         <DailyCloseListView sessions={visibleDailyCloses} selectedIds={selectedCloseIds} onToggle={toggleClose} onToggleAll={toggleAllCloses} onOpen={(session) => setPreviewReport(closeReport(session))} />
@@ -275,15 +315,15 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
             <p className="text-sm">Keine Verkäufe im gewählten Zeitraum für {locationFilter === 'all' ? 'die gewählten Standorte' : locationFilter}</p>
           </div>
         ) : groupMode === 'category' ? (
-          <CategoryGroupView transactions={filteredTx} categories={categories} />
+          <CategoryGroupView transactions={filteredTx} categories={categories} sort={journalSort} />
         ) : groupMode === 'article' ? (
-          <ArticleGroupView transactions={filteredTx} />
+          <ArticleGroupView transactions={filteredTx} sort={journalSort} />
         ) : groupMode === 'tax' ? (
-          <TaxClassView transactions={filteredTx} />
+          <TaxClassView transactions={filteredTx} sort={journalSort} />
         ) : groupMode === 'bestseller' ? (
-          <BestsellerView transactions={filteredTx} categories={categories} />
+          <BestsellerView transactions={filteredTx} categories={categories} sort={journalSort} />
         ) : (
-          <TransactionListView transactions={filteredTx} />
+          <TransactionListView transactions={filteredTx} sort={journalSort} />
         )}
       </div>
       </>}
@@ -292,15 +332,43 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   );
 }
 
+function GermanDateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(() => formatDateGermanFromISO(value));
+
+  useEffect(() => setText(formatDateGermanFromISO(value)), [value]);
+
+  const commit = () => {
+    const parsed = parseGermanDate(text);
+    if (parsed) onChange(parsed);
+    else setText(formatDateGermanFromISO(value));
+  };
+
+  return <label className="flex-1 text-xs font-semibold text-gray-600 dark:text-gray-300">
+    {label}
+    <input
+      type="text"
+      inputMode="numeric"
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+      placeholder="TT.MM.JJJJ"
+      aria-label={`${label}: Datum im Format Tag.Monat.Jahr`}
+      className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-normal text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+    />
+  </label>;
+}
+
 function DailyCloseListView({ sessions, selectedIds, onToggle, onToggleAll, onOpen }: { sessions: CashSession[]; selectedIds: Set<string>; onToggle: (id: string) => void; onToggleAll: () => void; onOpen: (session: CashSession) => void }) {
   const grouped = sessions.reduce<Record<string, CashSession[]>>((all, session) => {
     (all[session.location] ??= []).push(session); return all;
   }, {});
+  const allVisibleSelected = sessions.length > 0 && sessions.every((session) => selectedIds.has(session.id));
   if (sessions.length === 0) return <div className="flex flex-col items-center justify-center gap-2 py-16 text-gray-400 dark:text-gray-500"><ClipboardCheck className="h-12 w-12" /><p className="text-sm">Keine Tagesabschlüsse im gewählten Zeitraum.</p></div>;
   return <div className="space-y-5">
     <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
       <div><p className="font-semibold text-gray-900 dark:text-gray-100">Abschlüsse auswählen</p><p className="text-xs text-gray-500">PDF-Export und Druck fassen die ausgewählten Belege in einer Datei zusammen.</p></div>
-      <button onClick={onToggleAll} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30">{selectedIds.size === sessions.length ? 'Auswahl aufheben' : 'Alle sichtbaren auswählen'}</button>
+      <button onClick={onToggleAll} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30">{allVisibleSelected ? 'Auswahl aufheben' : 'Alle sichtbaren auswählen'}</button>
     </div>
     {(['Friedrichshafen', 'Bregenz'] as const).map((location) => grouped[location]?.length ? <section key={location}>
       <h3 className={`mb-2 text-sm font-bold ${location === 'Bregenz' ? 'text-green-700 dark:text-green-400' : 'text-blue-700 dark:text-blue-400'}`}>{location}</h3>
@@ -327,6 +395,41 @@ function GroupBtn({ mode, active, onClick, icon, label }: { mode: GroupMode; act
   );
 }
 
+function journalSortOptions(mode: GroupMode): { value: JournalSort; label: string }[] {
+  if (mode === 'dailyClose') return [
+    { value: 'newest', label: 'Neueste zuerst' }, { value: 'oldest', label: 'Älteste zuerst' },
+    { value: 'receiptAsc', label: 'Belegnummer aufsteigend' }, { value: 'receiptDesc', label: 'Belegnummer absteigend' },
+  ];
+  if (mode === 'transaction') return [
+    { value: 'newest', label: 'Neueste zuerst' }, { value: 'oldest', label: 'Älteste zuerst' },
+    { value: 'amountHigh', label: 'Betrag: hoch nach niedrig' }, { value: 'amountLow', label: 'Betrag: niedrig nach hoch' },
+  ];
+  if (mode === 'tax') return [
+    { value: 'nameAsc', label: 'Steuersatz aufsteigend' }, { value: 'nameDesc', label: 'Steuersatz absteigend' },
+    { value: 'amountHigh', label: 'Umsatz: hoch nach niedrig' }, { value: 'amountLow', label: 'Umsatz: niedrig nach hoch' },
+  ];
+  return [
+    { value: 'amountHigh', label: 'Umsatz: hoch nach niedrig' }, { value: 'amountLow', label: 'Umsatz: niedrig nach hoch' },
+    { value: 'quantityHigh', label: 'Menge: hoch nach niedrig' }, { value: 'quantityLow', label: 'Menge: niedrig nach hoch' },
+    { value: 'nameAsc', label: 'Name A–Z' }, { value: 'nameDesc', label: 'Name Z–A' },
+  ];
+}
+
+function compareJournalRows(
+  a: { name?: string; label?: string; total: number; count: number },
+  b: { name?: string; label?: string; total: number; count: number },
+  sort: JournalSort,
+) {
+  const nameA = a.name ?? a.label ?? '';
+  const nameB = b.name ?? b.label ?? '';
+  if (sort === 'nameAsc') return nameA.localeCompare(nameB, 'de-DE');
+  if (sort === 'nameDesc') return nameB.localeCompare(nameA, 'de-DE');
+  if (sort === 'quantityHigh') return b.count - a.count || b.total - a.total;
+  if (sort === 'quantityLow') return a.count - b.count || a.total - b.total;
+  if (sort === 'amountLow') return a.total - b.total || nameA.localeCompare(nameB, 'de-DE');
+  return b.total - a.total || nameA.localeCompare(nameB, 'de-DE');
+}
+
 function StatCard({ label, value, icon, color, valueClass }: { label: string; value: string; icon: React.ReactNode; color: string; valueClass?: string }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -341,7 +444,7 @@ function StatCard({ label, value, icon, color, valueClass }: { label: string; va
 
 // ---- 1. Warengruppen view ----
 
-function CategoryGroupView({ transactions, categories }: { transactions: Transaction[]; categories: Category[] }) {
+function CategoryGroupView({ transactions, categories, sort }: { transactions: Transaction[]; categories: Category[]; sort: JournalSort }) {
   const groups = useMemo(() => {
     const map = new Map<string, { cat: Category | null; label: string; total: number; count: number; pfand: number; items: { name: string; price: number; quantity: number; taxRate: number; timestamp: number; pfand: number }[] }>();
     for (const tx of transactions) {
@@ -357,8 +460,8 @@ function CategoryGroupView({ transactions, categories }: { transactions: Transac
         g.items.push({ name: item.name, price: item.price, quantity: item.quantity, taxRate: isTaxFreeItem(item) ? 0 : item.taxRate, timestamp: tx.timestamp, pfand: item.pfand });
       }
     }
-    return [...map.values()].sort((a, b) => b.total - a.total);
-  }, [transactions, categories]);
+    return [...map.values()].sort((a, b) => compareJournalRows(a, b, sort));
+  }, [transactions, categories, sort]);
 
   return (
     <div className="space-y-3">
@@ -425,7 +528,7 @@ function CategoryGroupCard({ cat, label, total, count, pfand, items }: {
 
 // ---- 2. Einzelartikel view ----
 
-function ArticleGroupView({ transactions }: { transactions: Transaction[] }) {
+function ArticleGroupView({ transactions, sort }: { transactions: Transaction[]; sort: JournalSort }) {
   const groups = useMemo(() => {
     const map = new Map<string, { name: string; total: number; count: number; price: number; taxRate: number; pfand: number; instances: { quantity: number; timestamp: number }[] }>();
     for (const tx of transactions) {
@@ -440,8 +543,8 @@ function ArticleGroupView({ transactions }: { transactions: Transaction[] }) {
         g.instances.push({ quantity: item.quantity, timestamp: tx.timestamp });
       }
     }
-    return [...map.values()].sort((a, b) => b.total - a.total);
-  }, [transactions]);
+    return [...map.values()].sort((a, b) => compareJournalRows(a, b, sort));
+  }, [transactions, sort]);
 
   return (
     <div className="space-y-2">
@@ -509,7 +612,7 @@ function ArticleGroupCard({ name, total, count, price, taxRate, pfand, instances
 
 // ---- 3. MwSt-Klassen view ----
 
-function TaxClassView({ transactions }: { transactions: Transaction[] }) {
+function TaxClassView({ transactions, sort }: { transactions: Transaction[]; sort: JournalSort }) {
   const data = useMemo(() => {
     const map = new Map<number, { gross: number; net: number; tax: number; count: number }>();
     for (const tx of transactions) {
@@ -524,8 +627,12 @@ function TaxClassView({ transactions }: { transactions: Transaction[] }) {
         map.set(rate, g);
       }
     }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
-  }, [transactions]);
+    return [...map.entries()].sort(([aRate, a], [bRate, b]) => {
+      if (sort === 'amountHigh') return b.gross - a.gross;
+      if (sort === 'amountLow') return a.gross - b.gross;
+      return sort === 'nameDesc' ? bRate - aRate : aRate - bRate;
+    });
+  }, [transactions, sort]);
 
   if (data.length === 0) {
     return (
@@ -567,7 +674,7 @@ function TaxClassCard({ rate, gross, net, tax, count }: { rate: number; gross: n
 
 // ---- 4. Bestseller view ----
 
-function BestsellerView({ transactions, categories }: { transactions: Transaction[]; categories: Category[] }) {
+function BestsellerView({ transactions, categories, sort }: { transactions: Transaction[]; categories: Category[]; sort: JournalSort }) {
   const groups = useMemo(() => {
     const map = new Map<string, { name: string; count: number; total: number; categoryId: string }>();
     for (const tx of transactions) {
@@ -580,8 +687,8 @@ function BestsellerView({ transactions, categories }: { transactions: Transactio
         g.total += item.price * item.quantity;
       }
     }
-    return [...map.values()].sort((a, b) => b.count - a.count);
-  }, [transactions]);
+    return [...map.values()].sort((a, b) => compareJournalRows(a, b, sort));
+  }, [transactions, sort]);
 
   const maxCount = groups.length > 0 ? groups[0].count : 1;
 
@@ -622,9 +729,14 @@ function BestsellerView({ transactions, categories }: { transactions: Transactio
 
 // ---- 5. Einzel-Bons / Transaktionen ----
 
-function TransactionListView({ transactions }: { transactions: Transaction[] }) {
+function TransactionListView({ transactions, sort }: { transactions: Transaction[]; sort: JournalSort }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const sorted = [...transactions].sort((a, b) => b.timestamp - a.timestamp);
+  const sorted = [...transactions].sort((a, b) => {
+    if (sort === 'oldest') return a.timestamp - b.timestamp;
+    if (sort === 'amountHigh') return b.total - a.total;
+    if (sort === 'amountLow') return a.total - b.total;
+    return b.timestamp - a.timestamp;
+  });
 
   return (
     <div className="space-y-2">
