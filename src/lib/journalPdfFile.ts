@@ -204,9 +204,9 @@ function tableForHeading(heading: HTMLElement): HTMLTableElement | null {
 function protectedTableBlocks(doc: Document, bodyRect: DOMRect): ProtectedTableBlock[] {
   const blocks = new Map<number, ProtectedTableBlock>();
 
-  const add = (heading: HTMLElement | null, table: HTMLTableElement | null) => {
-    if (!heading || !table) return;
-    const start = relativeTop(heading, bodyRect);
+  const add = (title: Element | null, table: HTMLTableElement | null) => {
+    if (!title || !table) return;
+    const start = relativeTop(title, bodyRect);
     const firstRow = table.querySelector('tbody tr');
     // An empty table still has an explanatory row ("Keine …"). If a report
     // ever has no tbody row, keep its table header with the title as well.
@@ -219,12 +219,21 @@ function protectedTableBlocks(doc: Document, bodyRect: DOMRect): ProtectedTableB
 
   // Wrapped sections are used by the journal and the daily-close report.
   for (const section of doc.querySelectorAll<HTMLElement>('.report-table-section, .report-block, .staff-times')) {
-    add(section.querySelector<HTMLElement>('h2'), section.querySelector<HTMLTableElement>('table'));
+    const table = section.querySelector<HTMLTableElement>('table');
+    // Journal table titles are intentionally part of the THEAD. Unlike an h2
+    // this is print-safe, so it must also be the protected break anchor.
+    add(table?.querySelector('.table-title-row') ?? section.querySelector<HTMLElement>('h2'), table);
   }
 
-  // Other journal tables (for example Warengruppen, Bestseller) use a simple
-  // h2 followed directly by a table, without a section wrapper.
+  // Legacy/daily-close sections still use a regular h2 before their table.
   for (const heading of doc.querySelectorAll<HTMLElement>('h2')) add(heading, tableForHeading(heading));
+
+  // Compact journal tables (for example Bestseller) have no external h2:
+  // their title is a THEAD row. Add every such table explicitly so a page is
+  // always cut before the title row, never between title and first data row.
+  for (const table of doc.querySelectorAll<HTMLTableElement>('table')) {
+    add(table.querySelector('.table-title-row'), table);
+  }
 
   return [...blocks.values()].sort((a, b) => a.start - b.start);
 }
