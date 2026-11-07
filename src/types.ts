@@ -6,6 +6,8 @@ export type Location = 'Friedrichshafen' | 'Bregenz';
 
 export type StaffRole = 'administrator' | 'employee';
 
+export type StaffSecurityQuestion = 'Lieblingstier' | 'Lieblingsessen' | 'Lieblingsfarbe';
+
 export interface StaffUser {
   id: string;
   name: string;
@@ -13,6 +15,8 @@ export interface StaffUser {
   active: boolean;
   passwordSalt: string | null;
   passwordHash: string | null;
+  securityQuestion: StaffSecurityQuestion | null;
+  securityConfigured: boolean;
   updatedAt: number;
 }
 
@@ -26,6 +30,15 @@ export interface StaffActivity {
   timestamp: number;
   amount?: number;
   reason?: string;
+}
+
+/** One continuous, authenticated work period at an active cash register. */
+export interface StaffLoginInterval {
+  id: string;
+  staffId: string;
+  staffName: string;
+  loginAt: number;
+  logoutAt?: number;
 }
 
 export interface Category {
@@ -118,6 +131,8 @@ export interface CashEntry {
   reason: string;
   timestamp: number;
   isPfandRetoure?: boolean;
+  /** A withdrawal entered as part of the final daily close, without a reason prompt. */
+  isClosingWithdrawal?: boolean;
   employeeId?: string;
   employeeName?: string;
 }
@@ -145,9 +160,31 @@ export interface CashSession {
   closingBalance?: number;
   expectedBalance?: number;
   difference?: number;
+  /** Amount physically removed while completing the daily close. */
+  closingWithdrawalAmount?: number;
   openedById?: string;
   openedByName?: string;
   closedById?: string;
   closedByName?: string;
+  /** Central, immutable receipt number assigned when the day is finalized. */
+  dailyCloseReceiptNumber?: number;
+  /** Location and calendar year are stored with the number so that the
+   * printable number remains stable even after a later year/location change. */
+  dailyCloseReceiptLocation?: Location;
+  dailyCloseReceiptYear?: number;
+  dailyCloseFinalizedAt?: number;
+  dailyCloseFinalizedById?: string;
+  dailyCloseFinalizedByName?: string;
   activities?: StaffActivity[];
+  /** Precise employee login periods, synchronized as part of the cash session. */
+  staffLoginIntervals?: StaffLoginInterval[];
+  /** Immutable data basis of a finalized daily close. */
+  dailyCloseSnapshot?: {
+    transactions: Transaction[];
+    finalizedAt: number;
+    finalizedById?: string;
+    finalizedByName?: string;
+    /** Login periods frozen with the close so later exports remain auditable. */
+    staffLoginIntervals?: StaffLoginInterval[];
+  };
 }

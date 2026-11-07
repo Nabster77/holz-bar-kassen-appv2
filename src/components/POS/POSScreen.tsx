@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CartItem, Category, CashSession, Product, Transaction, ShotOption, Location, PfandSettings, StaffUser } from '@/types';
+import type { CartItem, Category, CashSession, Product, Transaction, ShotOption, Location, PfandSettings, StaffSecurityQuestion, StaffUser } from '@/types';
 import { ProductTile } from './ProductTile';
 import { CartItemRow } from './CartItemRow';
 import { CartSummary } from './CartSummary';
@@ -28,9 +28,9 @@ interface Props {
   onOpenCash: (location: Location, openingBalance: number) => void;
   onCorrectOpening: (newAmount: number, reason: string) => void;
   onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure?: boolean) => void;
-  onCloseCash: (closingBalance: number) => void;
+  onCloseCash: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
   transactions: Transaction[];
-  onEnterAdmin?: () => void;
+  onEnterAdmin?: (selectedStaff: StaffUser | null) => void;
   onMoveProduct?: (sourceId: string, targetId: string) => void;
   headerAction?: HeaderAction;
   onHeaderActionConsumed?: () => void;
@@ -40,10 +40,12 @@ interface Props {
   currentStaff: StaffUser | null;
   online: boolean;
   onStaffAuthenticated: (staff: StaffUser) => void;
-  onSetStaffPassword: (id: string, password: string) => Promise<unknown>;
-  onResetStaffPassword: (id: string, password: string) => Promise<unknown>;
+  onSetInitialCredentials: (id: string, password: string, question: StaffSecurityQuestion | null, answer: string) => Promise<StaffUser>;
+  onConfigureStaffSecurity: (id: string, question: StaffSecurityQuestion | null, answer: string) => Promise<StaffUser>;
+  onResetStaffPassword: (id: string, answer: string, password: string) => Promise<StaffUser>;
   lastStaffId: string | null;
   onStaffLogout: () => void;
+  openingBalanceSuggestions?: Record<Location, number | null>;
 }
 
 const PFAND_RETOURE_PRODUCT: Product = {
@@ -62,7 +64,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 export function POSScreen({
   categories, products, activeSession, onCheckout,
   onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onEnterAdmin, onMoveProduct,
-  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetStaffPassword, onResetStaffPassword, lastStaffId, onStaffLogout,
+  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onStaffLogout, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -375,7 +377,7 @@ export function POSScreen({
 
       {/* Dialogs */}
       {showOpenDialog && (
-        <CashOpeningDialog onSave={(loc, bal) => { onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetStaffPassword={onSetStaffPassword} onResetStaffPassword={onResetStaffPassword} />
+        <CashOpeningDialog onSave={(loc, bal) => { onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {!currentStaff && staffUsers.length > 0 && activeSession && (
         <StaffLoginDialog
@@ -384,7 +386,8 @@ export function POSScreen({
           online={online}
           title={activeSession ? 'Mitarbeiter anmelden' : 'Mitarbeiter für die Kasseneröffnung'}
           onAuthenticated={onStaffAuthenticated}
-          onSetPassword={onSetStaffPassword}
+          onSetInitialCredentials={onSetInitialCredentials}
+          onConfigureSecurity={onConfigureStaffSecurity}
           onResetPassword={onResetStaffPassword}
           initialStaffId={lastStaffId}
         />
@@ -407,7 +410,11 @@ export function POSScreen({
         />
       )}
       {showCloseDialog && activeSession && (
-        <DailyCloseDialog session={activeSession} transactions={transactions} onClose={(bal) => { if (bal !== undefined) { onCloseCash(bal); setShowCloseDialog(false); } }} onCancel={() => setShowCloseDialog(false)} />
+        <DailyCloseDialog session={activeSession} transactions={transactions} currentStaff={currentStaff} onClose={async (bal, closingWithdrawalAmount) => {
+          const result = await onCloseCash(bal, closingWithdrawalAmount);
+          if (result.ok) setShowCloseDialog(false);
+          return result;
+        }} onCancel={() => setShowCloseDialog(false)} />
       )}
       {shotProduct && (
         <ShotSelectionDialog product={shotProduct} onSelect={handleShotSelect} onCancel={() => setShotProduct(null)} />

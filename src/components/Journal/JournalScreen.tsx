@@ -7,18 +7,21 @@ import {
   monthLabel, yearLabel, getWeekNumber,
 } from '@/lib/format';
 import { DynamicIcon } from '@/components/DynamicIcon';
-import { buildJournalFileName, exportJournalPdf, openJournalPrintDialog } from '@/lib/journalPdfFile';
-import { cashAuditRecordsFromSessions } from '@/lib/dailyReport';
+import { buildJournalFileName, exportJournalPdf, exportJournalPdfBatch, openJournalPrintBatch, openJournalPrintDialog } from '@/lib/journalPdfFile';
+import { cashAuditRecordsFromSessions, closedSessionReport } from '@/lib/dailyReport';
+import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
+import { JournalPreviewDialog } from '@/components/Journal/JournalPreviewDialog';
+import { calculateYearlyPfandOverview, type JournalReportData } from '@/lib/journalPdf';
 import { mergeTaxByRate, getTaxByRate, isTaxFreeItem, isReducedRate, sortedRateKeys } from '@/lib/tax';
 import {
   Calendar, TrendingUp, Clock, Receipt, ChevronDown, ChevronUp,
   Filter, List, LayoutGrid, Package, Tag, Euro, Trophy, MapPin,
-  Recycle, Banknote, CreditCard, Printer, FileDown,
+  Recycle, Banknote, CreditCard, Printer, FileDown, ClipboardCheck, CheckSquare, Square, Eye,
 } from 'lucide-react';
 
 type Period = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 
-type GroupMode = 'category' | 'article' | 'tax' | 'bestseller' | 'transaction';
+type GroupMode = 'category' | 'article' | 'tax' | 'bestseller' | 'transaction' | 'dailyClose';
 type LocationFilter = 'all' | 'Friedrichshafen' | 'Bregenz';
 
 
@@ -36,6 +39,8 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(defaultLocation);
   const [customFrom, setCustomFrom] = useState(formatDateISO(Date.now() - 6 * 86400000));
   const [customTo, setCustomTo] = useState(formatDateISO(Date.now()));
+  const [selectedCloseIds, setSelectedCloseIds] = useState<Set<string>>(() => new Set());
+  const [previewReport, setPreviewReport] = useState<JournalReportData | null>(null);
 
   const { start, end, headerLabel } = useMemo(() => {
     const now = Date.now();
@@ -101,6 +106,12 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
 
   const totalOpeningBalance = relevantSessions.reduce((s, sess) => s + sess.openingBalance, 0);
   const sessionLocationLabel = locationFilter === 'all' ? 'Alle Standorte' : locationFilter;
+  // The control total is intentionally independent from the displayed period:
+  // every journal shows the current calendar year's deposit balance.
+  const yearlyPfandOverview = useMemo(
+    () => calculateYearlyPfandOverview(transactions, new Date().getFullYear(), locationFilter, sessionLocationLabel),
+    [transactions, locationFilter, sessionLocationLabel],
+  );
   const reportData = () => ({
     headerLabel,
     location: sessionLocationLabel,
@@ -109,25 +120,40 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     fileName: buildJournalFileName(period, start, end, locationFilter),
     exportedByName: currentStaff?.name,
     cashAuditRecords: cashAuditRecordsFromSessions(relevantSessions),
+    yearlyPfandOverview,
   });
   const exportReport = () => void exportJournalPdf(reportData());
   const printReport = () => openJournalPrintDialog(reportData());
+  const visibleDailyCloses = useMemo(() => cashSessions
+    .filter((session) => session.closed && (session.closedAt ?? session.openedAt) >= start && (session.closedAt ?? session.openedAt) <= end && (locationFilter === 'all' || session.location === locationFilter))
+    .sort((a, b) => (b.closedAt ?? b.openedAt) - (a.closedAt ?? a.openedAt)),
+  [cashSessions, start, end, locationFilter]);
+  const closeReport = (session: CashSession) => closedSessionReport(session, transactions, categories, currentStaff?.name);
+  const selectedCloseReports = visibleDailyCloses.filter((session) => selectedCloseIds.has(session.id)).map(closeReport);
+  const toggleClose = (id: string) => setSelectedCloseIds((current) => {
+    const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const toggleAllCloses = () => setSelectedCloseIds((current) => current.size === visibleDailyCloses.length
+    ? new Set() : new Set(visibleDailyCloses.map((session) => session.id)));
+  const selectedCloseFileName = `Tagesabschluesse_${locationFilter === 'all' ? 'Alle-Standorte' : locationFilter}_${formatDateISO(start)}_bis_${formatDateISO(end)}.pdf`;
+  const exportSelectedCloses = () => void exportJournalPdfBatch(selectedCloseReports, selectedCloseFileName);
+  const printSelectedCloses = () => openJournalPrintBatch(selectedCloseReports);
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain pb-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{headerLabel}</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{groupMode === 'dailyClose' ? 'Tagesabschlüsse' : headerLabel}</h2>
         <div className="flex gap-2">
           <button
-            onClick={exportReport}
-            disabled={filteredTx.length === 0}
+            onClick={groupMode === 'dailyClose' ? exportSelectedCloses : exportReport}
+            disabled={groupMode === 'dailyClose' ? selectedCloseReports.length === 0 : filteredTx.length === 0}
             className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <FileDown className="h-3.5 w-3.5" /> PDF-Export
           </button>
           <button
-            onClick={printReport}
-            disabled={filteredTx.length === 0}
+            onClick={groupMode === 'dailyClose' ? printSelectedCloses : printReport}
+            disabled={groupMode === 'dailyClose' ? selectedCloseReports.length === 0 : filteredTx.length === 0}
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
           >
             <Printer className="h-3.5 w-3.5" /> Drucken
@@ -175,9 +201,13 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
           <GroupBtn mode="tax" active={groupMode} onClick={setGroupMode} icon={<Euro className="h-3.5 w-3.5" />} label="MwSt-Klassen" />
           <GroupBtn mode="bestseller" active={groupMode} onClick={setGroupMode} icon={<Trophy className="h-3.5 w-3.5" />} label="Bestseller" />
           <GroupBtn mode="transaction" active={groupMode} onClick={setGroupMode} icon={<Receipt className="h-3.5 w-3.5" />} label="Einzel-Bons" />
+          <GroupBtn mode="dailyClose" active={groupMode} onClick={setGroupMode} icon={<ClipboardCheck className="h-3.5 w-3.5" />} label="Tagesabschlüsse" />
         </div>
       </div>
 
+      {groupMode === 'dailyClose' ? (
+        <DailyCloseListView sessions={visibleDailyCloses} selectedIds={selectedCloseIds} onToggle={toggleClose} onToggleAll={toggleAllCloses} onOpen={(session) => setPreviewReport(closeReport(session))} />
+      ) : <>
       {relevantSessions.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-4 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
@@ -256,8 +286,36 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
           <TransactionListView transactions={filteredTx} />
         )}
       </div>
+      </>}
+      {previewReport && <JournalPreviewDialog data={previewReport} onClose={() => setPreviewReport(null)} />}
     </div>
   );
+}
+
+function DailyCloseListView({ sessions, selectedIds, onToggle, onToggleAll, onOpen }: { sessions: CashSession[]; selectedIds: Set<string>; onToggle: (id: string) => void; onToggleAll: () => void; onOpen: (session: CashSession) => void }) {
+  const grouped = sessions.reduce<Record<string, CashSession[]>>((all, session) => {
+    (all[session.location] ??= []).push(session); return all;
+  }, {});
+  if (sessions.length === 0) return <div className="flex flex-col items-center justify-center gap-2 py-16 text-gray-400 dark:text-gray-500"><ClipboardCheck className="h-12 w-12" /><p className="text-sm">Keine Tagesabschlüsse im gewählten Zeitraum.</p></div>;
+  return <div className="space-y-5">
+    <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+      <div><p className="font-semibold text-gray-900 dark:text-gray-100">Abschlüsse auswählen</p><p className="text-xs text-gray-500">PDF-Export und Druck fassen die ausgewählten Belege in einer Datei zusammen.</p></div>
+      <button onClick={onToggleAll} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30">{selectedIds.size === sessions.length ? 'Auswahl aufheben' : 'Alle sichtbaren auswählen'}</button>
+    </div>
+    {(['Friedrichshafen', 'Bregenz'] as const).map((location) => grouped[location]?.length ? <section key={location}>
+      <h3 className={`mb-2 text-sm font-bold ${location === 'Bregenz' ? 'text-green-700 dark:text-green-400' : 'text-blue-700 dark:text-blue-400'}`}>{location}</h3>
+      <div className="space-y-2">{grouped[location].map((session) => {
+        const at = session.dailyCloseFinalizedAt ?? session.closedAt ?? session.openedAt;
+        const receipt = formatDailyCloseReceiptNumber(session.dailyCloseReceiptNumber, session.dailyCloseReceiptLocation ?? session.location, at, session.dailyCloseReceiptYear) ?? 'Belegnummer wird synchronisiert';
+        return <div key={session.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <button aria-label="Abschluss auswählen" onClick={() => onToggle(session.id)} className="text-blue-600 dark:text-blue-400">{selectedIds.has(session.id) ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}</button>
+          <div className="min-w-[190px] flex-1"><p className="font-semibold text-gray-900 dark:text-gray-100">{receipt}</p><p className="text-xs text-gray-500">{formatDate(at)} · {formatTime(at)} Uhr · abgeschlossen von {session.dailyCloseFinalizedByName ?? session.closedByName ?? 'Unbekannt'}</p></div>
+          <div className="text-right text-xs text-gray-500">Kassenbestand <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.closingBalance ?? 0)}</p></div>
+          <div className={`text-right text-xs ${Math.abs(session.difference ?? 0) > 0.009 ? 'text-rose-600 dark:text-rose-400' : 'text-green-700 dark:text-green-400'}`}>Differenz <p className="text-sm font-bold">{formatCurrency(session.difference ?? 0)}</p></div>
+          <button onClick={() => onOpen(session)} className="flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"><Eye className="h-3.5 w-3.5" /> Bericht</button>
+        </div>;
+      })}</div>
+    </section> : null)}</div>;
 }
 
 function GroupBtn({ mode, active, onClick, icon, label }: { mode: GroupMode; active: GroupMode; onClick: (m: GroupMode) => void; icon: React.ReactNode; label: string }) {

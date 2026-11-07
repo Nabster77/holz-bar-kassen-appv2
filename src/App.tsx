@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useStore } from '@/hooks/useStore';
 import { useCloudSync } from '@/hooks/useCloudSync';
@@ -11,7 +11,7 @@ import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
 import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
 import { changeManagerPassword, resetManagerPassword } from '@/lib/managerAuth';
 import { supabase } from '@/lib/supabaseClient';
-import type { StaffUser } from '@/types';
+import type { Location, StaffUser } from '@/types';
 import { POSScreen } from '@/components/POS/POSScreen';
 import { AdminScreen } from '@/components/Admin/AdminScreen';
 import { JournalScreen } from '@/components/Journal/JournalScreen';
@@ -24,6 +24,7 @@ import { rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
 import { discardEntriesBeforeGeneration } from '@/lib/outbox';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
+import { issueDailyCloseReceipt } from '@/lib/dailyCloseReceipt';
 import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { formatDateISO } from '@/lib/format';
 import {
@@ -34,6 +35,11 @@ import {
 
 type Tab = 'pos' | 'admin' | 'journal';
 type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
+type OpeningManagementAccess =
+  | { kind: 'manager-only' }
+  | { kind: 'selected-administrator'; administrator: StaffUser }
+  | { kind: 'employee-denied' }
+  | null;
 
 export default function App() {
   const { theme, toggle } = useTheme();
@@ -47,6 +53,7 @@ export default function App() {
   const closeSyncToast = useCallback(() => setSyncedAt(null), []);
   const [syncOpen, setSyncOpen] = useState(false);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
+  const [openingManagementAccess, setOpeningManagementAccess] = useState<OpeningManagementAccess>(null);
   // This is deliberately separate from `currentStaff`: opening Verwaltung
   // must never replace the person currently working at the cash register.
   const [managementAdministrator, setManagementAdministrator] = useState<StaffUser | null>(null);
@@ -71,6 +78,15 @@ export default function App() {
     catalog.syncCatalog,
     store.applyCloudBookingReset,
   );
+
+  // The last finalized balance per location is a suggestion only. It is not
+  // copied until the user actually opens the next cash session.
+  const openingBalanceSuggestions = useMemo<Record<Location, number | null>>(() => {
+    const latestFor = (location: Location) => [...store.cashSessions]
+      .filter((session) => session.location === location && session.closed && Number.isFinite(session.closingBalance))
+      .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))[0]?.closingBalance ?? null;
+    return { Friedrichshafen: latestFor('Friedrichshafen'), Bregenz: latestFor('Bregenz') };
+  }, [store.cashSessions]);
 
   // The browser profile may be new while the personnel list already exists in
   // the cloud. Load it again once the cloud session is definitely available.
@@ -139,11 +155,20 @@ export default function App() {
   }
 
   function navigateTo(nextTab: Tab) {
-    if (nextTab === 'pos') {
-      setAdminUnlocked(false);
-      setManagementAdministrator(null);
-    }
     setTab(nextTab);
+  }
+
+  function openManagementFromCashOpening(selectedStaff: StaffUser | null) {
+    setAdminUnlocked(false);
+    setManagementAdministrator(null);
+    if (!selectedStaff) {
+      setOpeningManagementAccess({ kind: 'manager-only' });
+    } else if (selectedStaff.role === 'administrator') {
+      setOpeningManagementAccess({ kind: 'selected-administrator', administrator: selectedStaff });
+    } else {
+      setOpeningManagementAccess({ kind: 'employee-denied' });
+    }
+    setTab('admin');
   }
 
   function recordStaff(type: 'login' | 'logout', user: StaffUser) {
@@ -167,6 +192,10 @@ export default function App() {
   function handleStaffLogout() {
     if (currentStaff) recordStaff('logout', currentStaff);
     setCurrentStaff(null);
+    // A cashier logout closes an administrator's direct workspace access as
+    // well. The next person must authenticate with their own credentials.
+    setManagementAdministrator(null);
+    setAdminUnlocked(false);
   }
 
   return (
@@ -216,10 +245,31 @@ export default function App() {
             </>
           )}
 
-          <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
-
-          <TabButton active={tab === 'journal'} onClick={() => navigateTo('journal')} icon={<Receipt className="h-4 w-4" />} label="Journale" locked={!adminUnlocked} />
-          <TabButton active={tab === 'admin'} onClick={() => navigateTo('admin')} icon={<Settings className="h-4 w-4" />} label="Verwaltung" locked={!adminUnlocked} />
+          {currentStaff?.role === 'administrator' && (
+            <>
+              <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
+              <TabButton
+                active={tab === 'journal'}
+                onClick={() => {
+                  setManagementAdministrator(currentStaff);
+                  setAdminUnlocked(true);
+                  setTab('journal');
+                }}
+                icon={<Receipt className="h-4 w-4" />}
+                label="Journale"
+              />
+              <TabButton
+                active={tab === 'admin'}
+                onClick={() => {
+                  setManagementAdministrator(currentStaff);
+                  setAdminUnlocked(true);
+                  setTab('admin');
+                }}
+                icon={<Settings className="h-4 w-4" />}
+                label="Verwaltung"
+              />
+            </>
+          )}
         </nav>
 
         {/* Test/Active mode badge */}
@@ -283,15 +333,52 @@ export default function App() {
             onCashEntry={(type, amt, reason, isPfandRetoure = false) => {
               if (store.activeSession && currentStaff) store.addCashEntry(store.activeSession.id, type, amt, reason, isPfandRetoure, currentStaff);
             }}
-            onCloseCash={(bal) => {
+            onCloseCash={async (bal, closingWithdrawalAmount) => {
               const session = store.activeSession;
-              if (!session || !currentStaff) return;
-              store.closeCashSession(session.id, bal, currentStaff);
-              void saveJournalPdf(closedSessionReport({ ...session, closed: true, closedAt: Date.now() }, store.transactions, store.categories, currentStaff.name)).catch(() =>
-                alert('Der Tagesbericht-PDF konnte nicht erstellt werden. Er kann im Journal nachträglich exportiert werden.'),
-              );
+              if (!session || !currentStaff) return { ok: false, error: 'Es ist keine aktive Kasse oder kein angemeldeter Mitarbeiter vorhanden.' };
+              if (!online || !navigator.onLine) {
+                return { ok: false, error: 'Beleg konnte nicht erstellt werden, da keine Internetverbindung besteht. Bitte Internetverbindung prüfen und erneut versuchen.' };
+              }
+              const finalizedAt = Date.now();
+              const finalizedIntervals = (session.staffLoginIntervals ?? []).map((interval) => interval.logoutAt ? interval : { ...interval, logoutAt: finalizedAt });
+              try {
+                // A final close without the cloud-wide, immutable receipt
+                // number is not allowed. The RPC is idempotent per session.
+                const receipt = await issueDailyCloseReceipt(session.id, currentStaff.name, session.location, finalizedAt);
+                const closingWithdrawal = closingWithdrawalAmount > 0 ? {
+                  id: `daily-close-withdrawal-${session.id}`,
+                  type: 'withdrawal' as const,
+                  amount: closingWithdrawalAmount,
+                  reason: 'Entnahme zum Tagesabschluss',
+                  timestamp: finalizedAt,
+                  isClosingWithdrawal: true,
+                  employeeId: currentStaff.id,
+                  employeeName: currentStaff.name,
+                } : null;
+                const finalized = {
+                  ...session, closed: true, closedAt: finalizedAt, closedById: currentStaff.id, closedByName: currentStaff.name,
+                  entries: closingWithdrawal ? [...session.entries, closingWithdrawal] : session.entries,
+                  closingWithdrawalAmount,
+                  closingBalance: bal,
+                  staffLoginIntervals: finalizedIntervals,
+                  dailyCloseReceiptNumber: receipt.number, dailyCloseReceiptLocation: receipt.location, dailyCloseReceiptYear: receipt.year,
+                  dailyCloseFinalizedAt: finalizedAt, dailyCloseFinalizedById: currentStaff.id, dailyCloseFinalizedByName: currentStaff.name,
+                };
+                const frozenTransactions = store.transactions.filter((transaction) => transaction.location === session.location && transaction.timestamp >= session.openedAt && transaction.timestamp <= finalizedAt);
+                const snapshot = { transactions: frozenTransactions, finalizedAt, finalizedById: currentStaff.id, finalizedByName: currentStaff.name, staffLoginIntervals: finalizedIntervals };
+                store.closeCashSession(session.id, bal, currentStaff, closingWithdrawalAmount, {
+                  closedAt: finalizedAt,
+                  receipt,
+                  snapshot,
+                });
+                await saveJournalPdf(closedSessionReport({ ...finalized, dailyCloseSnapshot: snapshot }, store.transactions, store.categories, currentStaff.name));
+                return { ok: true };
+              } catch (error) {
+                console.warn('Tagesabschluss ohne Belegnummer abgelehnt.', error);
+                return { ok: false, error: 'Beleg konnte nicht erstellt werden. Bitte Internetverbindung prüfen und erneut versuchen.' };
+              }
             }}
-            onEnterAdmin={() => navigateTo('admin')}
+            onEnterAdmin={openManagementFromCashOpening}
             onMoveProduct={(sourceId, targetId) => store.moveProductTo(sourceId, targetId)}
             headerAction={headerAction}
             onHeaderActionConsumed={() => setHeaderAction(null)}
@@ -301,10 +388,12 @@ export default function App() {
             currentStaff={currentStaff}
             online={online}
             onStaffAuthenticated={handleStaffAuthenticated}
-            onSetStaffPassword={staff.setPassword}
+            onSetInitialCredentials={staff.setInitialCredentials}
+            onConfigureStaffSecurity={staff.configureSecurity}
             onResetStaffPassword={staff.resetPassword}
             lastStaffId={lastStaffId}
             onStaffLogout={handleStaffLogout}
+            openingBalanceSuggestions={openingBalanceSuggestions}
           />
         )}
         {tab === 'admin' && (
@@ -368,7 +457,17 @@ export default function App() {
               }}
             />
           ) : (
-            <AdminAccessGate onManagerSuccess={(administrator) => { setManagementAdministrator(administrator ?? null); setAdminUnlocked(true); }} onStaffLogin={() => setStaffAdminLoginOpen(true)} staffUsers={staff.users} title="Verwaltung" />
+            <AdminAccessGate
+              onManagerSuccess={(administrator) => {
+                const selectedAdministrator = openingManagementAccess?.kind === 'selected-administrator' ? openingManagementAccess.administrator : null;
+                setManagementAdministrator(selectedAdministrator ?? administrator ?? null);
+                setAdminUnlocked(true);
+              }}
+              onStaffLogin={() => setStaffAdminLoginOpen(true)}
+              staffUsers={staff.users}
+              title="Verwaltung"
+              access={openingManagementAccess}
+            />
           )
         )}
         {modeConfirm && (
@@ -402,7 +501,8 @@ export default function App() {
           online={online}
           title="Administrator anmelden"
           onAuthenticated={(administrator) => { setManagementAdministrator(administrator); setAdminUnlocked(true); setStaffAdminLoginOpen(false); }}
-          onSetPassword={staff.setPassword}
+          onSetInitialCredentials={staff.setInitialCredentials}
+          onConfigureSecurity={staff.configureSecurity}
           onResetPassword={staff.resetPassword}
           initialStaffId={lastStaffId}
           onCancel={() => setStaffAdminLoginOpen(false)}
@@ -425,8 +525,18 @@ function readableSyncError(cause: unknown): string {
   return String(cause);
 }
 
-function AdminAccessGate({ onManagerSuccess, onStaffLogin, staffUsers, title }: { onManagerSuccess: (administrator?: StaffUser) => void; onStaffLogin: () => void; staffUsers: StaffUser[]; title: string }) {
-  return <PasswordGate onSuccess={onManagerSuccess} onStaffLogin={onStaffLogin} administrators={staffUsers} title={title} />;
+function AdminAccessGate({ onManagerSuccess, onStaffLogin, staffUsers, title, access = null }: { onManagerSuccess: (administrator?: StaffUser) => void; onStaffLogin: () => void; staffUsers: StaffUser[]; title: string; access?: OpeningManagementAccess }) {
+  const selectedAdministrator = access?.kind === 'selected-administrator' ? access.administrator : null;
+  const managerOnly = access?.kind === 'manager-only';
+  const employeeDenied = access?.kind === 'employee-denied';
+  return <PasswordGate
+    onSuccess={onManagerSuccess}
+    onStaffLogin={employeeDenied || managerOnly ? undefined : onStaffLogin}
+    administrators={selectedAdministrator ? [selectedAdministrator] : managerOnly || employeeDenied ? [] : staffUsers}
+    allowManagerPassword={!employeeDenied}
+    accessDenied={employeeDenied}
+    title={title}
+  />;
 }
 
 function TabButton({ active, onClick, icon, label, locked }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; locked?: boolean }) {

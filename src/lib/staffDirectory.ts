@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
-import type { StaffRole, StaffUser } from '@/types';
+import type { StaffRole, StaffSecurityQuestion, StaffUser } from '@/types';
 
 const PBKDF2_ITERATIONS = 210_000;
 
@@ -64,8 +64,39 @@ export async function makeStaffUser(name: string, role: StaffRole, initialPasswo
     active: true,
     passwordSalt: password.passwordSalt,
     passwordHash: password.passwordHash,
+    securityQuestion: null,
+    securityConfigured: false,
     updatedAt: Date.now(),
   };
+}
+
+function ensureSecurityQuestion(question: StaffSecurityQuestion | null): StaffSecurityQuestion {
+  if (!question) throw new Error('Bitte eine Sicherheitsfrage auswählen.');
+  return question;
+}
+
+export async function configureStaffSecurity(staffId: string, question: StaffSecurityQuestion | null, answer: string): Promise<void> {
+  if (!navigator.onLine) throw new Error('Die Sicherheitsfrage kann nur online eingerichtet werden.');
+  if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+  if (answer.trim().length < 2) throw new Error('Bitte eine Sicherheitsantwort mit mindestens 2 Zeichen eingeben.');
+  const { error } = await supabase.rpc('configure_staff_security', {
+    p_staff_id: staffId,
+    p_question: ensureSecurityQuestion(question),
+    p_answer: answer.trim(),
+  });
+  if (error) throw error;
+}
+
+export async function resetStaffPasswordWithSecurity(staffId: string, answer: string, proof: Pick<StaffUser, 'passwordSalt' | 'passwordHash'>): Promise<void> {
+  if (!navigator.onLine) throw new Error('Passwort-Zurücksetzung ist nur online möglich.');
+  if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+  const { error } = await supabase.rpc('reset_staff_password_with_security', {
+    p_staff_id: staffId,
+    p_answer: answer.trim(),
+    p_password_salt: proof.passwordSalt,
+    p_password_hash: proof.passwordHash,
+  });
+  if (error) throw error;
 }
 
 type StaffRow = { id: string; data: StaffUser; updated_at: number; deleted: boolean };
@@ -86,7 +117,7 @@ export async function pullStaffUsers(): Promise<StaffUser[]> {
   const users = ((data ?? []) as StaffRow[])
     .map((row) => row.data)
     .filter(isStaffUser)
-    .map((user) => ({ ...user, updatedAt: Number(user.updatedAt) || Date.now() }));
+    .map((user) => ({ ...user, securityQuestion: user.securityQuestion ?? null, securityConfigured: Boolean(user.securityConfigured && user.securityQuestion), updatedAt: Number(user.updatedAt) || Date.now() }));
   saveStaffUsers(users);
   return users;
 }
@@ -102,6 +133,8 @@ export async function pushStaffUser(user: StaffUser): Promise<void> {
 export async function removeStaffUser(user: StaffUser): Promise<void> {
   if (!navigator.onLine) throw new Error('Benutzer können nur online gelöscht werden.');
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+  const { error: securityError } = await supabase.rpc('remove_staff_security', { p_staff_id: user.id });
+  if (securityError) throw securityError;
   const row: StaffRow = { id: user.id, data: user, updated_at: Date.now(), deleted: true };
   const { error } = await supabase.from('pos_staff_users').upsert(row, { onConflict: 'id' });
   if (error) throw error;
@@ -113,6 +146,8 @@ export async function removeStaffUser(user: StaffUser): Promise<void> {
 export async function removeAllStaffUsers(): Promise<void> {
   if (!navigator.onLine) throw new Error('Benutzer können nur online zurückgesetzt werden.');
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+  const { error: securityError } = await supabase.rpc('remove_all_staff_security');
+  if (securityError) throw securityError;
   const { data, error } = await supabase
     .from('pos_staff_users')
     .select('id, data')

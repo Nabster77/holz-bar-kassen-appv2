@@ -11,11 +11,15 @@ interface Props {
   title: string;
   onStaffLogin?: () => void;
   administrators?: StaffUser[];
+  /** Whether the shared Verwaltung/Journal password is accepted in this gate. */
+  allowManagerPassword?: boolean;
+  /** Shows an explanation instead of a password field for a normal employee. */
+  accessDenied?: boolean;
 }
 
 type GateError = 'wrong' | 'unavailable' | null;
 
-export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = [] }: Props) {
+export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = [], allowManagerPassword = true, accessDenied = false }: Props) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
@@ -34,7 +38,7 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = 
       }
       if (authenticatedAdministrator) {
         onSuccess(authenticatedAdministrator);
-      } else if (await verifyManagerPassword(input)) {
+      } else if (allowManagerPassword && await verifyManagerPassword(input)) {
         onSuccess();
       } else {
         setError('wrong');
@@ -55,7 +59,11 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = 
           </div>
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
         </div>
-        <div className="space-y-3">
+        {accessDenied ? (
+          <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-center text-sm font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+            Mitarbeiter haben keinen Zugriff auf Verwaltung oder Journal.
+          </p>
+        ) : <div className="space-y-3">
           <input
             type="password"
             name="admin-gate-secret"
@@ -89,7 +97,7 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = 
             {checking ? <Loader2 className="mr-1.5 inline h-5 w-5 animate-spin" /> : <Check className="mr-1.5 inline h-5 w-5" />} Entsperren
           </button>
           {onStaffLogin && <button onClick={onStaffLogin} className="w-full rounded-xl border border-blue-300 bg-blue-50 py-2.5 text-sm font-semibold text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300">Als Administrator anmelden</button>}
-        </div>
+        </div>}
       </div>
     </div>
   );

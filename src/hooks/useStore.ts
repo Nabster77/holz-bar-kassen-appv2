@@ -166,6 +166,7 @@ export function useStore() {
       openedById: staff?.id,
       openedByName: staff?.name,
       activities: staff ? [{ id: uid('activity'), type: 'cash_opened', staffId: staff.id, staffName: staff.name, timestamp: openedAt, amount: openingBalance }] : [],
+      staffLoginIntervals: staff ? [{ id: uid('staff-login'), staffId: staff.id, staffName: staff.name, loginAt: openedAt }] : [],
     };
     setCashSessions((ss) => [...ss.filter((s) => !(s.date === session.date && s.location === location && !s.closed)), session]);
   }, []);
@@ -209,35 +210,111 @@ export function useStore() {
     );
   }, []);
 
-  const closeCashSession = useCallback((sessionId: string, closingBalance: number, staff?: StaffUser) => {
+  const closeCashSession = useCallback((
+    sessionId: string,
+    closingBalance: number,
+    staff?: StaffUser,
+    closingWithdrawalAmount = 0,
+    finalization?: {
+      closedAt: number;
+      receipt: { number: number; location: Location; year: number };
+      snapshot: NonNullable<CashSession['dailyCloseSnapshot']>;
+    },
+  ) => {
+    const closedAt = finalization?.closedAt ?? Date.now();
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
+        const finalWithdrawal = closingWithdrawalAmount > 0 ? {
+          id: uid('entry'),
+          type: 'withdrawal' as const,
+          amount: closingWithdrawalAmount,
+          reason: 'Entnahme zum Tagesabschluss',
+          timestamp: closedAt,
+          isClosingWithdrawal: true,
+          employeeId: staff?.id,
+          employeeName: staff?.name,
+        } satisfies CashEntry : null;
+        const entries = finalWithdrawal ? [...s.entries, finalWithdrawal] : s.entries;
         const sessionTx = transactions.filter((t) => {
           const txDate = formatDateISO(t.timestamp);
           return txDate === s.date && t.location === s.location;
         });
-        const txTotal = sessionTx.reduce((sum, t) => sum + t.total, 0);
-        const deposits = s.entries.filter((e) => e.type === 'deposit').reduce((sum, e) => sum + e.amount, 0);
-        const withdrawals = s.entries.filter((e) => e.type === 'withdrawal').reduce((sum, e) => sum + e.amount, 0);
-        const expected = s.openingBalance + txTotal + deposits - withdrawals;
+        const cashTxTotal = sessionTx.filter((transaction) => transaction.paymentMethod === 'cash').reduce((sum, t) => sum + t.total, 0);
+        const deposits = entries.filter((e) => e.type === 'deposit').reduce((sum, e) => sum + e.amount, 0);
+        const withdrawals = entries.filter((e) => e.type === 'withdrawal').reduce((sum, e) => sum + e.amount, 0);
+        const expected = s.openingBalance + cashTxTotal + deposits - withdrawals;
         return {
           ...s,
           closed: true,
-          closedAt: Date.now(),
-          closingBalance,
+          closedAt,
+          // The persisted remainder is derived from all booked movements,
+          // including the final withdrawal. This prevents an old/manual value
+          // from becoming the next opening balance.
+          closingBalance: expected,
           expectedBalance: expected,
           difference: closingBalance - expected,
+          closingWithdrawalAmount,
+          entries,
           closedById: staff?.id,
           closedByName: staff?.name,
-          activities: staff ? [...(s.activities ?? []), { id: uid('activity'), type: 'cash_closed', staffId: staff.id, staffName: staff.name, timestamp: Date.now(), amount: closingBalance }] : s.activities,
+          // These values are written together with the first and only closed
+          // cloud version. A closed cash session is deliberately immutable.
+          dailyCloseReceiptNumber: finalization?.receipt.number,
+          dailyCloseReceiptLocation: finalization?.receipt.location,
+          dailyCloseReceiptYear: finalization?.receipt.year,
+          dailyCloseFinalizedAt: finalization?.closedAt,
+          dailyCloseFinalizedById: staff?.id,
+          dailyCloseFinalizedByName: staff?.name,
+          dailyCloseSnapshot: finalization?.snapshot,
+          activities: staff ? [...(s.activities ?? []), ...(finalWithdrawal ? [{ id: uid('activity'), type: 'withdrawal' as const, staffId: staff.id, staffName: staff.name, timestamp: closedAt, amount: closingWithdrawalAmount, reason: finalWithdrawal.reason }] : []), { id: uid('activity'), type: 'cash_closed', staffId: staff.id, staffName: staff.name, timestamp: closedAt, amount: expected }] : s.activities,
+          // An employee still logged in at final close receives a real end
+          // time; this also safely closes a period after a browser interruption.
+          staffLoginIntervals: (s.staffLoginIntervals ?? []).map((interval) => interval.logoutAt ? interval : { ...interval, logoutAt: closedAt }),
         };
       }),
     );
   }, [transactions]);
 
+  const setDailyCloseReceipt = useCallback((sessionId: string, receiptNumber: number, location: Location, year: number, finalizedBy?: Pick<StaffUser, 'id' | 'name'>) => {
+    setCashSessions((sessions) => sessions.map((session) => {
+      if (session.id !== sessionId) return session;
+      return {
+        ...session,
+        dailyCloseReceiptNumber: receiptNumber,
+        dailyCloseReceiptLocation: location,
+        dailyCloseReceiptYear: year,
+        dailyCloseFinalizedAt: session.closedAt ?? Date.now(),
+        dailyCloseFinalizedById: finalizedBy?.id ?? session.closedById,
+        dailyCloseFinalizedByName: finalizedBy?.name ?? session.closedByName,
+      };
+    }));
+  }, []);
+
+  const setDailyCloseSnapshot = useCallback((sessionId: string, snapshot: NonNullable<CashSession['dailyCloseSnapshot']>) => {
+    setCashSessions((sessions) => sessions.map((session) => session.id === sessionId
+      ? { ...session, dailyCloseSnapshot: snapshot }
+      : session));
+  }, []);
+
   const recordStaffActivity = useCallback((sessionId: string, activity: StaffActivity) => {
-    setCashSessions((ss) => ss.map((session) => session.id === sessionId && !session.closed ? { ...session, activities: [...(session.activities ?? []), activity] } : session));
+    setCashSessions((ss) => ss.map((session) => {
+      if (session.id !== sessionId || session.closed) return session;
+      const intervals = [...(session.staffLoginIntervals ?? [])];
+      if (activity.type === 'login') {
+        const alreadyOpen = intervals.some((interval) => interval.staffId === activity.staffId && interval.logoutAt === undefined);
+        if (!alreadyOpen) intervals.push({ id: `staff-login-${activity.id}`, staffId: activity.staffId, staffName: activity.staffName, loginAt: activity.timestamp });
+      } else if (activity.type === 'logout') {
+        for (let index = intervals.length - 1; index >= 0; index -= 1) {
+          const interval = intervals[index];
+          if (interval.staffId === activity.staffId && interval.logoutAt === undefined) {
+            intervals[index] = { ...interval, logoutAt: Math.max(activity.timestamp, interval.loginAt) };
+            break;
+          }
+        }
+      }
+      return { ...session, activities: [...(session.activities ?? []), activity], staffLoginIntervals: intervals };
+    }));
   }, []);
 
   const resetAllData = useCallback(() => {
@@ -329,7 +406,10 @@ export function useStore() {
       let changed = false;
       const merged = ss.map((s) => {
         const remote = cloudById.get(s.id);
-        if (!remote || !remote.closed || s.closed) return s;
+        if (!remote || !remote.closed) return s;
+        // A previously closed session can still gain its central receipt
+        // number on another device. Never let the older local copy hide it.
+        if (s.closed && !remote.dailyCloseReceiptNumber) return s;
         changed = true;
         return remote;
       });
@@ -392,6 +472,8 @@ export function useStore() {
     correctOpeningBalance,
     addCashEntry,
     closeCashSession,
+    setDailyCloseReceipt,
+    setDailyCloseSnapshot,
     recordStaffActivity,
     switchLocation,
     mergeCloudData,

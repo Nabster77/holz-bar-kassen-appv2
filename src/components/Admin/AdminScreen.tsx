@@ -1,5 +1,5 @@
 import { useRef, useState, useMemo, type ReactNode } from 'react';
-import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffUser } from '@/types';
+import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
 import { buildDailyReport } from '@/lib/dailyReport';
@@ -38,7 +38,7 @@ interface Props {
   getProductPfand: (product: Product, loc: Location) => number;
   staffUsers?: StaffUser[];
   staffOnline?: boolean;
-  onCreateStaff?: (name: string, role: StaffRole, initialPassword?: string) => Promise<unknown>;
+  onCreateStaff?: (name: string, role: StaffRole, initialPassword?: string, securityQuestion?: StaffSecurityQuestion | null, securityAnswer?: string) => Promise<unknown>;
   onUpdateStaff?: (user: StaffUser) => Promise<unknown>;
   onSetStaffPassword?: (id: string, password: string) => Promise<unknown>;
   onDeleteStaff?: (id: string) => Promise<unknown>;
@@ -748,7 +748,15 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
   }, [transactions, cashSessions, selectedDate]);
 
   function reportForLocation(loc: Location, txToday: Transaction[]) {
-    return buildDailyReport(loc, selectedDate, txToday, categories, cashSessions.filter((session) => session.location === loc && session.date === selectedDate), exportedByName);
+    return buildDailyReport(
+      loc,
+      selectedDate,
+      txToday,
+      categories,
+      cashSessions.filter((session) => session.location === loc && session.date === selectedDate),
+      exportedByName,
+      transactions,
+    );
   }
 
   function exportLocation(loc: Location, txToday: Transaction[]) {

@@ -12,17 +12,59 @@ export interface JournalReportData {
   /** Person, die den Export bzw. Druck ausgelöst hat. */
   exportedByName?: string;
   cashAuditRecords?: CashAuditRecord[];
+  /** Actual, completed login periods used by finalized daily-close reports. */
+  staffTimeRecords?: StaffTimeRecord[];
+  /** Used only by the automatic daily-close document. */
+  documentTitle?: string;
+  documentStatus?: string;
+  receiptNumber?: string;
+  /** Running deposit control total for the selected location(s) and calendar year. */
+  yearlyPfandOverview?: YearlyPfandOverview;
+  /** Cash figures only present on a finalized daily-close document. */
+  dailyCloseCash?: {
+    openingBalance: number;
+    /** Taxable sales paid in cash; deposit is intentionally separate. */
+    cashSales: number;
+    /** Deposit collected in cash only. */
+    cashPfandIncome: number;
+    /** Deposit returned from the physical cash till only. */
+    cashPfandPayout: number;
+    cashDeposits: number;
+    cashWithdrawals: number;
+    /** Corrections already change the opening balance and are information only. */
+    openingCorrectionTotal: number;
+    balanceBeforeWithdrawal: number;
+    closingWithdrawalAmount: number;
+    remainingBalance: number;
+  };
+}
+
+export interface YearlyPfandOverview {
+  year: number;
+  /** Human-readable scope, e.g. Friedrichshafen or Alle Standorte. */
+  scopeLabel: string;
+  pfandCollected: number;
+  pfandReturned: number;
+  pfandSaldo: number;
 }
 
 export interface CashAuditRecord {
   location: Location;
   timestamp: number;
-  kind: 'Einlage' | 'Ausgabe' | 'Korrektur';
+  kind: 'Einlage' | 'Ausgabe' | 'Korrektur' | 'Entnahme zum Tagesabschluss';
   amount?: number;
   oldAmount?: number;
   newAmount?: number;
   reason: string;
   employeeName?: string;
+}
+
+export interface StaffTimeRecord {
+  location: Location;
+  staffName: string;
+  loginAt: number;
+  logoutAt: number;
+  durationMs: number;
 }
 
 interface LocationStats {
@@ -61,6 +103,39 @@ function computeStats(txs: Transaction[]): LocationStats {
   }
   const totalTax = Object.values(taxByRate).reduce((s, v) => s + v, 0);
   return { total, totalNet, totalTax, pfandCollected, pfandReturned, pfandSaldo: pfandCollected - pfandReturned, count, taxByRate };
+}
+
+/**
+ * Calculates the deposit control value directly from booking history.  It is
+ * deliberately not stored separately: deleting bookings also resets the
+ * control value without leaving an old counter behind.
+ */
+export function calculateYearlyPfandOverview(
+  transactions: Transaction[],
+  year: number,
+  location: Location | 'all',
+  scopeLabel = location === 'all' ? 'Alle Standorte' : location,
+): YearlyPfandOverview {
+  let pfandCollected = 0;
+  let pfandReturned = 0;
+  for (const transaction of transactions) {
+    if (new Date(transaction.timestamp).getFullYear() !== year) continue;
+    if (location !== 'all' && transaction.location !== location) continue;
+    for (const item of transaction.items) {
+      if (item.isPfandRetoure) {
+        pfandReturned += Math.abs(item.pfand || item.price * item.quantity);
+      } else {
+        pfandCollected += item.pfand;
+      }
+    }
+  }
+  return {
+    year,
+    scopeLabel,
+    pfandCollected,
+    pfandReturned,
+    pfandSaldo: Math.round((pfandCollected - pfandReturned) * 100) / 100,
+  };
 }
 
 function categoryRows(txs: Transaction[], categories: Category[]): string {
@@ -143,15 +218,17 @@ function transactionRows(txs: Transaction[]): string {
   return [...txs].sort((a, b) => a.timestamp - b.timestamp)
     .map((tx, i) => {
       const txTax = [...getTaxByRate(tx).values()].reduce((s, v) => s + v, 0);
-      return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)}</td><td>${formatTime(tx.timestamp)}</td><td>${escapeHtml(tx.employeeName ?? '—')}</td><td>${tx.items.length}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td><td>${tx.paymentMethod === 'cash' ? 'BAR' : 'KARTE'}</td></tr>`;
+      const isPfandPayout = tx.total < 0 && tx.items.some((item) => item.isPfandRetoure);
+      const kind = isPfandPayout ? 'Pfandausgabe' : tx.paymentMethod === 'cash' ? 'Bareinnahme' : 'Karteneinnahme';
+      const articles = tx.items.map((item) => `${item.quantity}× ${item.isPfandRetoure ? 'Pfand-Retoure' : item.name}`).join(', ');
+      return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)}</td><td>${formatTime(tx.timestamp)}</td><td>${escapeHtml(tx.employeeName ?? '—')}</td><td>${escapeHtml(kind)}</td><td>${escapeHtml(articles)}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td></tr>`;
     })
     .join('');
 }
 
-function transactionSection(txs: Transaction[], title: string): string {
-  return `<section class="report-table-section">
-    <h2>${title}</h2>
-    <table class="transaction-table"><thead><tr><th>#</th><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Artikel</th><th style="text-align:right">Betrag</th><th style="text-align:right">MwSt</th><th>Zahlart</th></tr></thead><tbody>${transactionRows(txs)}</tbody></table>
+function transactionSection(txs: Transaction[], title: string, color?: string): string {
+  return `<section class="report-table-section table-block">
+    <table class="transaction-table"><thead>${tableTitleRow(title, color)}<tr><th>#</th><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Vorgang</th><th>Artikel</th><th style="text-align:right">Betrag</th><th style="text-align:right">MwSt</th></tr></thead><tbody>${transactionRows(txs)}</tbody></table>
   </section>`;
 }
 
@@ -166,9 +243,29 @@ function auditRows(records: CashAuditRecord[]): string {
 
 function auditSection(records: CashAuditRecord[]): string {
   if (records.length === 0) return '';
-  return `<section class="report-table-section">
-    <h2>Kassenbewegungen und Korrekturen</h2>
-    <table class="audit-table"><thead><tr><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Vorgang</th><th style="text-align:right">Betrag / Änderung</th><th>Grund</th></tr></thead><tbody>${auditRows(records)}</tbody></table>
+  return `<section class="report-table-section table-block">
+    <table class="audit-table"><thead>${tableTitleRow('Kassenbewegungen und Korrekturen')}<tr><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Vorgang</th><th style="text-align:right">Betrag / Änderung</th><th>Grund</th></tr></thead><tbody>${auditRows(records)}</tbody></table>
+  </section>`;
+}
+
+function formatDuration(durationMs: number): string {
+  const totalMinutes = Math.max(0, Math.round(durationMs / 60_000));
+  return `${Math.floor(totalMinutes / 60)} Std. ${String(totalMinutes % 60).padStart(2, '0')} Min.`;
+}
+
+function staffTimesSection(records: StaffTimeRecord[]): string {
+  if (records.length === 0) return '';
+  const rows = [...records].sort((a, b) => a.loginAt - b.loginAt).map((record) =>
+    `<tr><td>${escapeHtml(record.staffName)}</td><td>${formatDate(record.loginAt)}</td><td>${formatTime(record.loginAt)}</td><td>${formatDate(record.logoutAt)}</td><td>${formatTime(record.logoutAt)}</td><td>${formatDuration(record.durationMs)}</td></tr>`,
+  ).join('');
+  const totals = new Map<string, number>();
+  for (const record of records) totals.set(record.staffName, (totals.get(record.staffName) ?? 0) + record.durationMs);
+  const totalRows = [...totals.entries()].map(([name, duration]) =>
+    `<div class="staff-total-row"><span>${escapeHtml(name)}: gesamte Anmeldezeit am Tag:</span><strong>${formatDuration(duration)}</strong></div>`,
+  ).join('');
+  return `<section class="report-table-section table-block staff-times-section">
+    <table><thead>${tableTitleRow('Mitarbeiterzeiten')}<tr><th>Mitarbeiter</th><th>Anmeldung am</th><th>Uhrzeit</th><th>Abmeldung am</th><th>Uhrzeit</th><th>Gesamtzeit</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="staff-totals">${totalRows}</div>
   </section>`;
 }
 
@@ -212,7 +309,57 @@ function summaryCards(s: LocationStats, accentColor: string): string {
   </div>`;
 }
 
-function locationSection(loc: Location, txs: Transaction[], categories: Category[], auditRecords: CashAuditRecord[]): string {
+function dailyCloseCashSection(cash?: JournalReportData['dailyCloseCash']): string {
+  if (!cash) return '';
+  const correction = cash.openingCorrectionTotal === 0
+    ? ''
+    : `<tr><td>Korrekturen am Anfangsbestand (bereits enthalten)</td><td style="text-align:right">${cash.openingCorrectionTotal > 0 ? '+' : '-'} ${formatCurrency(Math.abs(cash.openingCorrectionTotal))}</td></tr>`;
+  return `<section class="report-table-section table-block daily-close-cash">
+    <h2>Kassenbestand beim Tagesabschluss</h2>
+    <table><tbody>
+      <tr><td>Kassenanfangsbestand</td><td style="text-align:right"><b>${formatCurrency(cash.openingBalance)}</b></td></tr>
+      <tr><td>Barumsatz</td><td style="text-align:right"><b>${formatCurrency(cash.cashSales)}</b></td></tr>
+      <tr><td>Pfandeinnahmen (bar)</td><td style="text-align:right">+ ${formatCurrency(cash.cashPfandIncome)}</td></tr>
+      <tr><td>Pfandretouren (bar)</td><td style="text-align:right">- ${formatCurrency(cash.cashPfandPayout)}</td></tr>
+      <tr><td>Bareinlagen</td><td style="text-align:right">+ ${formatCurrency(cash.cashDeposits)}</td></tr>
+      <tr><td>Barausgaben</td><td style="text-align:right">- ${formatCurrency(cash.cashWithdrawals)}</td></tr>
+      ${correction}
+      <tr><td>Kassenendbestand vor Entnahme</td><td style="text-align:right"><b>${formatCurrency(cash.balanceBeforeWithdrawal)}</b></td></tr>
+      <tr><td>Entnahme zum Tagesabschluss</td><td style="text-align:right"><b>-${formatCurrency(cash.closingWithdrawalAmount)}</b></td></tr>
+      <tr><td><b>Restbestand / nächster Anfangsbestand</b></td><td style="text-align:right"><b>${formatCurrency(cash.remainingBalance)}</b></td></tr>
+    </tbody></table>
+  </section>`;
+}
+
+function yearlyPfandOverviewSection(overview?: YearlyPfandOverview): string {
+  if (!overview) return '';
+  return `<section class="report-table-section table-block yearly-pfand-overview">
+    <h2>Pfand-Kontrollübersicht ${overview.year}</h2>
+    <p class="pfand-control-note">${escapeHtml(overview.scopeLabel)} · alle Buchungen im Kalenderjahr</p>
+    <table><tbody>
+      <tr><td>Pfandeinnahmen</td><td style="text-align:right"><b>+ ${formatCurrency(overview.pfandCollected)}</b></td></tr>
+      <tr><td>Pfandretouren</td><td style="text-align:right"><b>- ${formatCurrency(overview.pfandReturned)}</b></td></tr>
+      <tr><td><b>${pfandSaldoLabel(overview.pfandSaldo)}</b></td><td style="text-align:right">${pfandSaldoCell(overview.pfandSaldo)}</td></tr>
+    </tbody></table>
+    <p class="pfand-control-note">Der Saldo wird aus den vorhandenen Buchungen berechnet und beim Zurücksetzen der Buchungen automatisch zurückgesetzt.</p>
+  </section>`;
+}
+
+function tableTitleRow(title: string, color?: string): string {
+  const headingStyle = color ? ` style="color:${color}"` : '';
+  // Firefox may separate a table caption from its rows at a page boundary.
+  // A title row in the table header is instead kept with the column header
+  // and repeated as one unit whenever the table continues on a new page.
+  return `<tr class="table-title-row"><th colspan="99"${headingStyle}>${title}</th></tr>`;
+}
+
+function tableBlock(title: string, table: string, color?: string): string {
+  const titleRow = tableTitleRow(title, color);
+  const tableWithTitleRow = table.replace('<thead>', `<thead>${titleRow}`);
+  return `<section class="table-block">${tableWithTitleRow}</section>`;
+}
+
+function locationSection(loc: Location, txs: Transaction[], categories: Category[], auditRecords: CashAuditRecord[], staffTimeRecords: StaffTimeRecord[] = [], dailyCloseCash?: JournalReportData['dailyCloseCash']): string {
   const meta = LOCATION_META[loc];
   const s = computeStats(txs);
   const cats = categoryRows(txs, categories);
@@ -226,22 +373,21 @@ function locationSection(loc: Location, txs: Transaction[], categories: Category
       <div class="loc-sub">${txs.length} Transaktion${txs.length === 1 ? '' : 'en'} · Umsatz ${formatCurrency(s.total)}</div>
     </div>
     <div class="loc-body">
+      ${dailyCloseCashSection(dailyCloseCash)}
       ${isEmpty ? `<div class="empty">Keine Verkäufe für diesen Standort im gewählten Zeitraum.</div>` : `
       ${summaryCards(s, meta.color)}
       <h2 style="color:${meta.color}">Mehrwertsteuer-Klassen</h2>
       <div class="tax-section" style="grid-template-columns: repeat(${Math.min(columns, 4)}, 1fr)">
         ${taxCds || '<div class="tax-card">Keine steuerpflichtigen Umsätze</div>'}
       </div>
-      <h2 style="color:${meta.color}">Warengruppen</h2>
-      <table><thead><tr><th>Gruppe</th><th style="text-align:right">Menge</th><th style="text-align:right">Pfand</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${cats}</tbody></table>
-      <h2 style="color:${meta.color}">Einzelartikel</h2>
-      <table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>
-      <h2 style="color:${meta.color}">Bestseller (Top 10)</h2>
-      <table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>
-      ${transactionSection(txs, `Einzel-Bons (${txs.length})`).replace('<h2>', `<h2 style="color:${meta.color}">`)}
+      ${tableBlock('Warengruppen', `<table><thead><tr><th>Gruppe</th><th style="text-align:right">Menge</th><th style="text-align:right">Pfand</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${cats}</tbody></table>`, meta.color)}
+      ${tableBlock('Einzelartikel', `<table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>`, meta.color)}
+      ${tableBlock('Bestseller (Top 10)', `<table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>`, meta.color)}
+      ${transactionSection(txs, `Einzel-Bons (${txs.length})`, meta.color)}
       ${auditSection(auditRecords)}
+      ${staffTimesSection(staffTimeRecords)}
       `}
-      ${isEmpty ? auditSection(auditRecords) : ''}
+      ${isEmpty ? `${auditSection(auditRecords)}${staffTimesSection(staffTimeRecords)}` : ''}
     </div>
   </div>`;
 }
@@ -274,12 +420,9 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
       <div class="tax-section" style="grid-template-columns: repeat(${Math.min(columns, 4)}, 1fr)">
         ${taxCds || '<div class="tax-card">Keine steuerpflichtigen Umsätze</div>'}
       </div>
-      <h2>Warengruppen</h2>
-      <table><thead><tr><th>Gruppe</th><th style="text-align:right">Menge</th><th style="text-align:right">Pfand</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${cats}</tbody></table>
-      <h2>Einzelartikel</h2>
-      <table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>
-      <h2>Bestseller (Top 10)</h2>
-      <table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>
+      ${tableBlock('Warengruppen', `<table><thead><tr><th>Gruppe</th><th style="text-align:right">Menge</th><th style="text-align:right">Pfand</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${cats}</tbody></table>`)}
+      ${tableBlock('Einzelartikel', `<table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>`)}
+      ${tableBlock('Bestseller (Top 10)', `<table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>`)}
       ${transactionSection(transactions, `Einzel-Bons (${transactions.length})`)}
       ${auditSection(auditRecords)}
     </div>
@@ -287,7 +430,7 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
 }
 
 export function buildJournalHTML(data: JournalReportData): string {
-  const { headerLabel, location, transactions, categories, fileName, exportedByName, cashAuditRecords = [] } = data;
+  const { headerLabel, location, transactions, categories, fileName, exportedByName, cashAuditRecords = [], staffTimeRecords = [], documentTitle = 'Kassenjournal', documentStatus, receiptNumber, dailyCloseCash, yearlyPfandOverview } = data;
   const generatedAt = new Date().toLocaleString('de-DE');
   const generatedTime = new Date().toLocaleTimeString('de-DE');
   const isBregenzReport = location.toLowerCase().includes('bregenz');
@@ -323,15 +466,15 @@ export function buildJournalHTML(data: JournalReportData): string {
 
     body = `${comparison}
       <div class="loc-pagebreak"></div>
-      ${locationSection('Friedrichshafen', fhTx, categories, cashAuditRecords.filter((record) => record.location === 'Friedrichshafen'))}
+      ${locationSection('Friedrichshafen', fhTx, categories, cashAuditRecords.filter((record) => record.location === 'Friedrichshafen'), staffTimeRecords.filter((record) => record.location === 'Friedrichshafen'))}
       <div class="loc-pagebreak"></div>
-      ${locationSection('Bregenz', bgTx, categories, cashAuditRecords.filter((record) => record.location === 'Bregenz'))}
+      ${locationSection('Bregenz', bgTx, categories, cashAuditRecords.filter((record) => record.location === 'Bregenz'), staffTimeRecords.filter((record) => record.location === 'Bregenz'))}
       <div class="loc-pagebreak"></div>
       ${combinedSection(transactions, categories, totalStats, cashAuditRecords)}`;
   } else {
     // Single location — render once with clear header
     const loc = transactions[0]?.location ?? (location.includes('Bregenz') ? 'Bregenz' : 'Friedrichshafen');
-    body = locationSection(loc, transactions, categories, cashAuditRecords.filter((record) => record.location === loc));
+    body = locationSection(loc, transactions, categories, cashAuditRecords.filter((record) => record.location === loc), staffTimeRecords.filter((record) => record.location === loc), dailyCloseCash);
   }
 
   const printTitle = fileName.replace(/\.pdf$/i, '');
@@ -350,6 +493,8 @@ export function buildJournalHTML(data: JournalReportData): string {
     .header .report-employee { margin-top: 6px; color: #334155; font-size: 13px; font-weight: 600; }
     .print-running-header, .print-running-footer { display: none; }
     h2 { font-size: 16px; margin-top: 20px; margin-bottom: 8px; color: #1e3a5f; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+    caption { caption-side: top; text-align: left; font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 8px; color: #1e3a5f; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+    .table-title-row th { text-align: left; text-transform: none; font-size: 16px; color: #1e3a5f; background: transparent; border-bottom: 1px solid #cbd5e1; padding: 20px 0 8px; }
     .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
     .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; }
     .summary-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
@@ -379,6 +524,10 @@ export function buildJournalHTML(data: JournalReportData): string {
     .loc-pagebreak { page-break-after: always; height: 0; }
     .empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 13px; background: #f8fafc; border-radius: 8px; }
     .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 10px; color: #999; text-align: center; }
+    .staff-totals { border: 1px solid #cbd5e1; border-radius: 6px; margin: 0 0 14px; padding: 8px 12px; }
+    .staff-total-row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 5px 0; font-size: 12px; }
+    .staff-total-row strong { white-space: nowrap; }
+    .pfand-control-note { margin: -2px 0 7px; color: #64748b; font-size: 11px; }
     @media print {
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       html, body { background: #fff; }
@@ -402,8 +551,16 @@ export function buildJournalHTML(data: JournalReportData): string {
       .tax-section { gap: 3mm; margin-bottom: 4mm; break-inside: avoid; page-break-inside: avoid; }
       .tax-card .row { font-size: 9pt; }
       h2 { break-after: avoid; page-break-after: avoid; margin-top: 5mm; margin-bottom: 2mm; font-size: 13pt; }
-      .report-table-section { break-inside: auto; page-break-inside: auto; }
+      caption { text-align: left; break-after: avoid; page-break-after: avoid; margin-top: 5mm; margin-bottom: 2mm; font-size: 13pt; font-weight: bold; color: #1e3a5f; }
+      .table-title-row th { font-size: 13pt; padding: 5mm 0 2mm; }
+      /* Tabellenüberschrift und Tabellenbeginn bleiben zusammen. Bei sehr
+         langen Tabellen darf der Browser anschließend sauber weiter umbrechen. */
+      .table-block, .report-table-section { break-inside: avoid; page-break-inside: avoid; }
       .report-table-section > h2 { break-after: avoid; page-break-after: avoid; }
+      .staff-times-section { break-inside: avoid; page-break-inside: avoid; }
+      .staff-totals { margin-bottom: 4mm; padding: 2mm 3mm; }
+      .staff-total-row { gap: 10mm; padding: 1mm 0; font-size: 9.5pt; }
+      .pfand-control-note { font-size: 8.5pt; }
       table { margin-bottom: 4mm; font-size: 9.5pt; }
       thead { display: table-header-group; }
       tr, td, th { break-inside: avoid; page-break-inside: avoid; }
@@ -413,18 +570,20 @@ export function buildJournalHTML(data: JournalReportData): string {
       .loc-pagebreak { break-after: page; page-break-after: always; height: 0; }
     }
   </style></head><body>
-  <div class="print-running-header"><strong>Kassenjournal</strong><span>${escapeHtml(headerLabel)} · ${escapeHtml(location)}</span></div>
-  <div class="print-running-footer"><span>Kassenjournal automatisch generiert · ${generatedAt}</span><span class="page-count"></span></div>
+  <div class="print-running-header"><strong>${escapeHtml(documentTitle)}</strong><span>${escapeHtml(headerLabel)} · ${escapeHtml(location)}</span></div>
+  <div class="print-running-footer"><span>${escapeHtml(documentTitle)} automatisch generiert · ${generatedAt}</span><span class="page-count"></span></div>
   <div class="header" style="--report-accent:${reportAccent}">
-    <h1>Kassenjournal</h1>
+    ${documentStatus ? `<div class="report-employee"><strong>${escapeHtml(documentStatus)}</strong></div>` : ''}
+    <h1>${escapeHtml(documentTitle)}</h1>
     <div class="report-period">${escapeHtml(headerLabel)}</div>
     <div class="report-details">
       ${location ? `<span class="report-location">${escapeHtml(location)}</span>` : ''}
       <span class="report-time">${generatedTime} Uhr</span>
     </div>
-    <div class="report-employee">Mitarbeiter: ${escapeHtml(exportedByName ?? 'Nicht angemeldet')}</div>
+    <div class="report-employee">Mitarbeiter: ${escapeHtml(exportedByName ?? 'Nicht angemeldet')}${receiptNumber ? ` · Belegnummer: ${escapeHtml(receiptNumber)}` : ''}</div>
   </div>
   ${body}
-  <div class="footer">Kassenjournal automatisch generiert | ${generatedAt}</div>
+  ${yearlyPfandOverviewSection(yearlyPfandOverview)}
+  <div class="footer">${escapeHtml(documentTitle)} automatisch generiert | ${generatedAt}</div>
   </body></html>`;
 }
