@@ -187,7 +187,7 @@ export function POSScreen({
   }
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full flex-col gap-2 sm:gap-3">
       {/* Cash info bar */}
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         {activeSession ? (
@@ -228,9 +228,9 @@ export function POSScreen({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto lg:flex-row lg:overflow-hidden">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto xl:flex-row xl:overflow-hidden">
         {/* Left: products area */}
-        <div className="flex flex-1 flex-col lg:overflow-hidden">
+        <div className="flex flex-1 flex-col xl:overflow-hidden">
           {/* Category tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
             {[...categories].sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
@@ -294,17 +294,17 @@ export function POSScreen({
           <div className="relative mb-2">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Artikel suchen..."
-              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" />
+              className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-base text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:py-2.5 sm:text-sm" />
           </div>
 
           {/* Product grid */}
-          <div className="relative lg:flex-1 lg:overflow-y-auto">
+          <div className="relative xl:flex-1 xl:overflow-y-auto">
             {visibleProducts.length === 0 ? (
               <div className="flex h-full items-center justify-center text-gray-400 dark:text-gray-500">
                 <p className="text-sm">Keine Artikel gefunden</p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
                 {visibleProducts.map((product) => (
                   <ProductTile
                     key={product.id}
@@ -340,7 +340,7 @@ export function POSScreen({
         </div>
 
         {/* Right: cart */}
-        <div className="flex w-full shrink-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:w-96">
+        <div className="flex w-full shrink-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 xl:w-96">
           <div className="flex items-center justify-between border-b border-gray-200 p-3 dark:border-gray-700">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -354,7 +354,7 @@ export function POSScreen({
             )}
           </div>
 
-          <div className="px-3 lg:flex-1 lg:overflow-y-auto">
+          <div className="px-3 xl:flex-1 xl:overflow-y-auto">
             {cart.map((item, index) => (
               <CartItemRow key={index} item={item} location={currentLocation} onInc={() => inc(index)} onDec={() => dec(index)} onRemove={() => removeItem(index)} />
             ))}

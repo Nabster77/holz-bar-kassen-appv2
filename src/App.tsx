@@ -201,7 +201,7 @@ export default function App() {
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
       {/* Header */}
-      <header className="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:px-4 sm:py-2.5">
         {/* Logo */}
         <div className="flex items-center gap-2" title={online ? 'Online' : 'Offline'}>
           <div className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 bg-white transition-all duration-300 dark:bg-gray-900 ${online ? 'border-green-500 text-green-600 shadow-[0_0_14px_rgba(34,197,94,0.55)] dark:text-green-400' : 'border-red-500 text-red-600 shadow-[0_0_14px_rgba(239,68,68,0.55)] dark:text-red-400'}`}>
@@ -213,10 +213,10 @@ export default function App() {
           </div>
         </div>
 
-        <div className="h-7 w-px bg-gray-200 dark:bg-gray-700" />
+        <div className="hidden h-7 w-px bg-gray-200 dark:bg-gray-700 sm:block" />
 
         {/* Tabs + Cash actions */}
-        <nav className="flex items-center gap-1">
+        <nav className="order-3 flex w-full min-w-0 items-center gap-1 overflow-x-auto pb-0.5 md:order-none md:w-auto md:flex-1">
           <TabButton active={tab === 'pos'} onClick={() => navigateTo('pos')} icon={<ShoppingCart className="h-4 w-4" />} label="Kasse" />
 
           {/* Cash management buttons - only when on POS tab and session is open */}
@@ -273,7 +273,7 @@ export default function App() {
         </nav>
 
         {/* Test/Active mode badge */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
           {signedInUser && (
             <div
               title={`Angemeldet als ${signedInUser}`}
@@ -285,7 +285,7 @@ export default function App() {
           )}
           <button
             onClick={() => setSyncOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
+            className="flex min-h-10 items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Synchronisieren</span>
@@ -299,7 +299,7 @@ export default function App() {
         {/* Theme toggle */}
         <button
           onClick={toggle}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
@@ -314,7 +314,7 @@ export default function App() {
       )}
 
       {/* Content */}
-      <main className="min-h-0 flex-1 overflow-hidden p-3">
+      <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
         {tab === 'pos' && (
           <POSScreen
             categories={store.categories}
@@ -543,7 +543,7 @@ function TabButton({ active, onClick, icon, label, locked }: { active: boolean; 
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-95 ${
+      className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-95 ${
         active
           ? 'bg-blue-600 text-white shadow-md'
           : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
@@ -571,7 +571,7 @@ function CashActionButton({ onClick, icon, label, color, prominent }: {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-95 ${colorClasses[color]} ${prominent ? 'shadow-md ring-2 ring-teal-300/50' : 'shadow-sm'}`}
+      className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-95 ${colorClasses[color]} ${prominent ? 'shadow-md ring-2 ring-teal-300/50' : 'shadow-sm'}`}
     >
       {icon}
       <span className="hidden md:inline">{label}</span>

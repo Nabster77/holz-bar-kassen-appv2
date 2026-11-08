@@ -26,7 +26,7 @@ export function ProductTile({
   const price = product.prices[location];
   const pfand = product.pfand[location];
 
-  const tileClasses = `group relative flex flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all dark:bg-gray-800 ${
+  const tileClasses = `group relative flex min-h-[11.5rem] flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all dark:bg-gray-800 ${
     isDraggedOver
       ? 'border-blue-500 ring-2 ring-blue-400/50'
       : 'border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-700 dark:hover:border-gray-600'
@@ -34,7 +34,7 @@ export function ProductTile({
 
   const inner = (
     <>
-      <div className="relative flex h-32 items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-700/50">
+      <div className="relative flex h-28 items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-700/50 sm:h-32">
         {product.imageUrl ? (
           <img src={publicAssetUrl(product.imageUrl)} alt={product.name} className="h-full w-full object-cover" draggable={false} />
         ) : (
@@ -64,8 +64,8 @@ export function ProductTile({
           </div>
         )}
       </div>
-      <div className="flex flex-col items-center gap-0.5 p-2 text-center">
-        <span className="line-clamp-2 text-xs font-semibold leading-tight text-gray-900 dark:text-gray-100">{product.name}</span>
+      <div className="flex flex-col items-center gap-0.5 p-2.5 text-center">
+        <span className="line-clamp-2 text-sm font-semibold leading-tight text-gray-900 dark:text-gray-100">{product.name}</span>
         <div className="flex flex-col items-center">
           {product.hasIndividualPrice ? (
             <span className="text-sm font-bold text-amber-500 dark:text-amber-400">Preis individuell</span>
