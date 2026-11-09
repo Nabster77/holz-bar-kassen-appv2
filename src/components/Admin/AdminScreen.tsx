@@ -197,56 +197,118 @@ function ConfirmDialog({ title, message, onConfirm, onClose }: {
 }
 
 
+
 function ShotManager({ shots, onChange }: { shots: ShotOption[]; onChange: (options: ShotOption[]) => void }) {
-  const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draftName, setDraftName] = useState('');
-  const [draftPrice, setDraftPrice] = useState('');
-  const toPrice = (value: string): number | null => {
-    const parsed = Number(value.trim().replace(',', '.'));
-    return value.trim() && Number.isFinite(parsed) && parsed >= 0 && parsed <= 99999 ? Math.round(parsed * 100) / 100 : null;
+  type Draft = { name: string; price: string; Friedrichshafen: string; Bregenz: string };
+  const blank = (): Draft => ({ name: '', price: '', Friedrichshafen: '', Bregenz: '' });
+  const [draft, setDraft] = useState<Draft>(blank);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [edit, setEdit] = useState<Draft>(blank);
+
+  const parsePrice = (raw: string): number | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const number = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(number) && number >= 0 && number <= 99999 ? Math.round(number * 100) / 100 : null;
   };
+  const getValues = (form: Draft) => {
+    const name = form.name.trim();
+    const price = parsePrice(form.price);
+    if (!name || price === null) return null;
+    const locationPrices: NonNullable<ShotOption['locationPrices']> = {};
+    for (const location of ['Friedrichshafen', 'Bregenz'] as const) {
+      if (form[location].trim()) {
+        const override = parsePrice(form[location]);
+        if (override === null) return null;
+        locationPrices[location] = override;
+      }
+    }
+    return { name, price, locationPrices: Object.keys(locationPrices).length ? locationPrices : undefined };
+  };
+  const isDuplicate = (name: string, exceptId?: string | null) =>
+    shots.some((shot) => shot.id !== exceptId && shot.name.trim().toLocaleLowerCase('de-DE') === name.toLocaleLowerCase('de-DE'));
   const add = () => {
-    const parsed = toPrice(price);
-    const trimmed = name.trim();
-    if (!trimmed || parsed === null || shots.some((s) => s.name.toLocaleLowerCase('de-DE') === trimmed.toLocaleLowerCase('de-DE'))) return;
-    onChange([...shots, { id: `shot-${crypto.randomUUID()}`, name: trimmed, price: parsed }]);
-    setName(''); setPrice('');
+    const values = getValues(draft);
+    if (!values || isDuplicate(values.name)) return;
+    onChange([...shots, { ...values, id: 'shot-' + crypto.randomUUID() }]);
+    setDraft(blank());
   };
   const save = () => {
-    const parsed = toPrice(draftPrice);
-    const trimmed = draftName.trim();
-    if (parsed === null || !trimmed || shots.some((s) => s.id !== editing && s.name.toLocaleLowerCase('de-DE') === trimmed.toLocaleLowerCase('de-DE'))) return;
-    onChange(shots.map((s) => s.id === editing ? { ...s, name: trimmed, price: parsed } : s));
-    setEditing(null);
+    const values = getValues(edit);
+    if (!editingId || !values || isDuplicate(values.name, editingId)) return;
+    onChange(shots.map((shot) => shot.id === editingId ? { ...shot, ...values } : shot));
+    setEditingId(null);
   };
+  const onEnter = (fn: () => void) => (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      fn();
+    }
+  };
+  const inputs = (form: Draft, setForm: (next: Draft) => void, submit: () => void) => (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      {([
+        ['price', 'Grundpreis (alle Standorte)'],
+        ['Friedrichshafen', 'Friedrichshafen (optional)'],
+        ['Bregenz', 'Bregenz (optional)'],
+      ] as const).map(([field, label]) => (
+        <label key={field} className="text-xs font-medium text-gray-600 dark:text-gray-300">
+          {label} €
+          <input type="text" inputMode="decimal" aria-label={label} value={form[field]}
+            placeholder={field === 'price' ? 'z. B. 2,00' : 'Grundpreis gilt'}
+            onChange={(event) => setForm({ ...form, [field]: event.target.value })}
+            onKeyDown={onEnter(submit)}
+            className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+        </label>
+      ))}
+    </div>
+  );
   return <div className="space-y-4">
     <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-900/20">
-      <h3 className="flex items-center gap-2 text-lg font-bold text-violet-900 dark:text-violet-100"><Wine className="h-5 w-5" /> SCHUSS – globale Verwaltung</h3>
-      <p className="mt-1 text-sm text-violet-800 dark:text-violet-200">Die System-Warengruppe SCHUSS kann in der Kasse weder umbenannt noch gelöscht werden. Diese Sorten und Preise gelten für alle Standorte nach der Artikel-Synchronisierung.</p>
+      <h3 className="flex items-center gap-2 text-lg font-bold text-violet-900 dark:text-violet-100"><Wine className="h-5 w-5" /> SCHUSS – zentrale Verwaltung</h3>
+      <p className="mt-1 text-sm text-violet-800 dark:text-violet-200">
+        Der Grundpreis gilt für alle Standorte. Nur bei Bedarf abweichende Preise für Friedrichshafen oder Bregenz eintragen.
+        Leere Standortfelder verwenden automatisch den Grundpreis. Zum Speichern genügt Enter.
+      </p>
     </div>
     <div className="space-y-2">
-      {shots.map((shot) => <div key={shot.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-        {editing === shot.id ? <>
-          <input aria-label="Schuss-Name bearbeiten" value={draftName} onChange={(e) => setDraftName(e.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
-          <input aria-label="Schuss-Preis bearbeiten" inputMode="decimal" value={draftPrice} onChange={(e) => setDraftPrice(e.target.value)} className="w-24 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
-          <button onClick={save} className="rounded-lg bg-green-600 px-3 py-2 font-bold text-white">Speichern</button>
-          <button onClick={() => setEditing(null)} className="rounded-lg border px-3 py-2 dark:text-white">Abbrechen</button>
-        </> : <>
+      {shots.map((shot) => <div key={shot.id} className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        {editingId === shot.id ? <div className="space-y-3">
+          <input aria-label="SCHUSS-Sorte bearbeiten" value={edit.name}
+            onChange={(event) => setEdit({ ...edit, name: event.target.value })} onKeyDown={onEnter(save)}
+            className="w-full rounded-lg border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+          {inputs(edit, setEdit, save)}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Enter = Speichern</span>
+            <button onClick={save} disabled={!getValues(edit) || isDuplicate(edit.name.trim(), editingId)}
+              className="rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Speichern</button>
+            <button onClick={() => setEditingId(null)} className="rounded-lg border px-3 py-2 text-sm dark:text-white">Abbrechen</button>
+          </div>
+        </div> : <div className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 flex-1 font-semibold text-gray-900 dark:text-white">{shot.name}</span>
-          <span className="font-bold text-violet-700 dark:text-violet-300">{formatCurrency(shot.price)}</span>
-          <button onClick={() => { setEditing(shot.id); setDraftName(shot.name); setDraftPrice(String(shot.price)); }} className="rounded-lg border px-3 py-2 text-sm dark:text-white">Bearbeiten</button>
-          <button onClick={() => { if (window.confirm(`SCHUSS-Sorte „${shot.name}“ entfernen? Bereits abgeschlossene Buchungen bleiben unverändert.`)) onChange(shots.filter((s) => s.id !== shot.id)); }} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 dark:text-red-300">Löschen</button>
-        </>}
+          <span className="font-bold text-violet-700 dark:text-violet-300">{formatCurrency(shot.price)} (alle)</span>
+          {shot.locationPrices?.Friedrichshafen !== undefined && <span className="rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Friedrichshafen: {formatCurrency(shot.locationPrices.Friedrichshafen)}</span>}
+          {shot.locationPrices?.Bregenz !== undefined && <span className="rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Bregenz: {formatCurrency(shot.locationPrices.Bregenz)}</span>}
+          <button onClick={() => { setEditingId(shot.id); setEdit({
+            name: shot.name, price: String(shot.price),
+            Friedrichshafen: shot.locationPrices?.Friedrichshafen?.toString() ?? '',
+            Bregenz: shot.locationPrices?.Bregenz?.toString() ?? '',
+          }); }} className="rounded-lg border px-3 py-2 text-sm dark:text-white">Bearbeiten</button>
+          <button onClick={() => { if (window.confirm('SCHUSS-Sorte „' + shot.name + '“ entfernen? Alte Buchungen bleiben unverändert.')) onChange(shots.filter((item) => item.id !== shot.id)); }}
+            className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 dark:text-red-300">Löschen</button>
+        </div>}
       </div>)}
     </div>
-    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <h4 className="mb-3 font-semibold text-gray-900 dark:text-white">Neue SCHUSS-Sorte anlegen</h4>
-      <div className="flex flex-wrap gap-2">
-        <input aria-label="Neue Sorte" placeholder="z. B. Amaretto" value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
-        <input aria-label="Preis in Euro" placeholder="Preis €" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="w-28 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
-        <button onClick={add} disabled={!name.trim() || toPrice(price) === null} className="rounded-lg bg-violet-600 px-4 py-2 font-bold text-white disabled:opacity-40">+ Hinzufügen</button>
+    <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <h4 className="font-semibold text-gray-900 dark:text-white">Neue SCHUSS-Sorte anlegen</h4>
+      <input aria-label="Neue SCHUSS-Sorte" placeholder="z. B. Amaretto" value={draft.name}
+        onChange={(event) => setDraft({ ...draft, name: event.target.value })} onKeyDown={onEnter(add)}
+        className="w-full rounded-lg border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+      {inputs(draft, setDraft, add)}
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={add} disabled={!getValues(draft) || isDuplicate(draft.name.trim())}
+          className="rounded-lg bg-violet-600 px-4 py-2 font-bold text-white disabled:opacity-40">+ Hinzufügen</button>
+        <span className="text-xs text-gray-500 dark:text-gray-400">Oder Enter drücken – Grundpreis genügt.</span>
       </div>
     </div>
   </div>;
@@ -258,7 +320,7 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
   const [editing, setEditing] = useState<Category | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteCat, setDeleteCat] = useState<Category | null>(null);
-  const sorted = [...categories].sort((a, b) => a.sortOrder - b.sortOrder);
+  const sorted = [...categories].filter((category) => category.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <div>

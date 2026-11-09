@@ -15,5 +15,15 @@ export function normalizeCategories(categories: Category[]): Category[] {
 }
 export function validShots(value: unknown): value is ShotOption[] {
   return Array.isArray(value) && value.every((s) => s && typeof s.id === 'string' && s.id !== 'none' &&
-    typeof s.name === 'string' && typeof s.price === 'number' && Number.isFinite(s.price) && s.price >= 0);
+    typeof s.name === 'string' && typeof s.price === 'number' && Number.isFinite(s.price) && s.price >= 0 &&
+    (!s.locationPrices || (typeof s.locationPrices === 'object' &&
+      (['Friedrichshafen', 'Bregenz'] as const).every((location) => {
+        const override = s.locationPrices?.[location];
+        return override === undefined || (typeof override === 'number' && Number.isFinite(override) && override >= 0);
+      }))));
+}
+
+/** A missing location override always falls back to the shared price. */
+export function shotPriceForLocation(shot: ShotOption, location: 'Friedrichshafen' | 'Bregenz'): number {
+  return shot.locationPrices?.[location] ?? shot.price;
 }

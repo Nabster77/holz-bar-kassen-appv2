@@ -425,7 +425,7 @@ export function POSScreen({
         }} onCancel={() => setShowCloseDialog(false)} />
       )}
       {shotProduct && (
-        <ShotSelectionDialog product={shotProduct} options={shotOptions} onSelect={handleShotSelect} onCancel={() => { setShotProduct(null); setShotCartIndex(null); }} />
+        <ShotSelectionDialog product={shotProduct} options={shotOptions} location={currentLocation} onSelect={handleShotSelect} onCancel={() => { setShotProduct(null); setShotCartIndex(null); }} />
       )}
       {priceEntryProduct && (
         <IndividualPriceDialog

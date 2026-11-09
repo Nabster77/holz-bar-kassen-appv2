@@ -52,7 +52,10 @@ export interface Category {
 export interface ShotOption {
   id: string;
   name: string;
+  /** Globally valid fallback price in EUR. */
   price: number;
+  /** Optional branch-specific prices; undefined means use price. */
+  locationPrices?: Partial<Record<Location, number>>;
 }
 
 export interface PfandSettings {

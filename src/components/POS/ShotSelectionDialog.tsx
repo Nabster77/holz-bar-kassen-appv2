@@ -1,4 +1,5 @@
-import type { Product, ShotOption } from '@/types';
+import type { Product, ShotOption, Location } from '@/types';
+import { shotPriceForLocation } from '@/lib/shotCatalog';
 
 import { X, Wine } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
@@ -6,11 +7,12 @@ import { formatCurrency } from '@/lib/format';
 interface Props {
   product: Product;
   options: ShotOption[];
+  location: Location;
   onSelect: (shot: ShotOption) => void;
   onCancel: () => void;
 }
 
-export function ShotSelectionDialog({ product, options, onSelect, onCancel }: Props) {
+export function ShotSelectionDialog({ product, options, location, onSelect, onCancel }: Props) {
   const availableOptions: ShotOption[] = [{ id: 'none', name: 'Ohne Schuss', price: 0 }, ...options];
 
   return (
@@ -24,17 +26,17 @@ export function ShotSelectionDialog({ product, options, onSelect, onCancel }: Pr
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{product.name} — Schuss hinzufügen?</p>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{product.name} — SCHUSS für {location} auswählen?</p>
         <div className="space-y-2">
           {availableOptions.map((shot) => (
             <button
               key={shot.id}
-              onClick={() => onSelect(shot)}
+              onClick={() => onSelect({ ...shot, price: shotPriceForLocation(shot, location) })}
               className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-blue-500 hover:bg-blue-50 active:scale-95 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-400 dark:hover:bg-blue-900/20"
             >
               <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{shot.name}</span>
               <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                {shot.price > 0 ? `+ ${formatCurrency(shot.price)}` : 'kein Aufpreis'}
+                {shotPriceForLocation(shot, location) > 0 ? `+ ${formatCurrency(shotPriceForLocation(shot, location))}` : 'kein Aufpreis'}
               </span>
             </button>
           ))}
