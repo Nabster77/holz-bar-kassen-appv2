@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { sessionTransactions } from '@/lib/sessionTransactions';
-import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings, StaffActivity, StaffUser } from '@/types';
+import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings, StaffActivity, StaffUser, ShotOption } from '@/types';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { seedCategories, seedProducts, DEFAULT_PFAND_SETTINGS } from '@/lib/seed';
 import { formatDateISO } from '@/lib/format';
 import type { CloudData } from '@/lib/cloudPull';
 import { keyOf, mergeById, PFAND_SETTING_ID, type CatalogKind, type CatalogRow } from '@/lib/catalogSync';
 import type { TaxClass } from '@/types';
+import { DEFAULT_SHOTS, SHOT_CATEGORY_ID, SHOT_SETTING_ID, normalizeCategories, validShots } from '@/lib/shotCatalog';
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -23,8 +24,8 @@ function migrateProduct(p: any): Product {
 export function useStore() {
   const [categories, setCategories] = useState<Category[]>(() => {
     const stored = loadJSON<Category[] | null>(STORAGE_KEYS.categories, null);
-    if (stored && stored.length > 0 && stored.every((c) => typeof c.sortOrder === 'number')) return stored;
-    return seedCategories;
+    if (stored && stored.length > 0 && stored.every((c) => typeof c.sortOrder === 'number')) return normalizeCategories(stored);
+    return normalizeCategories(seedCategories);
   });
   const [products, setProducts] = useState<Product[]>(() => {
     const stored = loadJSON<Product[] | null>(STORAGE_KEYS.products, null);
@@ -58,6 +59,11 @@ export function useStore() {
     loadJSON<PfandSettings>(STORAGE_KEYS.pfandSettings, DEFAULT_PFAND_SETTINGS),
   );
 
+  const [shotOptions, setShotOptions] = useState<ShotOption[]>(() => {
+    const stored = loadJSON<unknown>(STORAGE_KEYS.shotOptions, null);
+    return validShots(stored) ? stored : DEFAULT_SHOTS;
+  });
+  useEffect(() => saveJSON(STORAGE_KEYS.shotOptions, shotOptions), [shotOptions]);
   useEffect(() => saveJSON(STORAGE_KEYS.categories, categories), [categories]);
   useEffect(() => saveJSON(STORAGE_KEYS.products, products), [products]);
   useEffect(() => saveJSON(STORAGE_KEYS.transactions, transactions), [transactions]);
@@ -67,29 +73,31 @@ export function useStore() {
 
   // Category CRUD
   const addCategory = useCallback((data: Omit<Category, 'id'>) => {
-    setCategories((cs) => [...cs, { ...data, id: uid('cat') }].sort((a, b) => a.sortOrder - b.sortOrder));
+    if (data.name.trim().toUpperCase() === 'SCHUSS') return;
+    setCategories((cs) => normalizeCategories([...cs, { ...data, id: uid('cat') }]));
   }, []);
 
   const updateCategory = useCallback((id: string, data: Partial<Omit<Category, 'id'>>) => {
-    setCategories((cs) =>
-      cs.map((c) => (c.id === id ? { ...c, ...data } : c)).sort((a, b) => a.sortOrder - b.sortOrder),
-    );
+    if (id === SHOT_CATEGORY_ID || data.name?.trim().toUpperCase() === 'SCHUSS') return;
+    setCategories((cs) => normalizeCategories(cs.map((c) => (c.id === id ? { ...c, ...data } : c))));
   }, []);
 
   const deleteCategory = useCallback((id: string) => {
+    if (id === SHOT_CATEGORY_ID) return;
     setCategories((cs) => cs.filter((c) => c.id !== id));
     setProducts((ps) => ps.filter((p) => p.categoryId !== id));
   }, []);
 
   const reorderCategory = useCallback((id: string, direction: 'up' | 'down') => {
+    if (id === SHOT_CATEGORY_ID) return;
     setCategories((cs) => {
-      const sorted = [...cs].sort((a, b) => a.sortOrder - b.sortOrder);
+      const sorted = [...cs.filter((c) => c.id !== SHOT_CATEGORY_ID)].sort((a, b) => a.sortOrder - b.sortOrder);
       const idx = sorted.findIndex((c) => c.id === id);
       if (idx < 0) return cs;
       const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
       if (swapIdx < 0 || swapIdx >= sorted.length) return cs;
       [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
-      return sorted.map((c, i) => ({ ...c, sortOrder: i }));
+      return normalizeCategories(sorted.map((c, i) => ({ ...c, sortOrder: i })));
     });
   }, []);
 
@@ -353,18 +361,19 @@ export function useStore() {
       version: 2,
       app: 'tablet-kasse',
       exportedAt: new Date().toISOString(),
-      data: { transactions, cashSessions, categories, products, pfandSettings, selectedLocation },
+      data: { transactions, cashSessions, categories, products, pfandSettings, shotOptions, selectedLocation },
     };
     return payload;
-  }, [transactions, cashSessions, categories, products, pfandSettings, selectedLocation]);
+  }, [transactions, cashSessions, categories, products, pfandSettings, shotOptions, selectedLocation]);
 
-  const importBackup = useCallback((payload: { data: { transactions?: Transaction[]; cashSessions?: CashSession[]; categories?: Category[]; products?: Product[]; pfandSettings?: PfandSettings; selectedLocation?: Location } }) => {
+  const importBackup = useCallback((payload: { data: { transactions?: Transaction[]; cashSessions?: CashSession[]; categories?: Category[]; products?: Product[]; pfandSettings?: PfandSettings; shotOptions?: ShotOption[]; selectedLocation?: Location } }) => {
     const d = payload.data;
     if (d.transactions) setTransactions([...d.transactions].sort((a, b) => b.timestamp - a.timestamp));
     if (d.cashSessions) setCashSessions(d.cashSessions);
-    if (d.categories) setCategories([...d.categories].sort((a, b) => a.sortOrder - b.sortOrder));
+    if (d.categories) setCategories(normalizeCategories(d.categories));
     if (d.products) setProducts([...d.products].sort((a, b) => a.sortOrder - b.sortOrder));
     if (d.pfandSettings) setPfandSettings(d.pfandSettings);
+    if (validShots(d.shotOptions)) setShotOptions(d.shotOptions);
     if (d.selectedLocation) setSelectedLocation(d.selectedLocation);
   }, []);
 
@@ -398,11 +407,16 @@ export function useStore() {
     const byId = (kind: CatalogKind) => new Map(rows.filter((r) => r.kind === kind).map((r) => [r.id, r]));
     const remoteCategories = byId('category');
     const remoteProducts = byId('product');
-    setCategories((cs) => mergeById(cs, remoteCategories, 'category', skipKeys).sort((a, b) => a.sortOrder - b.sortOrder));
+    setCategories((cs) => normalizeCategories(mergeById(cs, remoteCategories, 'category', skipKeys)));
+
     setProducts((ps) => mergeById(ps, remoteProducts, 'product', skipKeys));
     const pfandRow = byId('setting').get(PFAND_SETTING_ID);
     if (pfandRow && !pfandRow.deleted && !skipKeys.has(keyOf('setting', PFAND_SETTING_ID))) {
       setPfandSettings(pfandRow.data as PfandSettings);
+    }
+    const shotRow = byId('setting').get(SHOT_SETTING_ID);
+    if (shotRow && !shotRow.deleted && !skipKeys.has(keyOf('setting', SHOT_SETTING_ID)) && validShots(shotRow.data)) {
+      setShotOptions(shotRow.data);
     }
   }, []);
 
@@ -429,6 +443,8 @@ export function useStore() {
   return {
     categories,
     products,
+    shotOptions,
+    updateShotOptions: (next: ShotOption[]) => { if (validShots(next)) setShotOptions(next); },
     transactions,
     cashSessions,
     activeSession,

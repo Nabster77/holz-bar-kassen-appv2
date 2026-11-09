@@ -9,9 +9,10 @@ interface Props {
   onInc: () => void;
   onDec: () => void;
   onRemove: () => void;
+  onEditShot?: () => void;
 }
 
-export function CartItemRow({ item, location, onInc, onDec, onRemove }: Props) {
+export function CartItemRow({ item, location, onInc, onDec, onRemove, onEditShot }: Props) {
   const unitTotal = item.unitPrice + item.unitPfand;
   const shotPrice = item.shot && item.shot.id !== 'none' ? item.shot.price : 0;
   const basePrice = item.unitPrice - shotPrice;
@@ -69,6 +70,7 @@ export function CartItemRow({ item, location, onInc, onDec, onRemove }: Props) {
             <span className="block text-amber-600 dark:text-amber-400">Pfand {formatCurrency(item.unitPfand)}</span>
           )}
         </p>
+        {onEditShot && <button type="button" onClick={onEditShot} className="mt-1.5 rounded-lg border border-violet-300 bg-violet-50 px-2 py-1 text-xs font-bold text-violet-800 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900/30 dark:text-violet-200">{item.shot ? 'SCHUSS ändern' : '+ SCHUSS'}</button>}
       </div>
       <div className="flex shrink-0 items-center gap-1 pt-0.5">
         <button onClick={onDec} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition active:scale-90 dark:bg-gray-700 dark:text-gray-200">

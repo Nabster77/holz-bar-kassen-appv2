@@ -12,7 +12,7 @@ import { ShotSelectionDialog } from './ShotSelectionDialog';
 import { PfandRetoureDialog } from './PfandRetoureDialog';
 import { DynamicIcon } from '@/components/DynamicIcon';
 import { formatDateLong } from '@/lib/format';
-import { SHOT_OPTIONS } from '@/lib/seed';
+import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import {
   ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro,
 } from 'lucide-react';
@@ -20,6 +20,7 @@ import {
 type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
 
 interface Props {
+  shotOptions: ShotOption[];
   categories: Category[];
   products: Product[];
   activeSession: CashSession | null;
@@ -62,7 +63,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 };
 
 export function POSScreen({
-  categories, products, activeSession, onCheckout,
+  categories, products, shotOptions, activeSession, onCheckout,
   onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onEnterAdmin, onMoveProduct,
   headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onStaffLogout, onDiscardEmptySession, openingBalanceSuggestions,
 }: Props) {
@@ -79,6 +80,7 @@ export function POSScreen({
   const [cashEntryType, setCashEntryType] = useState<'deposit' | 'withdrawal' | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [shotProduct, setShotProduct] = useState<Product | null>(null);
+  const [shotCartIndex, setShotCartIndex] = useState<number | null>(null);
   const [showPfandRetoure, setShowPfandRetoure] = useState(false);
   const [priceEntryProduct, setPriceEntryProduct] = useState<Product | null>(null);
   const [dragMode, setDragMode] = useState(false);
@@ -153,22 +155,23 @@ export function POSScreen({
   function handleProductTap(product: Product) {
     if (product.hasIndividualPrice) {
       setPriceEntryProduct(product);
-    } else if (product.hasShot) {
-      setShotProduct(product);
     } else {
       addToCart(product);
     }
   }
 
   function handleShotSelect(shot: ShotOption) {
-    if (shotProduct) {
-      if (shot.id === 'none') {
-        addToCart(shotProduct);
-      } else {
-        addToCart(shotProduct, shot);
-      }
+    if (shotCartIndex !== null) {
+      setCart((prev) => prev.flatMap((item, index) => {
+        if (index !== shotCartIndex || item.isPfandRetoure) return [item];
+        const oldShotPrice = item.shot?.price ?? 0;
+        const nextShot = shot.id === 'none' ? null : shot;
+        const updated = { ...item, quantity: 1, shot: nextShot, unitPrice: Math.round((item.unitPrice - oldShotPrice + (nextShot?.price ?? 0)) * 100) / 100 };
+        return item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }, updated] : [updated];
+      }));
     }
     setShotProduct(null);
+    setShotCartIndex(null);
   }
 
   function inc(index: number) {
@@ -248,7 +251,7 @@ export function POSScreen({
         <div className="flex flex-1 flex-col xl:overflow-hidden">
           {/* Category tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {[...categories].sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
+            {[...categories].filter((c) => c.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => { setActiveCat(cat.id); setSearch(''); }}
@@ -371,7 +374,7 @@ export function POSScreen({
 
           <div className="px-3 xl:flex-1 xl:overflow-y-auto">
             {cart.map((item, index) => (
-              <CartItemRow key={index} item={item} location={currentLocation} onInc={() => inc(index)} onDec={() => dec(index)} onRemove={() => removeItem(index)} />
+              <CartItemRow key={index} item={item} location={currentLocation} onInc={() => inc(index)} onDec={() => dec(index)} onRemove={() => removeItem(index)} onEditShot={item.product.isPfandArticle || item.product.hasShot ? () => { setShotCartIndex(index); setShotProduct(item.product); } : undefined} />
             ))}
           </div>
 
@@ -422,7 +425,7 @@ export function POSScreen({
         }} onCancel={() => setShowCloseDialog(false)} />
       )}
       {shotProduct && (
-        <ShotSelectionDialog product={shotProduct} onSelect={handleShotSelect} onCancel={() => setShotProduct(null)} />
+        <ShotSelectionDialog product={shotProduct} options={shotOptions} location={currentLocation} onSelect={handleShotSelect} onCancel={() => { setShotProduct(null); setShotCartIndex(null); }} />
       )}
       {priceEntryProduct && (
         <IndividualPriceDialog

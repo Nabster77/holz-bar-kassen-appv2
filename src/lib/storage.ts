@@ -30,6 +30,7 @@ export const STORAGE_KEYS = {
   cashSessions: 'pos_cash_sessions',
   selectedLocation: 'pos_selected_location',
   pfandSettings: 'pos_pfand_settings',
+  shotOptions: 'pos_shot_options',
   cloudBackfilled: 'pos_cloud_backfilled',
   catalogSync: 'pos_catalog_sync',
   catalogBackupPrefix: 'pos_catalog_backup_',
