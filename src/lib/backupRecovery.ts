@@ -175,6 +175,9 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
       categories: restorableCategories,
       products: restorableProducts,
       pfandSettings: restoredPfand,
+      // Backup restore only writes explicitly permitted keys below. SCHUSS settings
+      // are not part of this legacy backup restore and must remain untouched.
+      shotOptions: [],
     };
     const permittedKeys = new Set([
       ...restorableCategories.map((category) => catalogKey('category', category.id)),
