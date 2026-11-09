@@ -1,19 +1,17 @@
 import type { Product, ShotOption } from '@/types';
-import { SHOT_OPTIONS } from '@/lib/seed';
+
 import { X, Wine } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 
 interface Props {
   product: Product;
+  options: ShotOption[];
   onSelect: (shot: ShotOption) => void;
   onCancel: () => void;
 }
 
-export function ShotSelectionDialog({ product, onSelect, onCancel }: Props) {
-  const options: ShotOption[] = SHOT_OPTIONS.map((s) => ({
-    ...s,
-    price: s.id === 'none' ? 0 : (product.shotPrices?.[s.id] ?? s.price),
-  }));
+export function ShotSelectionDialog({ product, options, onSelect, onCancel }: Props) {
+  const availableOptions: ShotOption[] = [{ id: 'none', name: 'Ohne Schuss', price: 0 }, ...options];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-4 sm:items-center" onClick={onCancel}>
@@ -28,7 +26,7 @@ export function ShotSelectionDialog({ product, onSelect, onCancel }: Props) {
         </div>
         <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{product.name} — Schuss hinzufügen?</p>
         <div className="space-y-2">
-          {options.map((shot) => (
+          {availableOptions.map((shot) => (
             <button
               key={shot.id}
               onClick={() => onSelect(shot)}

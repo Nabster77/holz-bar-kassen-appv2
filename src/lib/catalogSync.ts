@@ -1,4 +1,5 @@
-import type { Category, Product, PfandSettings } from '@/types';
+import type { Category, Product, PfandSettings, ShotOption } from '@/types';
+import { SHOT_SETTING_ID } from '@/lib/shotCatalog';
 
 export type CatalogKind = 'category' | 'product' | 'setting';
 
@@ -28,6 +29,7 @@ export interface LocalCatalog {
   categories: Category[];
   products: Product[];
   pfandSettings: PfandSettings;
+  shotOptions: ShotOption[];
 }
 
 export const PFAND_SETTING_ID = 'pfand';
@@ -58,6 +60,7 @@ export function buildLocalEntries(catalog: LocalCatalog, now: number): Map<strin
   for (const c of catalog.categories) add('category', c.id, c);
   for (const p of catalog.products) add('product', p.id, p);
   add('setting', PFAND_SETTING_ID, catalog.pfandSettings);
+  add('setting', SHOT_SETTING_ID, catalog.shotOptions);
   return entries;
 }
 

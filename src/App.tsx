@@ -67,6 +67,7 @@ export default function App() {
     categories: store.categories,
     products: store.products,
     pfandSettings: store.pfandSettings,
+    shotOptions: store.shotOptions,
     testMode,
     applyRows: store.applyCatalogRows,
   });
@@ -349,6 +350,7 @@ export default function App() {
       <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
         {tab === 'pos' && (
           <POSScreen
+            shotOptions={store.shotOptions}
             categories={store.categories}
             products={store.products}
             activeSession={store.activeSession}
@@ -432,6 +434,8 @@ export default function App() {
         {tab === 'admin' && (
           adminUnlocked ? (
             <AdminScreen
+              shotOptions={store.shotOptions}
+              onUpdateShotOptions={store.updateShotOptions}
               categories={store.categories}
               products={store.products}
               transactions={store.transactions}

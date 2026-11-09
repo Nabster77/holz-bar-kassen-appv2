@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
-import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser } from '@/types';
+import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser, ShotOption } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
 import { buildDailyReport } from '@/lib/dailyReport';
@@ -10,10 +10,12 @@ import { importFileToDataURL, isSupported, ACCEPTED_TYPES } from '@/lib/imageImp
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, ChevronUp, ChevronDown, Wine, Recycle, MonitorDot, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, ArrowRightLeft, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
-import { SHOT_OPTIONS } from '@/lib/seed';
+import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import { StaffManager } from '@/components/Admin/StaffManager';
 
 interface Props {
+  shotOptions: ShotOption[];
+  onUpdateShotOptions: (shots: ShotOption[]) => void;
   categories: Category[];
   products: Product[];
   transactions: Transaction[];
@@ -62,7 +64,7 @@ const COLOR_OPTIONS = [
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
 export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, onExportBackup, onImportBackup, ...props }: Props) {
-  const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'staff'>('sessions');
+  const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -94,6 +96,10 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
           >
             <Package className="h-4 w-4" /> Artikel
           </button>
+          <button
+            onClick={() => setTab('shots')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === 'shots' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'}`}
+          ><Wine className="h-4 w-4" /> SCHUSS</button>
           <button
             onClick={() => setTab('staff')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
@@ -137,6 +143,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
         {tab === 'sessions' ? <LiveSessionOverview transactions={props.transactions} cashSessions={props.cashSessions} categories={props.categories} activeSession={props.activeSession} selectedLocation={props.selectedLocation} onSwitchLocation={props.onSwitchLocation} exportedByName={props.currentStaff?.name} />
           : tab === 'categories' ? <CategoryManager {...props} />
             : tab === 'products' ? <ProductManager {...props} />
+              : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} />
               : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
       {showReset && (
@@ -189,6 +196,62 @@ function ConfirmDialog({ title, message, onConfirm, onClose }: {
   );
 }
 
+
+function ShotManager({ shots, onChange }: { shots: ShotOption[]; onChange: (options: ShotOption[]) => void }) {
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [draftPrice, setDraftPrice] = useState('');
+  const toPrice = (value: string): number | null => {
+    const parsed = Number(value.trim().replace(',', '.'));
+    return value.trim() && Number.isFinite(parsed) && parsed >= 0 && parsed <= 99999 ? Math.round(parsed * 100) / 100 : null;
+  };
+  const add = () => {
+    const parsed = toPrice(price);
+    const trimmed = name.trim();
+    if (!trimmed || parsed === null || shots.some((s) => s.name.toLocaleLowerCase('de-DE') === trimmed.toLocaleLowerCase('de-DE'))) return;
+    onChange([...shots, { id: `shot-${crypto.randomUUID()}`, name: trimmed, price: parsed }]);
+    setName(''); setPrice('');
+  };
+  const save = () => {
+    const parsed = toPrice(draftPrice);
+    const trimmed = draftName.trim();
+    if (parsed === null || !trimmed || shots.some((s) => s.id !== editing && s.name.toLocaleLowerCase('de-DE') === trimmed.toLocaleLowerCase('de-DE'))) return;
+    onChange(shots.map((s) => s.id === editing ? { ...s, name: trimmed, price: parsed } : s));
+    setEditing(null);
+  };
+  return <div className="space-y-4">
+    <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-900/20">
+      <h3 className="flex items-center gap-2 text-lg font-bold text-violet-900 dark:text-violet-100"><Wine className="h-5 w-5" /> SCHUSS – globale Verwaltung</h3>
+      <p className="mt-1 text-sm text-violet-800 dark:text-violet-200">Die System-Warengruppe SCHUSS kann in der Kasse weder umbenannt noch gelöscht werden. Diese Sorten und Preise gelten für alle Standorte nach der Artikel-Synchronisierung.</p>
+    </div>
+    <div className="space-y-2">
+      {shots.map((shot) => <div key={shot.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+        {editing === shot.id ? <>
+          <input aria-label="Schuss-Name bearbeiten" value={draftName} onChange={(e) => setDraftName(e.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
+          <input aria-label="Schuss-Preis bearbeiten" inputMode="decimal" value={draftPrice} onChange={(e) => setDraftPrice(e.target.value)} className="w-24 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
+          <button onClick={save} className="rounded-lg bg-green-600 px-3 py-2 font-bold text-white">Speichern</button>
+          <button onClick={() => setEditing(null)} className="rounded-lg border px-3 py-2 dark:text-white">Abbrechen</button>
+        </> : <>
+          <span className="min-w-0 flex-1 font-semibold text-gray-900 dark:text-white">{shot.name}</span>
+          <span className="font-bold text-violet-700 dark:text-violet-300">{formatCurrency(shot.price)}</span>
+          <button onClick={() => { setEditing(shot.id); setDraftName(shot.name); setDraftPrice(String(shot.price)); }} className="rounded-lg border px-3 py-2 text-sm dark:text-white">Bearbeiten</button>
+          <button onClick={() => { if (window.confirm(`SCHUSS-Sorte „${shot.name}“ entfernen? Bereits abgeschlossene Buchungen bleiben unverändert.`)) onChange(shots.filter((s) => s.id !== shot.id)); }} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 dark:text-red-300">Löschen</button>
+        </>}
+      </div>)}
+    </div>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <h4 className="mb-3 font-semibold text-gray-900 dark:text-white">Neue SCHUSS-Sorte anlegen</h4>
+      <div className="flex flex-wrap gap-2">
+        <input aria-label="Neue Sorte" placeholder="z. B. Amaretto" value={name} onChange={(e) => setName(e.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
+        <input aria-label="Preis in Euro" placeholder="Preis €" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} className="w-28 rounded-lg border p-2 text-gray-900 dark:bg-gray-900 dark:text-white" />
+        <button onClick={add} disabled={!name.trim() || toPrice(price) === null} className="rounded-lg bg-violet-600 px-4 py-2 font-bold text-white disabled:opacity-40">+ Hinzufügen</button>
+      </div>
+    </div>
+  </div>;
+}
+
 // ---- Category Manager ----
 
 function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onReorderCategory }: Props) {
@@ -211,14 +274,14 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
             <div className="flex flex-col gap-0.5">
               <button
                 onClick={() => onReorderCategory?.(cat.id, 'up')}
-                disabled={idx === 0}
+                disabled={idx === 0 || cat.id === SHOT_CATEGORY_ID}
                 className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
               >
                 <ChevronUp className="h-4 w-4" />
               </button>
               <button
                 onClick={() => onReorderCategory?.(cat.id, 'down')}
-                disabled={idx === sorted.length - 1}
+                disabled={idx === sorted.length - 1 || cat.id === SHOT_CATEGORY_ID}
                 className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
               >
                 <ChevronDown className="h-4 w-4" />
@@ -234,10 +297,10 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
               </p>
             </div>
             <div className="flex gap-1">
-              <button onClick={() => setEditing(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
+              <button disabled={cat.id === SHOT_CATEGORY_ID} title={cat.id === SHOT_CATEGORY_ID ? 'System-Warengruppe ist geschützt' : 'Bearbeiten'} onClick={() => setEditing(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
                 <Edit3 className="h-4 w-4" />
               </button>
-              <button onClick={() => setDeleteCat(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">
+              <button disabled={cat.id === SHOT_CATEGORY_ID} title={cat.id === SHOT_CATEGORY_ID ? 'System-Warengruppe ist geschützt' : 'Löschen'} onClick={() => setDeleteCat(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
@@ -387,7 +450,7 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
       </div>
       <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
         <button onClick={() => setFilterCat('')} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${!filterCat ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>Alle</button>
-        {[...categories].sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
+        {[...categories].filter((cat) => cat.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
           <button key={cat.id} onClick={() => setFilterCat(cat.id)} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${filterCat === cat.id ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{cat.name}</button>
         ))}
       </div>
@@ -481,14 +544,6 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
   const [hasShot, setHasShot] = useState(product?.hasShot ?? false);
   const [isPfandArticle, setIsPfandArticle] = useState(product?.isPfandArticle ?? false);
   const [hasIndividualPrice, setHasIndividualPrice] = useState(product?.hasIndividualPrice ?? false);
-  const [shotPrices, setShotPrices] = useState<Record<string, string>>(() => {
-    const defaults: Record<string, string> = {};
-    for (const s of SHOT_OPTIONS) {
-      if (s.id === 'none') continue;
-      defaults[s.id] = String(product?.shotPrices?.[s.id] ?? s.price);
-    }
-    return defaults;
-  });
   const [priceF, setPriceF] = useState(String(product?.prices.Friedrichshafen ?? ''));
   const [priceB, setPriceB] = useState(String(product?.prices.Bregenz ?? ''));
   const [uploading, setUploading] = useState(false);
@@ -525,17 +580,12 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
     const pF = parseFloat(priceF.replace(',', '.')) || 0;
     const pB = parseFloat(priceB.replace(',', '.')) || 0;
     if (!name.trim() || !categoryId) return;
-    const sp: Record<string, number> = {};
-    for (const s of SHOT_OPTIONS) {
-      if (s.id === 'none') continue;
-      sp[s.id] = parseFloat(shotPrices[s.id]?.replace(',', '.')) || 0;
-    }
     const pfandF = isPfandArticle ? pfandSettings.Friedrichshafen : 0;
     const pfandB = isPfandArticle ? pfandSettings.Bregenz : 0;
     onSave({
       name: name.trim(), categoryId, imageUrl: imageUrl.trim(), taxClass, available, hasShot,
       isPfandArticle, hasIndividualPrice,
-      shotPrices: hasShot ? sp : undefined,
+      shotPrices: undefined,
       prices: { Friedrichshafen: pF, Bregenz: pB },
       pfand: { Friedrichshafen: pfandF, Bregenz: pfandB },
       sortOrder: product?.sortOrder ?? 0,
@@ -576,7 +626,7 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Warengruppe</label>
               <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                {categories.filter((cat) => cat.id !== SHOT_CATEGORY_ID).map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
               </select>
             </div>
           </div>
@@ -617,30 +667,13 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
             </label>
           </div>
 
-          {/* Shot toggle */}
-          <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-              <Wine className="h-4 w-4 text-blue-500" />
-              <input type="checkbox" checked={hasShot} onChange={(e) => setHasShot(e.target.checked)} className="h-4 w-4 rounded accent-blue-600" />
-              Schuss-Auswahl beim Antippen anzeigen
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-200">
+            <label className="flex items-center gap-2 font-medium">
+              <Wine className="h-4 w-4" />
+              <input type="checkbox" checked={hasShot} onChange={(e) => setHasShot(e.target.checked)} />
+              SCHUSS auch für diesen Artikel erlauben
             </label>
-            {hasShot && (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Schuss-Preise (€)</p>
-                {SHOT_OPTIONS.filter((s) => s.id !== 'none').map((s) => (
-                  <div key={s.id} className="flex items-center gap-2">
-                    <span className="w-32 text-xs font-medium text-gray-600 dark:text-gray-300">{s.name}</span>
-                    <input
-                      value={shotPrices[s.id] ?? ''}
-                      onChange={(e) => setShotPrices((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                      placeholder="0,00"
-                      inputMode="decimal"
-                      className="w-24 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="mt-1 text-xs">Pfandartikel haben die SCHUSS-Auswahl immer im Warenkorb. Die Preise werden zentral unter „SCHUSS“ festgelegt. Jeder Artikel wird zunächst ohne Schuss aufgenommen.</p>
           </div>
 
           {/* Image */}
