@@ -40,6 +40,15 @@ export async function enqueueEntries(entries: OutboxEntry[]): Promise<void> {
   await transactionDone(tx);
 }
 
+// A confirmed backup restore replaces the booking snapshot.  Queued changes
+// from before that restore must not be uploaded afterwards.
+export async function clearOutbox(): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(STORE, 'readwrite');
+  tx.objectStore(STORE).clear();
+  await transactionDone(tx);
+}
+
 // Removes queued entries from an earlier reset generation. This is deliberately
 // persistent: a reset must also neutralize entries stored while the device was offline.
 export async function discardEntriesBeforeGeneration(generation: number): Promise<void> {

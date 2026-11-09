@@ -105,12 +105,9 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
   const [expandedMovementGroups, setExpandedMovementGroups] = useState<Partial<Record<MovementKind, boolean>>>({});
 
   const sessionTx = useMemo(
-    () => transactions.filter((t) => {
-      const txDate = new Date(t.timestamp);
-      const d = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}`;
-      return d === session.date && t.location === session.location;
-    }),
-    [transactions, session.date, session.location],
+    () => transactions.filter((t) => t.location === session.location && t.timestamp >= session.openedAt &&
+      (!session.closedAt || t.timestamp <= session.closedAt)),
+    [transactions, session.openedAt, session.closedAt, session.location],
   );
   const yearlyPfandOverview = useMemo(
     () => calculateYearlyPfandOverview(transactions, new Date(session.openedAt).getFullYear(), session.location),
@@ -136,7 +133,7 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
   const totalNet = sessionTx.reduce((s, t) => s + t.totalNet, 0);
   const deposits = session.entries.filter((e) => e.type === 'deposit').reduce((s, e) => s + e.amount, 0);
   const withdrawals = session.entries.filter((e) => e.type === 'withdrawal').reduce((s, e) => s + e.amount, 0);
-  const expected = session.openingBalance + cashTillTransactionTotal + deposits - withdrawals;
+  const expected = Math.round((session.openingBalance + cashTillTransactionTotal + deposits - withdrawals) * 100) / 100;
   const openingCorrectionTotal = session.corrections.reduce((sum, correction) => sum + correction.newAmount - correction.oldAmount, 0);
   const cashPfandIncome = sessionTx
     .filter((transaction) => transaction.paymentMethod === 'cash')

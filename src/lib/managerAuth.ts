@@ -1,10 +1,18 @@
 import { createPasswordProof, verifyPasswordProof } from '@/lib/staffDirectory';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 
-interface ManagerCredential {
+export interface ManagerCredential {
   passwordSalt: string | null;
   passwordHash: string | null;
   changedAt: number;
+}
+
+export function loadManagerCredential(): ManagerCredential | null {
+  return loadJSON<ManagerCredential | null>(STORAGE_KEYS.managerCredential, null);
+}
+
+export function restoreManagerCredential(credential: ManagerCredential | null): void {
+  saveJSON(STORAGE_KEYS.managerCredential, credential);
 }
 
 export function managerPasswordWasChanged(): boolean {

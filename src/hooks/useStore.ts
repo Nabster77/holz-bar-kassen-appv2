@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings, StaffActivity, StaffUser } from '@/types';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { seedCategories, seedProducts, DEFAULT_PFAND_SETTINGS } from '@/lib/seed';
@@ -137,7 +138,18 @@ export function useStore() {
   // Cash session management
   const today = formatDateISO(Date.now());
 
-  const openSessionsToday = cashSessions.filter((s) => s.date === today && !s.closed);
+  // Only the latest session at each location may be resumed. Older open
+  // records from a restore must not reappear after a newer daily close.
+  const latestSessionsToday = new Map<Location, CashSession>();
+  for (const session of cashSessions.filter((s) => s.date === today && !s.discarded)) {
+    const latest = latestSessionsToday.get(session.location);
+    if (!latest || session.openedAt > latest.openedAt ||
+        (session.openedAt === latest.openedAt && session.closed)) {
+      latestSessionsToday.set(session.location, session);
+    }
+  }
+  const openSessionsToday = [...latestSessionsToday.values()].filter((s) =>
+    !s.closed && !s.closedAt && !s.dailyCloseFinalizedAt && !s.dailyCloseSnapshot);
   // Resume the selected till first.  A newly opened browser/device may not
   // have a stored selection yet; when exactly one till is open today, it is
   // unambiguous and should be resumed automatically.
@@ -236,14 +248,11 @@ export function useStore() {
           employeeName: staff?.name,
         } satisfies CashEntry : null;
         const entries = finalWithdrawal ? [...s.entries, finalWithdrawal] : s.entries;
-        const sessionTx = transactions.filter((t) => {
-          const txDate = formatDateISO(t.timestamp);
-          return txDate === s.date && t.location === s.location;
-        });
+        const sessionTx = sessionTransactions(transactions, s, closedAt);
         const cashTxTotal = sessionTx.filter((transaction) => transaction.paymentMethod === 'cash').reduce((sum, t) => sum + t.total, 0);
         const deposits = entries.filter((e) => e.type === 'deposit').reduce((sum, e) => sum + e.amount, 0);
         const withdrawals = entries.filter((e) => e.type === 'withdrawal').reduce((sum, e) => sum + e.amount, 0);
-        const expected = s.openingBalance + cashTxTotal + deposits - withdrawals;
+        const expected = Math.round((s.openingBalance + cashTxTotal + deposits - withdrawals) * 100) / 100;
         return {
           ...s,
           closed: true,
@@ -341,56 +350,22 @@ export function useStore() {
 
   const exportBackup = useCallback(() => {
     const payload = {
-      version: 1,
+      version: 2,
       app: 'tablet-kasse',
       exportedAt: new Date().toISOString(),
-      data: { transactions, cashSessions, categories, products },
+      data: { transactions, cashSessions, categories, products, pfandSettings, selectedLocation },
     };
     return payload;
-  }, [transactions, cashSessions, categories, products]);
+  }, [transactions, cashSessions, categories, products, pfandSettings, selectedLocation]);
 
-  const importBackup = useCallback((payload: { data: { transactions?: Transaction[]; cashSessions?: CashSession[]; categories?: Category[]; products?: Product[] } }) => {
+  const importBackup = useCallback((payload: { data: { transactions?: Transaction[]; cashSessions?: CashSession[]; categories?: Category[]; products?: Product[]; pfandSettings?: PfandSettings; selectedLocation?: Location } }) => {
     const d = payload.data;
-    if (d.transactions) {
-      setTransactions((existing) => {
-        const ids = new Set(existing.map((t) => t.id));
-        const merged = [...existing];
-        for (const t of d.transactions!) {
-          if (!ids.has(t.id)) merged.push(t);
-        }
-        return merged.sort((a, b) => b.timestamp - a.timestamp);
-      });
-    }
-    if (d.cashSessions) {
-      setCashSessions((existing) => {
-        const ids = new Set(existing.map((s) => s.id));
-        const merged = [...existing];
-        for (const s of d.cashSessions!) {
-          if (!ids.has(s.id)) merged.push(s);
-        }
-        return merged;
-      });
-    }
-    if (d.categories && d.categories.length > 0) {
-      setCategories((existing) => {
-        const ids = new Set(existing.map((c) => c.id));
-        const merged = [...existing];
-        for (const c of d.categories!) {
-          if (!ids.has(c.id)) merged.push(c);
-        }
-        return merged.sort((a, b) => a.sortOrder - b.sortOrder);
-      });
-    }
-    if (d.products && d.products.length > 0) {
-      setProducts((existing) => {
-        const ids = new Set(existing.map((p) => p.id));
-        const merged = [...existing];
-        for (const p of d.products!) {
-          if (!ids.has(p.id)) merged.push(p);
-        }
-        return merged.sort((a, b) => a.sortOrder - b.sortOrder);
-      });
-    }
+    if (d.transactions) setTransactions([...d.transactions].sort((a, b) => b.timestamp - a.timestamp));
+    if (d.cashSessions) setCashSessions(d.cashSessions);
+    if (d.categories) setCategories([...d.categories].sort((a, b) => a.sortOrder - b.sortOrder));
+    if (d.products) setProducts([...d.products].sort((a, b) => a.sortOrder - b.sortOrder));
+    if (d.pfandSettings) setPfandSettings(d.pfandSettings);
+    if (d.selectedLocation) setSelectedLocation(d.selectedLocation);
   }, []);
 
   const mergeCloudData = useCallback((cloud: CloudData) => {
@@ -479,6 +454,7 @@ export function useStore() {
     mergeCloudData,
     applyCatalogRows,
     resetAllData,
+    discardEmptySession: (id: string) => setCashSessions((sessions) => sessions.map((session) => session.id === id ? { ...session, closed: true, discarded: true } : session)),
     applyCloudBookingReset,
     exportBackup,
     importBackup,

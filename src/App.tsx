@@ -9,7 +9,7 @@ import { StaffLoginDialog } from '@/components/StaffLoginDialog';
 import { RootPasswordWarning } from '@/components/RootPasswordWarning';
 import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
 import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
-import { changeManagerPassword, resetManagerPassword } from '@/lib/managerAuth';
+import { changeManagerPassword, loadManagerCredential, resetManagerPassword, restoreManagerCredential, type ManagerCredential } from '@/lib/managerAuth';
 import { supabase } from '@/lib/supabaseClient';
 import type { Location, StaffUser } from '@/types';
 import { POSScreen } from '@/components/POS/POSScreen';
@@ -27,10 +27,11 @@ import { closedSessionReport } from '@/lib/dailyReport';
 import { issueDailyCloseReceipt } from '@/lib/dailyCloseReceipt';
 import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { formatDateISO } from '@/lib/format';
+import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon, Lock,
   ArrowDownCircle, ArrowUpCircle, Recycle, MonitorDot,
-  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, UserCheck,
+  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud,
 } from 'lucide-react';
 
 type Tab = 'pos' | 'admin' | 'journal';
@@ -69,7 +70,7 @@ export default function App() {
     testMode,
     applyRows: store.applyCatalogRows,
   });
-  const { online, syncNow } = useCloudSync(
+  const { online, syncNow, pauseSyncForRestore, resumeSyncAfterRestore } = useCloudSync(
     store.transactions,
     store.cashSessions,
     testMode,
@@ -82,11 +83,16 @@ export default function App() {
   // The last finalized balance per location is a suggestion only. It is not
   // copied until the user actually opens the next cash session.
   const openingBalanceSuggestions = useMemo<Record<Location, number | null>>(() => {
-    const latestFor = (location: Location) => [...store.cashSessions]
-      .filter((session) => session.location === location && session.closed && Number.isFinite(session.closingBalance))
-      .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))[0]?.closingBalance ?? null;
+    const latestFor = (location: Location) => {
+      const latest = [...store.cashSessions]
+        .filter((session) => session.location === location && session.closed && !session.discarded)
+        .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))[0];
+      if (!latest) return null;
+      const remainder = closedSessionReport(latest, store.transactions, store.categories).dailyCloseCash?.remainingBalance;
+      return typeof remainder === 'number' && Number.isFinite(remainder) ? Math.round(remainder * 100) / 100 : null;
+    };
     return { Friedrichshafen: latestFor('Friedrichshafen'), Bregenz: latestFor('Bregenz') };
-  }, [store.cashSessions]);
+  }, [store.cashSessions, store.transactions, store.categories]);
 
   // The browser profile may be new while the personnel list already exists in
   // the cloud. Load it again once the cloud session is definitely available.
@@ -139,7 +145,7 @@ export default function App() {
       await discardEntriesBeforeGeneration(reset.generation);
       rememberBookingReset(reset);
     }
-    await staff.resetAll();
+    // Personnel and personal credentials survive the booking/year reset.
     store.resetAllData();
     resetManagerPassword();
     saveJSON(STORAGE_KEYS.rootPasswordChanged, false);
@@ -159,6 +165,14 @@ export default function App() {
   }
 
   function openManagementFromCashOpening(selectedStaff: StaffUser | null) {
+    if (selectedStaff?.role === 'employee') return;
+    if (selectedStaff?.role === 'administrator' && currentStaff?.id === selectedStaff.id && currentStaff.role === 'administrator') {
+      setManagementAdministrator(currentStaff);
+      setAdminUnlocked(true);
+      setOpeningManagementAccess(null);
+      setTab('admin');
+      return;
+    }
     setAdminUnlocked(false);
     setManagementAdministrator(null);
     if (!selectedStaff) {
@@ -183,14 +197,37 @@ export default function App() {
   }
 
   function handleStaffAuthenticated(user: StaffUser) {
+    setAdminUnlocked(user.role === 'administrator');
+    setManagementAdministrator(user.role === 'administrator' ? user : null);
     setCurrentStaff(user);
     setLastStaffId(user.id);
     saveJSON(STORAGE_KEYS.lastStaffId, user.id);
     recordStaff('login', user);
   }
 
-  function handleStaffLogout() {
+  async function discardUnusedSession() {
+    const session = store.activeSession;
+    if (!session) return;
+    if (!testMode) {
+      const sync = await syncEverything();
+      if (!sync.ok) throw new Error(sync.error ?? 'Cloud-Abgleich fehlgeschlagen.');
+      await pauseSyncForRestore();
+      try {
+        if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+        const { error } = await supabase.rpc('discard_empty_pos_cash_session', { p_session_id: session.id });
+        if (error) throw error;
+        store.discardEmptySession(session.id);
+      } finally { resumeSyncAfterRestore(); }
+    } else store.discardEmptySession(session.id);
+  }
+
+  async function handleStaffLogout() {
+    const session = store.activeSession;
+    if (session && !session.entries.length && !session.corrections.length && !store.transactions.some((t) => t.location === session.location && t.timestamp >= session.openedAt)) {
+      try { await discardUnusedSession(); } catch (error) { alert(readableSyncError(error)); return; }
+    } else {
     if (currentStaff) recordStaff('logout', currentStaff);
+    }
     setCurrentStaff(null);
     // A cashier logout closes an administrator's direct workspace access as
     // well. The next person must authenticate with their own credentials.
@@ -245,14 +282,16 @@ export default function App() {
             </>
           )}
 
-          {currentStaff?.role === 'administrator' && (
+          {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
             <>
               <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
               <TabButton
                 active={tab === 'journal'}
                 onClick={() => {
-                  setManagementAdministrator(currentStaff);
-                  setAdminUnlocked(true);
+                  if (currentStaff?.role === 'administrator') {
+                    setManagementAdministrator(currentStaff);
+                    setAdminUnlocked(true);
+                  }
                   setTab('journal');
                 }}
                 icon={<Receipt className="h-4 w-4" />}
@@ -261,8 +300,10 @@ export default function App() {
               <TabButton
                 active={tab === 'admin'}
                 onClick={() => {
-                  setManagementAdministrator(currentStaff);
-                  setAdminUnlocked(true);
+                  if (currentStaff?.role === 'administrator') {
+                    setManagementAdministrator(currentStaff);
+                    setAdminUnlocked(true);
+                  }
                   setTab('admin');
                 }}
                 icon={<Settings className="h-4 w-4" />}
@@ -274,15 +315,6 @@ export default function App() {
 
         {/* Test/Active mode badge */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-          {signedInUser && (
-            <div
-              title={`Angemeldet als ${signedInUser}`}
-              className="flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400"
-            >
-              <UserCheck className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{signedInUser}</span>
-            </div>
-          )}
           <button
             onClick={() => setSyncOpen(true)}
             className="flex min-h-10 items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
@@ -290,9 +322,9 @@ export default function App() {
             <RefreshCw className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Synchronisieren</span>
           </button>
-          <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${testMode ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
-            {testMode ? <FlaskConical className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{testMode ? 'TESTMODUS' : 'AKTIV'}</span>
+          <div role="status" title={online ? 'Cloud erreichbar' : 'Keine Verbindung zur Cloud'} className={`flex h-10 flex-col items-center justify-center rounded-xl border px-3 ${online ? 'border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300' : 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'}`}>
+            <span className="flex items-center gap-1 text-xs font-bold leading-4"><Cloud className="h-3.5 w-3.5" /> Cloud</span>
+            <span className="text-[9px] font-semibold leading-3 tracking-wide">{testMode ? 'TEST' : 'AKTIV'}</span>
           </div>
         </div>
 
@@ -393,6 +425,7 @@ export default function App() {
             onResetStaffPassword={staff.resetPassword}
             lastStaffId={lastStaffId}
             onStaffLogout={handleStaffLogout}
+            onDiscardEmptySession={discardUnusedSession}
             openingBalanceSuggestions={openingBalanceSuggestions}
           />
         )}
@@ -429,8 +462,26 @@ export default function App() {
               administratorTools={managementAdministrator ? <><ManagerPasswordPanel online={online} hasAdministrator={staff.users.some((user) => user.role === 'administrator' && user.active && !!user.passwordHash)} onChange={(currentPassword, nextPassword) => changeManagerPassword(currentPassword, nextPassword, true)} /><CloudPasswordPanel onChanged={() => { saveJSON(STORAGE_KEYS.rootPasswordChanged, true); saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); }} /></> : undefined}
               testMode={testMode}
               onToggleMode={() => setModeConfirm(testMode ? 'to-active' : 'to-test')}
-              onExportBackup={() => {
-                const payload = store.exportBackup();
+              onExportBackup={async () => {
+                try {
+                const recoveryMetadata = await exportRecoveryMetadata();
+                const coreBackup = store.exportBackup();
+                // A backup represents this installation as a whole. Passwords are
+                // stored only as protected proofs; no readable password is exported.
+                const payload: CompleteBackup = {
+                  ...coreBackup,
+                  version: 4,
+                  data: {
+                    ...coreBackup.data,
+                    ...recoveryMetadata,
+                    staffUsers: staff.users,
+                    managerCredential: loadManagerCredential(),
+                    lastStaffId,
+                    theme,
+                    rootPasswordChanged: loadJSON(STORAGE_KEYS.rootPasswordChanged, false),
+                    rootPasswordNoticeDismissed: loadJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, false),
+                  },
+                };
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -440,8 +491,12 @@ export default function App() {
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : 'Die vollständige Sicherung konnte nicht erstellt werden.');
+                }
               }}
               onImportBackup={async (file) => {
+                let restoreSyncPaused = false;
                 try {
                   const text = await file.text();
                   const parsed = JSON.parse(text);
@@ -449,10 +504,52 @@ export default function App() {
                     alert('Ungültige Backup-Datei: Format nicht erkannt.');
                     return;
                   }
-                  store.importBackup(parsed);
-                  alert('Backup erfolgreich importiert. Die Daten wurden ergänzt.');
-                } catch {
-                  alert('Backup-Datei konnte nicht gelesen werden.');
+
+                  // Der Wiederherstellungsdienst gleicht die Daten bereits
+                  // gezielt mit der Cloud ab. Die normale Hintergrund-
+                  // synchronisation darf dabei nicht parallel weitere
+                  // Änderungen einreihen.
+                  await pauseSyncForRestore();
+                  restoreSyncPaused = true;
+                  const restored = await restoreBackupSafely(parsed as CompleteBackup);
+                  store.importBackup(restored);
+                  staff.replaceLocal(restored.staffUsers);
+
+                  const restoredData = restored.data;
+                  if ('managerCredential' in restoredData) {
+                    restoreManagerCredential((restoredData.managerCredential as ManagerCredential | null) ?? null);
+                  }
+                  // Ein eventuell noch lokaler Name darf nicht aus einer alten
+                  // Sitzung in die gerade wiederhergestellten Daten hineinragen.
+                  const restoredStaffId = typeof restoredData.lastStaffId === 'string' ? restoredData.lastStaffId : null;
+                  saveJSON(STORAGE_KEYS.lastStaffId, restoredStaffId);
+                  setLastStaffId(restoredStaffId);
+                  if ('theme' in restoredData && typeof restoredData.theme === 'string') {
+                    saveJSON(STORAGE_KEYS.theme, restoredData.theme);
+                  }
+                  if ('rootPasswordChanged' in restoredData) {
+                    saveJSON(STORAGE_KEYS.rootPasswordChanged, Boolean(restoredData.rootPasswordChanged));
+                  }
+                  if ('rootPasswordNoticeDismissed' in restoredData) {
+                    saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, Boolean(restoredData.rootPasswordNoticeDismissed));
+                  }
+
+                  // Kein Seiten-Neuladen: Während der Cloud-Abgleich die
+                  // wiederhergestellten Sitzungen übernimmt, würde dies die
+                  // Kasseneröffnung mehrfach öffnen und schließen lassen.
+                  // Der Nutzer bleibt deshalb stabil in der Verwaltung.
+                  setCurrentStaff(null);
+                  setManagementAdministrator(null);
+                  setOpeningManagementAccess(null);
+                  setAdminUnlocked(true);
+                  setTab('admin');
+                  alert('Backup sicher wiederhergestellt. Die Daten sind verfügbar; Sie bleiben in der Verwaltung.');
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : 'Backup-Datei konnte nicht gelesen werden.');
+                } finally {
+                  if (restoreSyncPaused) {
+                    resumeSyncAfterRestore();
+                  }
                 }
               }}
             />

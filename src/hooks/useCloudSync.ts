@@ -90,17 +90,27 @@ export function useCloudSync(
   mergeCloudData: (cloud: CloudData) => void,
   syncCatalog: () => Promise<CatalogSyncResult>,
   applyCloudBookingReset: (cutoff: number, generationChanged?: boolean) => void,
-): { online: boolean; syncNow: () => Promise<SyncResult> } {
+): {
+  online: boolean;
+  syncNow: () => Promise<SyncResult>;
+  pauseSyncForRestore: () => Promise<void>;
+  resumeSyncAfterRestore: () => void;
+} {
   const [online, setOnline] = useState(navigator.onLine);
   const inFlightRef = useRef<Promise<SyncResult> | null>(null);
   const offlineSinceRef = useRef(false);
   const snapshotRef = useRef<Snapshot | null>(null);
   const newestPulledRef = useRef<number | null>(null);
+  const restorePausedRef = useRef(false);
+  const rebaseAfterRestoreRef = useRef(false);
   const onReconnectSyncedRef = useRef(onReconnectSynced);
   onReconnectSyncedRef.current = onReconnectSynced;
 
   const flush = useCallback((): Promise<SyncResult> => {
     if (!supabase) return Promise.resolve({ ok: false, error: 'Cloud ist nicht konfiguriert.' });
+    if (restorePausedRef.current || rebaseAfterRestoreRef.current) {
+      return Promise.resolve({ ok: true });
+    }
     inFlightRef.current ??= (async () => {
       const catalogResult = await syncCatalog();
       const bookingResult = await uploadPendingChanges(async () => {
@@ -113,7 +123,12 @@ export function useCloudSync(
         // a cloud request that began before a completed reset. A new generation
         // clears every local booking, including entries created offline after the
         // reset timestamp but before this device learned about the reset.
-        applyCloudBookingReset(latestReset.resetAt, generationChanged);
+        // Restored bookings retain their original dates but belong to the
+        // current generation. Reapplying the cutoff would remove them on
+        // every sync, only for the following pull to add them again.
+        if (generationChanged || latestReset.resetAt > known.resetAt) {
+          applyCloudBookingReset(latestReset.resetAt, generationChanged);
+        }
         if (generationChanged) {
           await discardEntriesBeforeGeneration(latestReset.generation);
         }
@@ -144,6 +159,17 @@ export function useCloudSync(
     });
     return inFlightRef.current;
   }, [testMode, mergeCloudData, applyCloudBookingReset]);
+
+  const pauseSyncForRestore = useCallback(async () => {
+    restorePausedRef.current = true;
+    const activeSync = inFlightRef.current;
+    if (activeSync) await activeSync.catch(() => undefined);
+  }, []);
+
+  const resumeSyncAfterRestore = useCallback(() => {
+    rebaseAfterRestoreRef.current = true;
+    restorePausedRef.current = false;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +215,12 @@ export function useCloudSync(
   useEffect(() => {
     if (testMode || !supabase) return;
 
+    if (restorePausedRef.current || rebaseAfterRestoreRef.current) {
+      snapshotRef.current = snapshotOf(transactions, cashSessions);
+      rebaseAfterRestoreRef.current = false;
+      return;
+    }
+
     const previous = snapshotRef.current;
     if (!previous) {
       snapshotRef.current = snapshotOf(transactions, cashSessions);
@@ -212,5 +244,5 @@ export function useCloudSync(
       .catch((err) => console.error('Speichern in der Warteschlange fehlgeschlagen.', err));
   }, [transactions, cashSessions, testMode, flush]);
 
-  return { online, syncNow: flush };
+  return { online, syncNow: flush, pauseSyncForRestore, resumeSyncAfterRestore };
 }

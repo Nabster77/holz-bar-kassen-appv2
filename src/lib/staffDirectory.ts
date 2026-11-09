@@ -99,7 +99,7 @@ export async function resetStaffPasswordWithSecurity(staffId: string, answer: st
   if (error) throw error;
 }
 
-type StaffRow = { id: string; data: StaffUser; updated_at: number; deleted: boolean };
+export type StaffRow = { id: string; data: StaffUser; updated_at: number; deleted: boolean };
 
 function isStaffUser(value: unknown): value is StaffUser {
   if (!value || typeof value !== 'object') return false;
@@ -107,14 +107,30 @@ function isStaffUser(value: unknown): value is StaffUser {
   return typeof user.id === 'string' && typeof user.name === 'string' && (user.role === 'administrator' || user.role === 'employee');
 }
 
-export async function pullStaffUsers(): Promise<StaffUser[]> {
+export async function fetchStaffRows(): Promise<StaffRow[]> {
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
   // The visible name is stored inside the JSON `data` column, not as a
   // database column. Sort by the persisted timestamp here; the hook then
   // sorts the decoded users alphabetically for the interface.
   const { data, error } = await supabase.from('pos_staff_users').select('id, data, updated_at, deleted').eq('deleted', false).order('updated_at');
   if (error) throw error;
-  const users = ((data ?? []) as StaffRow[])
+  return (data ?? []) as StaffRow[];
+}
+
+// Backup recovery also needs deletion markers. Otherwise an older backup
+// could accidentally revive a user that was removed on another device.
+export async function fetchAllStaffRows(): Promise<StaffRow[]> {
+  if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+  const { data, error } = await supabase
+    .from('pos_staff_users')
+    .select('id, data, updated_at, deleted')
+    .order('updated_at');
+  if (error) throw error;
+  return (data ?? []) as StaffRow[];
+}
+
+export async function pullStaffUsers(): Promise<StaffUser[]> {
+  const users = (await fetchStaffRows())
     .map((row) => row.data)
     .filter(isStaffUser)
     .map((user) => ({ ...user, securityQuestion: user.securityQuestion ?? null, securityConfigured: Boolean(user.securityConfigured && user.securityQuestion), updatedAt: Number(user.updatedAt) || Date.now() }));
@@ -133,10 +149,7 @@ export async function pushStaffUser(user: StaffUser): Promise<void> {
 export async function removeStaffUser(user: StaffUser): Promise<void> {
   if (!navigator.onLine) throw new Error('Benutzer können nur online gelöscht werden.');
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
-  const { error: securityError } = await supabase.rpc('remove_staff_security', { p_staff_id: user.id });
-  if (securityError) throw securityError;
-  const row: StaffRow = { id: user.id, data: user, updated_at: Date.now(), deleted: true };
-  const { error } = await supabase.from('pos_staff_users').upsert(row, { onConflict: 'id' });
+  const { error } = await supabase.rpc('delete_pos_staff_user', { p_staff_id: user.id });
   if (error) throw error;
 }
 

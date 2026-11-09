@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CartItem, Category, CashSession, Product, Transaction, ShotOption, Location, PfandSettings, StaffSecurityQuestion, StaffUser } from '@/types';
 import { ProductTile } from './ProductTile';
 import { CartItemRow } from './CartItemRow';
@@ -10,7 +10,6 @@ import { CashCorrectionDialog } from './CashCorrectionDialog';
 import { DailyCloseDialog } from './DailyCloseDialog';
 import { ShotSelectionDialog } from './ShotSelectionDialog';
 import { PfandRetoureDialog } from './PfandRetoureDialog';
-import { StaffLoginDialog } from '@/components/StaffLoginDialog';
 import { DynamicIcon } from '@/components/DynamicIcon';
 import { formatDateLong } from '@/lib/format';
 import { SHOT_OPTIONS } from '@/lib/seed';
@@ -45,6 +44,7 @@ interface Props {
   onResetStaffPassword: (id: string, answer: string, password: string) => Promise<StaffUser>;
   lastStaffId: string | null;
   onStaffLogout: () => void;
+  onDiscardEmptySession: () => Promise<void>;
   openingBalanceSuggestions?: Record<Location, number | null>;
 }
 
@@ -64,13 +64,17 @@ const PFAND_RETOURE_PRODUCT: Product = {
 export function POSScreen({
   categories, products, activeSession, onCheckout,
   onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onEnterAdmin, onMoveProduct,
-  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onStaffLogout, openingBalanceSuggestions,
+  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onStaffLogout, onDiscardEmptySession, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
-  const [showOpenDialog, setShowOpenDialog] = useState(false);
+  // Der Dialog wird beim ersten Laden passend zum Sitzungsstatus geöffnet.
+  // Danach darf nur ein tatsächlich bestätigter Tagesabschluss ihn erneut öffnen.
+  // Kurzzeitige Leerstände während Import oder Cloud-Abgleich sind kein Abschluss.
+  const [showOpenDialog, setShowOpenDialog] = useState(() => !activeSession || !currentStaff);
+  const openDialogAfterConfirmedClose = useRef(false);
   const [showCorrection, setShowCorrection] = useState(false);
   const [cashEntryType, setCashEntryType] = useState<'deposit' | 'withdrawal' | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
@@ -82,10 +86,15 @@ export function POSScreen({
   const [dragOver, setDragOver] = useState<string | null>(null);
 
   useEffect(() => {
-    // When the session reaches this device asynchronously through cloud sync,
-    // replace the opening dialog with the resumed cash register immediately.
-    setShowOpenDialog(!activeSession);
-  }, [activeSession]);
+    // Der Öffnungsdialog wird ausschließlich nach einem wirklich bestätigten
+    // Tagesabschluss erneut angezeigt. Änderungen der Sitzung durch Import
+    // oder Synchronisierung dürfen einen bereits geöffneten Dialog weder
+    // schließen noch erneut auslösen.
+    if (!activeSession && openDialogAfterConfirmedClose.current) {
+      openDialogAfterConfirmedClose.current = false;
+      setShowOpenDialog(true);
+    }
+  }, [activeSession?.id]);
 
   useEffect(() => {
     if (!headerAction || !activeSession || !currentStaff) return;
@@ -201,20 +210,26 @@ export function POSScreen({
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               {currentStaff ? <>
-              <span className="rounded-lg border border-green-200 bg-green-50 px-2.5 py-1.5 text-sm font-bold text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200">{currentStaff.name}</span>
-              <button onClick={onStaffLogout}
-                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700">
-                Abmelden
+              <button onClick={() => { setShowOpenDialog(true); onStaffLogout(); }}
+                className="min-h-10 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 active:scale-95 dark:border-green-700 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/50">
+                {currentStaff.name} · Abmelden
               </button>
               <button onClick={() => setShowCorrection(true)}
                 className="flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50">
                 Korrektur
               </button>
-              <button onClick={() => setShowCloseDialog(true)}
+              <button onClick={async () => {
+                const unused = !activeSession.entries.length && !activeSession.corrections.length &&
+                  !transactions.some((t) => t.location === activeSession.location && t.timestamp >= activeSession.openedAt);
+                if (!unused) { setShowCloseDialog(true); return; }
+                alert(`Sie haben in dieser Kassensitzung keine Buchungen oder Kassenbewegungen getätigt. Ihr Anfangsbestand beträgt ${activeSession.openingBalance.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}. Es wird kein Tagesabschluss erstellt.`);
+                try { await onDiscardEmptySession(); setShowOpenDialog(true); }
+                catch (error) { alert((error as { message?: string }).message ?? 'Die unbenutzte Kasse konnte nicht in der Cloud verworfen werden. Bitte Verbindung prüfen.'); }
+              }}
                 className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700">
                 <Lock className="h-3.5 w-3.5" /> Tagesabschluss
               </button>
-              </> : <span className="rounded-lg bg-amber-100 px-2.5 py-1.5 text-xs font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Mitarbeiter anmelden</span>}
+              </> : <button onClick={() => setShowOpenDialog(true)} className="min-h-10 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2 text-sm font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Mitarbeiter anmelden</button>}
             </div>
           </>
         ) : (
@@ -376,21 +391,8 @@ export function POSScreen({
       </div>
 
       {/* Dialogs */}
-      {showOpenDialog && (
-        <CashOpeningDialog onSave={(loc, bal) => { onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
-      )}
-      {!currentStaff && staffUsers.length > 0 && activeSession && (
-        <StaffLoginDialog
-          users={staffUsers}
-          allowedRoles={['employee', 'administrator']}
-          online={online}
-          title={activeSession ? 'Mitarbeiter anmelden' : 'Mitarbeiter für die Kasseneröffnung'}
-          onAuthenticated={onStaffAuthenticated}
-          onSetInitialCredentials={onSetInitialCredentials}
-          onConfigureSecurity={onConfigureStaffSecurity}
-          onResetPassword={onResetStaffPassword}
-          initialStaffId={lastStaffId}
-        />
+      {(showOpenDialog || !activeSession) && (
+        <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
         <CashCorrectionDialog session={activeSession} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
@@ -412,7 +414,10 @@ export function POSScreen({
       {showCloseDialog && activeSession && (
         <DailyCloseDialog session={activeSession} transactions={transactions} currentStaff={currentStaff} onClose={async (bal, closingWithdrawalAmount) => {
           const result = await onCloseCash(bal, closingWithdrawalAmount);
-          if (result.ok) setShowCloseDialog(false);
+          if (result.ok) {
+            openDialogAfterConfirmedClose.current = true;
+            setShowCloseDialog(false);
+          }
           return result;
         }} onCancel={() => setShowCloseDialog(false)} />
       )}

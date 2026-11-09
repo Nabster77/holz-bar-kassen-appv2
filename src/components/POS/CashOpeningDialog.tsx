@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { MapPin, Euro, Check, Store, Settings, KeyRound, Loader2, WifiOff } from 'lucide-react';
-import type { Location, StaffSecurityQuestion, StaffUser } from '@/types';
+import type { CashSession, Location, StaffSecurityQuestion, StaffUser } from '@/types';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
 import { formatSecurityQuestion, SECURITY_QUESTIONS } from '@/lib/staffSecurity';
 
 interface Props {
+  existingSession?: CashSession | null;
   onSave: (location: Location, openingBalance: number) => void;
   onClose: () => void;
   onEnterAdmin?: (selectedStaff: StaffUser | null) => void;
@@ -22,11 +23,11 @@ interface Props {
 
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
-export function CashOpeningDialog({ onSave, onClose, onEnterAdmin, defaultLocation, staffUsers, currentStaff, online, lastStaffId, onStaffAuthenticated, onSetInitialCredentials, onConfigureSecurity, onResetStaffPassword, openingBalanceSuggestions }: Props) {
+export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdmin, defaultLocation, staffUsers, currentStaff, online, lastStaffId, onStaffAuthenticated, onSetInitialCredentials, onConfigureSecurity, onResetStaffPassword, openingBalanceSuggestions }: Props) {
   void onClose;
   const [location, setLocation] = useState<Location>(defaultLocation ?? 'Friedrichshafen');
   const formatSuggestedBalance = (value: number | null | undefined) => value == null ? '' : value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const [balance, setBalance] = useState(() => formatSuggestedBalance(openingBalanceSuggestions?.[defaultLocation ?? 'Friedrichshafen']));
+  const [balance, setBalance] = useState(() => formatSuggestedBalance(existingSession?.openingBalance ?? openingBalanceSuggestions?.[defaultLocation ?? 'Friedrichshafen']));
   const availableStaff = useMemo(() => staffUsers.filter((user) => user.active), [staffUsers]);
   const [selectedStaffId, setSelectedStaffId] = useState(currentStaff?.id ?? lastStaffId ?? '');
   const [staffPassword, setStaffPassword] = useState('');
@@ -39,11 +40,17 @@ export function CashOpeningDialog({ onSave, onClose, onEnterAdmin, defaultLocati
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffBusy, setStaffBusy] = useState(false);
   const selectedStaff = availableStaff.find((user) => user.id === selectedStaffId) ?? null;
+  const carriedBalance = existingSession?.openingBalance ?? openingBalanceSuggestions?.[location];
+  const hasCarriedBalance = typeof carriedBalance === 'number' && Number.isFinite(carriedBalance) && carriedBalance > 0;
   const firstPassword = Boolean(selectedStaff && !selectedStaff.passwordHash);
   const needsSecuritySetup = Boolean(selectedStaff && !selectedStaff.securityConfigured);
 
   function handleSave() {
-    const parsed = parseFloat(balance.replace(',', '.'));
+    if (existingSession) {
+      if (selectedStaff && staffAuthenticated) onClose();
+      return;
+    }
+    const parsed = hasCarriedBalance ? carriedBalance : parseFloat(balance.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed < 0 || !selectedStaff || !staffAuthenticated) return;
     onSave(location, parsed);
   }
@@ -100,10 +107,13 @@ export function CashOpeningDialog({ onSave, onClose, onEnterAdmin, defaultLocati
       {selectedStaff && !staffAuthenticated && !resetMode && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">{firstPassword && <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Bitte persönliches Passwort und Sicherheitsfrage einrichten.</p>}<label className="block text-sm font-medium text-gray-700 dark:text-gray-200">{firstPassword ? 'Neues persönliches Passwort' : 'Persönliches Passwort'}<input type="password" value={staffPassword} onChange={(event) => { setStaffPassword(event.target.value); setStaffError(null); }} autoFocus className="mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base dark:border-gray-700 dark:bg-gray-900" /></label>{firstPassword && <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Passwort wiederholen<input type="password" value={passwordRepeat} onChange={(event) => { setPasswordRepeat(event.target.value); setStaffError(null); }} className="mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base dark:border-gray-700 dark:bg-gray-900" /></label>}{needsSecuritySetup && <SecuritySetup question={question} answer={answer} answerRepeat={answerRepeat} onQuestion={setQuestion} onAnswer={setAnswer} onAnswerRepeat={setAnswerRepeat} />}{(firstPassword || needsSecuritySetup) && !online && <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300"><WifiOff className="h-3.5 w-3.5" /> Die erste Einrichtung benötigt eine Internetverbindung.</p>}{staffError && <p className="text-sm text-red-600 dark:text-red-400">{staffError}</p>}<button onClick={() => void authenticateStaff()} disabled={!staffPassword || staffBusy || ((firstPassword || needsSecuritySetup) && !online)} className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">{staffBusy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : <Check className="mr-1 inline h-4 w-4" />}{firstPassword || needsSecuritySetup ? 'Bestätigen und speichern' : 'Mitarbeiter anmelden'}</button>{!firstPassword && selectedStaff.securityConfigured && <button disabled={!online} onClick={() => { setResetMode(true); setStaffPassword(''); setPasswordRepeat(''); setAnswer(''); setStaffError(null); }} className="w-full text-center text-xs font-semibold text-blue-700 disabled:text-gray-400 dark:text-blue-300"><KeyRound className="mr-1 inline h-3.5 w-3.5" /> Passwort zurücksetzen (nur online)</button>}</div>}
       {selectedStaff && resetMode && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20"><p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Passwort zurücksetzen</p><p className="text-xs text-blue-800 dark:text-blue-200">Sicherheitsfrage: <strong>{formatSecurityQuestion(selectedStaff.securityQuestion)}</strong></p><input type="text" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Antwort eingeben" className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm dark:border-blue-800 dark:bg-gray-900" /><input type="password" value={staffPassword} onChange={(event) => setStaffPassword(event.target.value)} placeholder="Neues Passwort" className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm dark:border-blue-800 dark:bg-gray-900" /><input type="password" value={passwordRepeat} onChange={(event) => setPasswordRepeat(event.target.value)} placeholder="Passwort wiederholen" className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm dark:border-blue-800 dark:bg-gray-900" />{staffError && <p className="text-sm text-red-600 dark:text-red-400">{staffError}</p>}<button onClick={() => void resetPassword()} disabled={!online || !answer || !staffPassword || !passwordRepeat || staffBusy} className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white disabled:opacity-50">Jetzt online zurücksetzen</button><button onClick={() => setResetMode(false)} className="w-full text-xs font-semibold text-gray-600 dark:text-gray-300">Zurück</button></div>}
       {selectedStaff && staffAuthenticated && <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm font-semibold text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200"><Check className="mr-1 inline h-4 w-4" /> {selectedStaff.name} ist angemeldet.</p>}</div>
+      <fieldset disabled={!!existingSession} className="space-y-4 disabled:opacity-60">
       <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><MapPin className="h-4 w-4" /> Standort</label><div className="grid grid-cols-2 gap-2">{LOCATIONS.map((entry) => <button key={entry} onClick={() => { setLocation(entry); setBalance(formatSuggestedBalance(openingBalanceSuggestions?.[entry])); }} className={`rounded-xl py-3 text-sm font-bold transition active:scale-95 ${location === entry ? 'bg-blue-600 text-white shadow-md' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>{entry}</button>)}</div></div>
-      <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><Euro className="h-4 w-4" /> Kassen-Anfangsbestand (€)</label><input value={balance} onChange={(event) => setBalance(event.target.value)} placeholder="z.B. 150,00" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />{openingBalanceSuggestions?.[location] != null && <p className="mt-1.5 text-xs text-blue-700 dark:text-blue-300">Vorschlag aus dem letzten Tagesabschluss: {formatSuggestedBalance(openingBalanceSuggestions[location])} €</p>}</div>
-      <button onClick={handleSave} disabled={!balance || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> Kasse eröffnen</button>
-      {onEnterAdmin && <button onClick={() => onEnterAdmin(selectedStaff)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-700"><Settings className="h-4 w-4" /> Verwaltung öffnen</button>}
+      <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><Euro className="h-4 w-4" /> Kassen-Anfangsbestand (€)</label>{hasCarriedBalance ? <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-lg font-bold text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">{formatSuggestedBalance(carriedBalance)} €<span className="mt-1 block text-xs font-normal">Vorhandener Bestand wird automatisch übernommen.</span></p> : <input value={balance} onChange={(event) => setBalance(event.target.value)} placeholder="z.B. 150,00" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />}</div>
+      </fieldset>
+      {existingSession && <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Die Kasse in {existingSession.location} ist bereits geöffnet. Der bestehende Anfangsbestand bleibt erhalten.</p>}
+      <button onClick={handleSave} disabled={(!existingSession && !hasCarriedBalance && !balance) || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> {existingSession ? 'Kasse weiterführen' : 'Kasse eröffnen'}</button>
+      {onEnterAdmin && selectedStaff?.role !== 'employee' && <button onClick={() => onEnterAdmin(selectedStaff)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-700"><Settings className="h-4 w-4" /> Verwaltung öffnen</button>}
     </div>
   </div></div>;
 }

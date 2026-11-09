@@ -148,6 +148,7 @@ export interface CashCorrection {
 }
 
 export interface CashSession {
+  discarded?: boolean;
   id: string;
   date: string; // ISO date string (YYYY-MM-DD)
   location: Location;

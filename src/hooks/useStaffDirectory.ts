@@ -94,5 +94,5 @@ export function useStaffDirectory() {
     replaceLocal([]);
   }, [replaceLocal]);
 
-  return { users, sync, create, update, setPassword, setInitialCredentials, configureSecurity, resetPassword, remove, resetAll };
+  return { users, sync, replaceLocal, create, update, setPassword, setInitialCredentials, configureSecurity, resetPassword, remove, resetAll };
 }

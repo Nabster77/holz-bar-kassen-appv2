@@ -1,4 +1,5 @@
 import type { Category, CashSession, Location, StaffActivity, StaffLoginInterval, Transaction } from '@/types';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { buildJournalFileName } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type CashAuditRecord, type JournalReportData, type StaffTimeRecord } from '@/lib/journalPdf';
 import { endOfDay, startOfDay } from '@/lib/format';
@@ -91,7 +92,7 @@ function staffTimesFromSession(session: CashSession, closedAt: number): StaffTim
 
 export function closedSessionReport(session: CashSession, transactions: Transaction[], categories: Category[], exportedByName?: string): JournalReportData {
   const snapshot = session.dailyCloseSnapshot;
-  const reportTransactions = snapshot?.transactions ?? dayTransactions(transactions, session.date, session.location);
+  const reportTransactions = snapshot?.transactions ?? sessionTransactions(transactions, session);
   const finalizedAt = snapshot?.finalizedAt ?? session.closedAt ?? Date.now();
   const [year, month, day] = session.date.split('-');
   const closingWithdrawalAmount = session.closingWithdrawalAmount ?? session.entries.filter((entry) => entry.isClosingWithdrawal).reduce((sum, entry) => sum + entry.amount, 0);
@@ -109,7 +110,7 @@ export function closedSessionReport(session: CashSession, transactions: Transact
     .reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0));
   const cashTurnover = cashTransactions.reduce((sum, transaction) => sum + transaction.total, 0);
   const openingCorrectionTotal = session.corrections.reduce((sum, correction) => sum + correction.newAmount - correction.oldAmount, 0);
-  const balanceBeforeWithdrawal = session.openingBalance + cashTurnover + deposits - normalWithdrawals;
+  const balanceBeforeWithdrawal = Math.round((session.openingBalance + cashTurnover + deposits - normalWithdrawals) * 100) / 100;
   return {
     ...buildDailyReport(session.location, session.date, reportTransactions, categories, [session], exportedByName ?? snapshot?.finalizedByName),
     headerLabel: `${session.location} · ${new Date(session.openedAt).toLocaleDateString('de-DE')} · ${new Date(finalizedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
@@ -131,7 +132,7 @@ export function closedSessionReport(session: CashSession, transactions: Transact
       closingWithdrawalAmount,
       // The printed remaining balance must be reproducible from the document
       // itself and must therefore never depend on a stale/manual close value.
-      remainingBalance: balanceBeforeWithdrawal - closingWithdrawalAmount,
+      remainingBalance: Math.round((balanceBeforeWithdrawal - closingWithdrawalAmount) * 100) / 100,
     },
   };
 }

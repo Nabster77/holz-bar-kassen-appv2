@@ -1,8 +1,9 @@
-import { useRef, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
 import { buildDailyReport } from '@/lib/dailyReport';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { exportJournalPdf, openJournalPrintDialog } from '@/lib/journalPdfFile';
 import { DynamicIcon, availableIconNames } from '@/components/DynamicIcon';
 import { importFileToDataURL, isSupported, ACCEPTED_TYPES } from '@/lib/imageImport';
@@ -31,7 +32,7 @@ interface Props {
   onResetAllData?: () => Promise<void>;
   testMode?: boolean;
   onToggleMode?: () => void;
-  onExportBackup?: () => void;
+  onExportBackup?: () => void | Promise<void>;
   onImportBackup?: (file: File) => void;
   pfandSettings: PfandSettings;
   onUpdatePfandSettings: (settings: PfandSettings) => void;
@@ -140,7 +141,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
       </div>
       {showReset && (
         <ResetConfirmDialog
-          onExport={onExportBackup ? () => { onExportBackup(); } : undefined}
+          onExport={onExportBackup}
           onCancel={() => setShowReset(false)}
           onConfirm={async () => { await onResetAllData?.(); setShowReset(false); }}
         />
@@ -723,12 +724,17 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
 
   const locationData = useMemo(() => {
     return LOCATIONS.map((loc) => {
-      const session = cashSessions.find((s) => s.date === selectedDate && s.location === loc) ?? null;
-      const txToday = transactions.filter((t) => formatDateISO(t.timestamp) === selectedDate && t.location === loc);
+      const session = cashSessions
+        .filter((s) => s.date === selectedDate && s.location === loc && !s.discarded)
+        .sort((a, b) => b.openedAt - a.openedAt)[0] ?? null;
+      // The overview represents the latest till session, not the sum of all
+      // sessions that happened to take place on the same calendar day.
+      const txToday = session ? sessionTransactions(transactions, session)
+        .sort((a, b) => b.timestamp - a.timestamp) : [];
       const taxByRateMap = mergeTaxByRate(txToday);
       let total = 0, count = 0, totalNet = 0, totalPfand = 0;
       for (const t of txToday) {
-        total += t.total;
+        total += t.subtotal;
         count++;
         totalNet += t.totalNet;
         totalPfand += t.totalPfand;
@@ -738,9 +744,9 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
       for (const [k, v] of taxByRateMap) taxByRate[k] = v;
 
       const cashBalance = session
-        ? session.openingBalance +
+        ? Math.round((session.openingBalance +
           session.entries.reduce((s, e) => s + (e.type === 'deposit' ? e.amount : -e.amount), 0) +
-          txToday.filter((t) => t.paymentMethod === 'cash').reduce((s, t) => s + t.total, 0)
+          txToday.filter((t) => t.paymentMethod === 'cash').reduce((s, t) => s + t.total, 0)) * 100) / 100
         : 0;
 
       return { loc, session, txToday, taxByRateMap, total, count, totalNet, totalTax, totalPfand, taxByRate, cashBalance };
@@ -753,7 +759,9 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
       selectedDate,
       txToday,
       categories,
-      cashSessions.filter((session) => session.location === loc && session.date === selectedDate),
+      locationData.find((data) => data.loc === loc)?.session
+        ? [locationData.find((data) => data.loc === loc)!.session!]
+        : [],
       exportedByName,
       transactions,
     );
@@ -875,7 +883,7 @@ function LocationSessionCard({ loc, session, total, count, totalNet, totalTax, t
 }) {
   const rateKeys = sortedRateKeys(taxByRateMap);
   const isClosed = !!session?.closed;
-  const statusLabel = isClosed ? 'ABGESCHLOSSEN' : isHistoric ? (session ? 'OFFEN' : 'KEINE KASSE') : isActive ? 'AKTIV' : session ? 'OFFEN' : 'GESPERRT';
+  const statusLabel = isClosed ? 'ABGESCHLOSSEN' : isHistoric ? (session ? 'OFFEN' : 'KEINE KASSE') : session ? 'OFFEN' : 'GESPERRT';
   const statusClass = isClosed
     ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
     : isHistoric
@@ -932,7 +940,7 @@ function LocationSessionCard({ loc, session, total, count, totalNet, totalTax, t
         <div className="mb-3 rounded-xl border border-gray-200 bg-gradient-to-br from-green-50 to-emerald-50 p-3 dark:border-green-800 dark:from-green-900/20 dark:to-emerald-900/10">
           <div className="mb-2 flex items-center gap-1.5">
             <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Umsatz {isHistoric ? 'dieser Tag' : 'heute'}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">Umsatz dieser Kassensitzung (ohne Pfand)</p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
@@ -1050,7 +1058,7 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
   const dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
   const taxByRateMap = mergeTaxByRate(transactions);
   const rateKeys = sortedRateKeys(taxByRateMap);
-  const total = transactions.reduce((s, t) => s + t.total, 0);
+  const total = transactions.reduce((s, t) => s + t.subtotal, 0);
   const totalNet = transactions.reduce((s, t) => s + t.totalNet, 0);
   const totalTax = [...taxByRateMap.values()].reduce((s, v) => s + v, 0);
   const totalPfand = transactions.reduce((s, t) => s + t.totalPfand, 0);
@@ -1064,6 +1072,7 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
     const map = new Map<string, { name: string; categoryId: string; qty: number; gross: number; net: number; tax: number; pfand: number; taxRate: number }>();
     for (const tx of transactions) {
       for (const item of tx.items) {
+        if (item.isPfandRetoure) continue;
         const existing = map.get(item.productId) ?? { name: item.name, categoryId: item.categoryId, qty: 0, gross: 0, net: 0, tax: 0, pfand: 0, taxRate: item.taxRate };
         existing.qty += item.quantity;
         existing.gross += item.price * item.quantity;
@@ -1169,7 +1178,7 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
                 <div className="rounded-2xl border border-gray-200 p-3 dark:border-gray-700">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Kassensitzung</p>
                   <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                    <div><p className="text-xs text-gray-400">Anfangsbestand</p><p className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.openingBalance)}</p></div>
+                    <div><p className="text-xs text-gray-400">{session.corrections.length ? 'Anfangsbestand (korrigiert)' : 'Anfangsbestand'}</p><p className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.openingBalance)}</p></div>
                     <div><p className="text-xs text-gray-400">Einzahlungen</p><p className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.entries.filter((e) => e.type === 'deposit').reduce((s, e) => s + e.amount, 0))}</p></div>
                     <div><p className="text-xs text-gray-400">Entnahmen</p><p className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.entries.filter((e) => e.type === 'withdrawal').reduce((s, e) => s + e.amount, 0))}</p></div>
                     {session.closed ? (
@@ -1183,6 +1192,23 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
                     )}
                   </div>
                 </div>
+              )}
+
+              {session && session.corrections.length > 0 && (
+                <section className="rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/10">
+                  <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200">Anfangsbestandskorrekturen</h3>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">Bereits im angezeigten Anfangsbestand enthalten; wird nicht erneut abgezogen oder addiert.</p>
+                  <div className="mt-2 space-y-2">
+                    {[...session.corrections].sort((a, b) => a.timestamp - b.timestamp).map((correction) => {
+                      const difference = Math.round((correction.newAmount - correction.oldAmount) * 100) / 100;
+                      return <div key={correction.id} className="rounded-xl border border-amber-200 bg-white p-3 text-sm dark:border-amber-800 dark:bg-gray-900/40">
+                        <p className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(correction.oldAmount)} → {formatCurrency(correction.newAmount)} <span className={difference < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>({difference > 0 ? '+' : ''}{formatCurrency(difference)})</span></p>
+                        <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{new Date(correction.timestamp).toLocaleDateString('de-DE')} · {formatTime(correction.timestamp)} · Mitarbeiter: {correction.employeeName ?? 'Nicht hinterlegt'}</p>
+                        <p className="mt-1 text-gray-700 dark:text-gray-200">Grund: {correction.reason || 'Nicht hinterlegt'}</p>
+                      </div>;
+                    })}
+                  </div>
+                </section>
               )}
 
               {/* Category breakdown */}
@@ -1278,7 +1304,7 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
 
 // ---- Reset / Backup / Import dialogs ----
 
-function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () => void; onCancel: () => void; onConfirm: () => Promise<void> }) {
+function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () => void | Promise<void>; onCancel: () => void; onConfirm: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1303,11 +1329,11 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Tagesbuchungen zurücksetzen?</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Buchungen, Kassensitzungen und Benutzer werden zurückgesetzt</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Buchungen und Kassensitzungen werden zurückgesetzt; Benutzer bleiben erhalten</p>
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Dadurch werden <strong>alle Transaktionen und Kassensitzungen</strong> (Anfangsbestände, Einlagen, Abschlüsse) entfernt. Außerdem werden <strong>alle Mitarbeiter, Administratoren und deren persönliche Passwörter</strong> gelöscht. Das Passwort für Verwaltung und Journal wird wieder auf <strong>kasse</strong> gesetzt; der Cloud-Hauptzugang wird auf <strong>Admin / 123456</strong> zurückgesetzt.<br /><br />
+          Dadurch werden <strong>alle Transaktionen und Kassensitzungen</strong> (Anfangsbestände, Einlagen, Abschlüsse) entfernt. Die Belegzähler beginnen wieder bei 0; der nächste Tagesabschluss erhält je Standort die Nummer 000001. <strong>Alle Mitarbeiter und Administratoren samt Rollen, persönlichen Passwörtern und Sicherheitsfragen bleiben erhalten.</strong> Benutzer können weiterhin einzeln in der Benutzerverwaltung geändert oder gelöscht werden. Das Passwort für Verwaltung und Journal wird wieder auf <strong>kasse</strong> gesetzt; der Cloud-Hauptzugang wird auf <strong>Admin / 123456</strong> zurückgesetzt.<br /><br />
           Ihre <strong>Artikel, Warengruppen, Preise, Bilder und sonstigen Katalogdaten bleiben erhalten</strong>. Die Löschung gilt auch in der Cloud. Alle verbundenen Geräte übernehmen den Reset bei der nächsten Synchronisierung. Danach wird die Cloud-Anmeldung beendet; melden Sie sich anschließend wieder mit <strong>Admin / 123456</strong> an.<br /><br />
           <strong>Empfehlung:</strong> Sichern Sie die Daten zuerst als Backup-Datei, damit Sie sie später jederzeit wieder importieren und auswerten können — auch noch in kommenden Jahren.
         </p>
@@ -1319,8 +1345,8 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
         <div className="flex flex-col gap-2">
           {onExport && (
             <button
-              onClick={() => { onExport(); }}
               disabled={busy}
+              onClick={async () => { setBusy(true); try { await onExport(); } finally { setBusy(false); } }}
               className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
             >
               <Download className="h-4 w-4" /> Zuerst als Backup sichern
@@ -1344,7 +1370,32 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
 
 function ImportDialog({ onImport, onCancel }: { onImport: (file: File) => void; onCancel: () => void }) {
   const [file, setFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // While the dialog is open, Firefox must not navigate to a dropped backup file.
+  useEffect(() => {
+    const preventBrowserDrop = (event: DragEvent) => event.preventDefault();
+    window.addEventListener('dragover', preventBrowserDrop);
+    window.addEventListener('drop', preventBrowserDrop);
+    return () => {
+      window.removeEventListener('dragover', preventBrowserDrop);
+      window.removeEventListener('drop', preventBrowserDrop);
+    };
+  }, []);
+
+  const selectFile = (candidate?: File) => {
+    if (!candidate) return;
+    const isJson = candidate.name.toLowerCase().endsWith('.json') || candidate.type === 'application/json';
+    if (!isJson) {
+      setFile(null);
+      setFileError('Bitte eine Backup-Datei im JSON-Format auswählen.');
+      return;
+    }
+    setFile(candidate);
+    setFileError(null);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
@@ -1359,11 +1410,23 @@ function ImportDialog({ onImport, onCancel }: { onImport: (file: File) => void; 
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Wählen Sie eine zuvor gesicherte Backup-Datei (JSON). Die enthaltenen Transaktionen, Kassensitzungen, Warengruppen und Artikel werden <strong>ergänzend</strong> hinzugefügt — bestehende Daten bleiben erhalten, Duplikate werden übersprungen.
+          Wählen oder ziehen Sie eine zuvor gesicherte Backup-Datei (JSON) hierher. Vor dem Import wird die Cloud geprüft: Neuere Cloud-Daten bleiben geschützt.
         </p>
         <div
           onClick={() => inputRef.current?.click()}
-          className="mb-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center transition hover:border-blue-400 hover:bg-blue-50 dark:border-gray-600 dark:bg-gray-900/40 dark:hover:border-blue-500 dark:hover:bg-blue-900/20"
+          onDragEnter={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            selectFile(e.dataTransfer.files?.[0]);
+          }}
+          className={`mb-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center transition ${
+            isDragging
+              ? 'border-blue-500 bg-blue-100 dark:bg-blue-900/40'
+              : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50 dark:border-gray-600 dark:bg-gray-900/40 dark:hover:border-blue-500 dark:hover:bg-blue-900/20'
+          }`}
         >
           <FileUp className="h-8 w-8 text-gray-400" />
           <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -1374,9 +1437,10 @@ function ImportDialog({ onImport, onCancel }: { onImport: (file: File) => void; 
             type="file"
             accept="application/json,.json"
             className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }}
+            onChange={(e) => selectFile(e.target.files?.[0])}
           />
         </div>
+        {fileError && <p className="-mt-2 mb-4 text-xs font-medium text-red-600 dark:text-red-400">{fileError}</p>}
         <div className="flex gap-2">
           <button onClick={onCancel} className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
             Abbrechen

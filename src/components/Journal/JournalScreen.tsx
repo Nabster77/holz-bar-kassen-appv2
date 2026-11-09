@@ -110,7 +110,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   const relevantSessions = useMemo(
     () => cashSessions.filter((s) => {
       const sDate = new Date(s.date + 'T00:00:00').getTime();
-      return sDate >= start && sDate <= end &&
+      return !s.discarded && sDate >= start && sDate <= end &&
         (locationFilter === 'all' || s.location === locationFilter);
     }),
     [cashSessions, start, end, locationFilter],
@@ -131,7 +131,8 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     categories,
     fileName: buildJournalFileName(period, start, end, locationFilter),
     exportedByName: currentStaff?.name,
-    cashAuditRecords: cashAuditRecordsFromSessions(relevantSessions),
+    cashAuditRecords: cashAuditRecordsFromSessions(relevantSessions)
+      .filter((record) => record.timestamp >= start && record.timestamp <= end),
     yearlyPfandOverview,
   });
   const exportReport = () => void exportJournalPdf(reportData());
@@ -145,7 +146,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
       return [receipt, session.location, session.dailyCloseFinalizedByName, session.closedByName, formatDate(at), formatDateISO(at)].filter(Boolean).join(' ').toLocaleLowerCase('de-DE');
     };
     const matches = cashSessions.filter((session) => {
-      if (!session.closed) return false;
+      if (!session.closed || session.discarded) return false;
       const at = session.closedAt ?? session.openedAt;
       if (at < start || at > end || (locationFilter !== 'all' && session.location !== locationFilter)) return false;
       if (dailyCloseStatus === 'numbered' && receiptNumber(session) === null) return false;

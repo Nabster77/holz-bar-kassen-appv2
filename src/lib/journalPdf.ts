@@ -235,7 +235,7 @@ function transactionSection(txs: Transaction[], title: string, color?: string): 
 function auditRows(records: CashAuditRecord[]): string {
   return [...records].sort((a, b) => a.timestamp - b.timestamp).map((record) => {
     const value = record.kind === 'Korrektur'
-      ? `${formatCurrency(record.oldAmount ?? 0)} → ${formatCurrency(record.newAmount ?? 0)}`
+      ? `${formatCurrency(record.oldAmount ?? 0)} → ${formatCurrency(record.newAmount ?? 0)} (${(record.newAmount ?? 0) - (record.oldAmount ?? 0) > 0 ? '+' : ''}${formatCurrency((record.newAmount ?? 0) - (record.oldAmount ?? 0))})`
       : `${record.kind === 'Einlage' ? '+' : '-'}${formatCurrency(record.amount ?? 0)}`;
     return `<tr><td>${formatDate(record.timestamp)}</td><td>${formatTime(record.timestamp)}</td><td>${escapeHtml(record.employeeName ?? '—')}</td><td>${record.kind}</td><td style="text-align:right"><b>${value}</b></td><td>${escapeHtml(record.reason)}</td></tr>`;
   }).join('');
@@ -243,8 +243,13 @@ function auditRows(records: CashAuditRecord[]): string {
 
 function auditSection(records: CashAuditRecord[]): string {
   if (records.length === 0) return '';
+  const deposits = records.filter((record) => record.kind === 'Einlage').reduce((sum, record) => sum + (record.amount ?? 0), 0);
+  const withdrawals = records.filter((record) => record.kind === 'Ausgabe' || record.kind === 'Entnahme zum Tagesabschluss').reduce((sum, record) => sum + (record.amount ?? 0), 0);
+  const corrections = records.filter((record) => record.kind === 'Korrektur').reduce((sum, record) => sum + (record.newAmount ?? 0) - (record.oldAmount ?? 0), 0);
   return `<section class="report-table-section table-block">
     <table class="audit-table"><thead>${tableTitleRow('Kassenbewegungen und Korrekturen')}<tr><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Vorgang</th><th style="text-align:right">Betrag / Änderung</th><th>Grund</th></tr></thead><tbody>${auditRows(records)}</tbody></table>
+    <p>Summe Einlagen: + ${formatCurrency(deposits)} · Summe Ausgaben und Abschlussentnahmen: - ${formatCurrency(withdrawals)} · Anfangsbestandskorrekturen: ${corrections > 0 ? '+' : ''}${formatCurrency(corrections)}</p>
+    <p>Kassenbewegungen sind kein Warenumsatz. Anfangsbestandskorrekturen sind bereits im korrigierten Anfangsbestand enthalten und werden nicht nochmals verrechnet.</p>
   </section>`;
 }
 
