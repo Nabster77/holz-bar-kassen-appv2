@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useMemo, type ReactNode, type KeyboardEvent } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser, ShotOption } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
@@ -239,7 +239,7 @@ function ShotManager({ shots, onChange }: { shots: ShotOption[]; onChange: (opti
     onChange(shots.map((shot) => shot.id === editingId ? { ...shot, ...values } : shot));
     setEditingId(null);
   };
-  const onEnter = (fn: () => void) => (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const onEnter = (fn: () => void) => (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
       event.preventDefault();
       fn();
