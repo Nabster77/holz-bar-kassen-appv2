@@ -296,14 +296,16 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
                 {products.filter((p) => p.categoryId === cat.id).length} Artikel
               </p>
             </div>
-            <div className="flex gap-1">
-              <button disabled={cat.id === SHOT_CATEGORY_ID} title={cat.id === SHOT_CATEGORY_ID ? 'System-Warengruppe ist geschützt' : 'Bearbeiten'} onClick={() => setEditing(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
-                <Edit3 className="h-4 w-4" />
-              </button>
-              <button disabled={cat.id === SHOT_CATEGORY_ID} title={cat.id === SHOT_CATEGORY_ID ? 'System-Warengruppe ist geschützt' : 'Löschen'} onClick={() => setDeleteCat(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
+            {cat.id !== SHOT_CATEGORY_ID && (
+              <div className="flex gap-1">
+                <button onClick={() => setEditing(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700" aria-label={`${cat.name} bearbeiten`}>
+                  <Edit3 className="h-4 w-4" />
+                </button>
+                <button onClick={() => setDeleteCat(cat)} className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" aria-label={`${cat.name} löschen`}>
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
