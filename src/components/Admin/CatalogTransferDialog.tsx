@@ -60,6 +60,12 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       if (zip && zip.size > 100 * 1024 * 1024) throw new Error('ZIP ist größer als 100 MB.');
       const sheets = await readWorkbook(await excel.arrayBuffer());
       const images = zip ? readImageZip(new Uint8Array(await zip.arrayBuffer())) : [];
+      for (const image of images) {
+        const bitmap = await createImageBitmap(new Blob([new Uint8Array(image.bytes)], {type:image.mime}));
+        const tooLarge = bitmap.width > 800 || bitmap.height > 800;
+        bitmap.close();
+        if (tooLarge) throw new Error(`Bild „${image.path}“ ist größer als 800 × 800 Pixel. Bitte vor dem ZIP-Erstellen verkleinern.`);
+      }
       const counts = new Map<string, number>();
       for (const image of images) { const folder = image.path.includes('/') ? image.path.split('/')[0] : '(Hauptordner)'; counts.set(folder, (counts.get(folder) ?? 0) + 1); }
       setZipSummary(zip ? `ZIP „${zip.name}“: ${images.length} Bilder erkannt (${Array.from(counts, ([folder, count]) => `${folder}: ${count}`).join(', ') || 'keine Bilddateien'}).` : 'Keine ZIP-Datei ausgewählt.');
