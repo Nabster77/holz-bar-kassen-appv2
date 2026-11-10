@@ -127,8 +127,8 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         const name = text(r['Produktname App']); const group = text(r.Warengruppe);
         if (!name || !group) throw new Error('Artikelname oder Warengruppe fehlt.');
         const isShot = normalizeName(group) === 'schuss';
-        const priceKind = text(r['Preis durch Mitarbeiter oder fix']);
-        if (!['fix', 'individuell eintragen'].includes(priceKind)) throw new Error('Preisart muss „fix“ oder „individuell eintragen“ sein.');
+        const priceKind = text(r['Preis durch Mitarbeiter oder fix']).trim().toLocaleLowerCase('de-DE');
+        if (!['fix', 'individuell eintragen', 'individuell'].includes(priceKind)) throw new Error('Preisart muss „fix“ oder „individuell eintragen“ sein.');
         if (isShot && priceKind !== 'fix') throw new Error('SCHUSS benötigt einen festen Preis.');
         const oldShot = isShot ? match(base.shotOptions, r.ID, name, shotKey) : undefined;
         let category = next.categories.find(c => normalizeName(c.name) === normalizeName(group));
@@ -141,7 +141,7 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         const candidates = base.products.filter(p => p.categoryId === category?.id);
         const old = !isShot ? match(empty(r.ID) ? candidates : base.products, r.ID, name) : undefined;
         if (old?.categoryId === SHOT_CATEGORY_ID) throw new Error('Normaler Artikel darf nicht in SCHUSS umgewandelt werden.');
-        const individual = priceKind === 'individuell eintragen';
+        const individual = priceKind === 'individuell eintragen' || priceKind === 'individuell';
         const shared = number(r['VK 2026'], 'Grundpreis', individual ? old?.prices.Friedrichshafen ?? 0 : oldShot?.price);
         const prices = { Friedrichshafen: number(r['VK DE'], 'VK DE', shared), Bregenz: number(r['VK AT'], 'VK AT', shared) };
         const rates = { Friedrichshafen: tax(r['Steuer DE in %'], 'Friedrichshafen', old ? taxRateForProduct(old, 'Friedrichshafen') : undefined), Bregenz: tax(r['Steuer AT in %'], 'Bregenz', old ? taxRateForProduct(old, 'Bregenz') : undefined) };
@@ -158,7 +158,7 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         if (!['standard','reduced','zero'].includes(cls)) throw new Error('Ungültige Steuerklasse.');
         const p: Product = { ...old, id: old?.id ?? id('p'), name, categoryId: category!.id, imageUrl: old?.imageUrl ?? '', taxClass: cls,
           prices, taxRates: rates, available: bool(r.Verfügbar, old?.available ?? true), sortOrder: number(r.Sortierung, 'Sortierung', old?.sortOrder ?? next.products.length),
-          hasShot: bool(r['Schuss erlaubt'], old?.hasShot ?? false), hasIndividualPrice: individual,
+          hasShot: bool(r['Schuss erlaubt'], !empty(r.Schuss) ? normalizeName(r.Schuss) === 'schuss' : old?.hasShot ?? false), hasIndividualPrice: individual,
           isPfandArticle: bool(r.Pfandartikel, old?.isPfandArticle ?? false), pfand: { Friedrichshafen: number(r['Pfand DE'], 'Pfand DE', old?.pfand.Friedrichshafen ?? 0), Bregenz: number(r['Pfand AT'], 'Pfand AT', old?.pfand.Bregenz ?? 0) } };
         if (!empty(r.Schusspreise)) {
           const parsed: unknown = JSON.parse(text(r.Schusspreise));
