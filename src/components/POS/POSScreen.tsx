@@ -12,6 +12,7 @@ import { ShotSelectionDialog } from './ShotSelectionDialog';
 import { PfandRetoureDialog } from './PfandRetoureDialog';
 import { DynamicIcon } from '@/components/DynamicIcon';
 import { formatDateLong } from '@/lib/format';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import {
   ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro,
@@ -110,6 +111,15 @@ export function POSScreen({
   }, [headerAction, activeSession, currentStaff, onHeaderActionConsumed]);
 
   const currentLocation: Location = activeSession?.location ?? (selectedLocation ?? 'Friedrichshafen');
+
+  const currentCashBalance = useMemo(() => {
+    if (!activeSession) return 0;
+    const cashSales = sessionTransactions(transactions, activeSession)
+      .filter(tx => tx.paymentMethod === 'cash')
+      .reduce((sum, tx) => sum + tx.total, 0);
+    const entries = activeSession.entries.reduce((sum, entry) => sum + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
+    return Math.round((activeSession.openingBalance + cashSales + entries) * 100) / 100;
+  }, [activeSession, transactions]);
 
   const visibleProducts = useMemo(() => {
     let list = products.filter((p) => p.available);
@@ -222,8 +232,8 @@ export function POSScreen({
                 className="min-h-10 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 active:scale-95 dark:border-green-700 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/50">
                 {currentStaff.name} · Abmelden
               </button>
-              <button onClick={() => setShowCorrection(true)}
-                className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
+              <button onClick={() => setShowCorrection(true)} disabled={currentCashBalance <= 0} title={currentCashBalance <= 0 ? "Korrektur erst bei positivem Kassenbestand möglich" : "Anfangsbestand korrigieren"}
+                className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
                 Korrektur
               </button>
               <button onClick={async () => {
@@ -409,7 +419,7 @@ export function POSScreen({
         <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
-        <CashCorrectionDialog session={activeSession} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
+        <CashCorrectionDialog session={activeSession} currentCashBalance={currentCashBalance} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
       )}
       {cashEntryType && activeSession && (
         <CashEntryDialog session={activeSession} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
