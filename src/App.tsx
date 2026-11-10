@@ -318,6 +318,15 @@ export default function App() {
             <RefreshCw className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Synchronisieren</span>
           </button>
+          {!testMode && (
+            <span role="status" aria-live="polite" title="Status der Artikel-, Schuss- und Preis-Synchronisierung"
+              className={`hidden max-w-40 text-xs font-semibold sm:inline ${catalog.syncStatus === 'saved' ? 'text-green-600 dark:text-green-400' : catalog.syncStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+              {catalog.syncStatus === 'saved' ? 'Artikel: Cloud gespeichert'
+                : catalog.syncStatus === 'syncing' ? 'Artikel: Cloud-Abgleich …'
+                : catalog.syncStatus === 'error' ? 'Artikel: Abgleich fehlgeschlagen'
+                : 'Artikel: Speichern ausstehend'}
+            </span>
+          )}
           <div role="status" title={online ? 'Cloud erreichbar' : 'Keine Verbindung zur Cloud'} className={`flex h-10 flex-col items-center justify-center rounded-xl border px-3 ${online ? 'border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300' : 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'}`}>
             <span className="flex items-center gap-1 text-xs font-bold leading-4"><Cloud className="h-3.5 w-3.5" /> Cloud</span>
             <span className="text-[9px] font-semibold leading-3 tracking-wide">{testMode ? 'TEST' : 'AKTIV'}</span>
