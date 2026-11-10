@@ -47,7 +47,6 @@ export function ShotManager({ shots, onChange, onDirtyChange }: { shots: ShotOpt
     return result;
   });
   const invalid = errors.some(error => Object.keys(error).length > 0);
-  const reset = () => { pending.current = null; setBase(shots); setRows(rowsFrom(shots)); setNotice(''); };
   const save = () => {
     if (!dirty || conflict || invalid) return;
     const next = rows.map(row => {
@@ -113,8 +112,6 @@ export function ShotManager({ shots, onChange, onDirtyChange }: { shots: ShotOpt
     </div>
     <div className="flex flex-wrap items-center gap-3">
       <button type="button" onClick={() => { setRows(current => [...current, { id: 'shot-' + crypto.randomUUID(), name: '', price: '', Friedrichshafen: '', Bregenz: '' }]); setNotice(''); }} className="rounded-lg border px-4 py-2 dark:text-white">+ Schussartikel</button>
-      <button type="button" disabled={!dirty || invalid || conflict} onClick={save} className="rounded-lg bg-green-600 px-4 py-2 font-bold text-white disabled:opacity-40">Jetzt speichern</button>
-      <button type="button" disabled={!dirty} onClick={reset} className="rounded-lg border px-4 py-2 disabled:opacity-40 dark:text-white">Verwerfen</button>
       {dirty && <span className="text-sm text-amber-700 dark:text-amber-300">Ungespeicherte Änderungen</span>}
     </div>
     <p role="status" className="text-sm text-gray-600 dark:text-gray-300">{notice}</p>
