@@ -60,7 +60,7 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
     >
       <div className="pointer-events-auto my-auto w-full max-w-sm shrink-0 rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800">
         <div className="mb-5 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg"}>
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg">
             <Lock className="h-8 w-8" />
           </div>
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
