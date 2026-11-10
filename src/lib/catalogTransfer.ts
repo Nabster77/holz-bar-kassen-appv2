@@ -256,14 +256,26 @@ export async function exportWorkbook(catalog: LocalCatalog): Promise<ArrayBuffer
   return await workbook.xlsx.writeBuffer() as ArrayBuffer;
 }
 
+/** fflate exposes legacy CP437 ZIP entry names as byte-valued characters. */
+const cp437High = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ";
+function decodeZipPath(path: string): string {
+  // Decode only legacy byte-valued paths. Already-correct Unicode paths remain intact.
+  if (!/[\u0080-\u009f]/.test(path)) return path;
+  return Array.from(path, char => {
+    const n = char.charCodeAt(0);
+    return n >= 128 && n <= 255 ? cp437High[n - 128] : char;
+  }).join('');
+}
+
 /** Streaming decompression with limits checked BEFORE accepting each output chunk. */
 export function readImageZip(bytes: Uint8Array): ImageEntry[] {
   if (bytes.length > 100 * 1024 * 1024) throw new Error('ZIP ist größer als 100 MB.');
   const result: ImageEntry[] = []; let total = 0; let entries = 0; let failure: Error | null = null;
   const unzip = new Unzip(file => {
+    const decodedPath = decodeZipPath(file.name);
     if (++entries > 1000) throw new Error('ZIP enthält mehr als 1.000 Einträge.');
-    if (file.name.endsWith('/') || file.name.startsWith('__MACOSX/') || /(^|\/)\./.test(file.name)) return;
-    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (decodedPath.endsWith('/') || decodedPath.startsWith('__MACOSX/') || /(^|\/)\./.test(decodedPath)) return;
+    const ext = decodedPath.split('.').pop()?.toLowerCase();
     const mime = ({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',bmp:'image/bmp'} as Record<string,string>)[ext ?? ''];
     if (!mime) return;
     let size = 0; const chunks: Uint8Array[] = [];
@@ -272,7 +284,7 @@ export function readImageZip(bytes: Uint8Array): ImageEntry[] {
       size += chunk.length; total += chunk.length;
       if (size > 10 * 1024 * 1024 || total > 200 * 1024 * 1024) { file.terminate(); throw new Error('ZIP entpackt zu groß (10 MB je Bild / 200 MB insgesamt).'); }
       chunks.push(chunk);
-      if (final) { const data = new Uint8Array(size); let offset = 0; for (const c of chunks) {data.set(c,offset); offset += c.length;} result.push({path:file.name,bytes:data,mime}); }
+      if (final) { const data = new Uint8Array(size); let offset = 0; for (const c of chunks) {data.set(c,offset); offset += c.length;} result.push({path:decodedPath,bytes:data,mime}); }
     }; file.start();
   }); unzip.register(UnzipInflate); unzip.push(bytes, true);
   if (failure) throw failure;
