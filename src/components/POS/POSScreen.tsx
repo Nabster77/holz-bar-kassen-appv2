@@ -224,7 +224,8 @@ export function POSScreen({
               <button onClick={async () => {
                 const unused = !activeSession.entries.length && !activeSession.corrections.length &&
                   !transactions.some((t) => t.location === activeSession.location && t.timestamp >= activeSession.openedAt);
-                if (!unused) { setShowCloseDialog(true); return; }
+                // A funded till needs a regular close, even without sales.
+                if (!unused || activeSession.openingBalance !== 0) { setShowCloseDialog(true); return; }
                 alert(`Sie haben in dieser Kassensitzung keine Buchungen oder Kassenbewegungen getätigt. Ihr Anfangsbestand beträgt ${activeSession.openingBalance.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}. Es wird kein Tagesabschluss erstellt.`);
                 try { await onDiscardEmptySession(); setShowOpenDialog(true); }
                 catch (error) { alert((error as { message?: string }).message ?? 'Die unbenutzte Kasse konnte nicht in der Cloud verworfen werden. Bitte Verbindung prüfen.'); }

@@ -1,3 +1,4 @@
+import { canDiscardCashSession } from '@/lib/cashBalanceCarry';
 import { useCallback, useEffect, useState } from 'react';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings, StaffActivity, StaffUser, ShotOption } from '@/types';
@@ -188,7 +189,12 @@ export function useStore() {
       activities: staff ? [{ id: uid('activity'), type: 'cash_opened', staffId: staff.id, staffName: staff.name, timestamp: openedAt, amount: openingBalance }] : [],
       staffLoginIntervals: staff ? [{ id: uid('staff-login'), staffId: staff.id, staffName: staff.name, loginAt: openedAt }] : [],
     };
-    setCashSessions((ss) => [...ss.filter((s) => !(s.date === session.date && s.location === location && !s.closed)), session]);
+    setCashSessions((ss) => {
+      const latest = ss.filter(s => s.date === session.date && s.location === location && !s.discarded)
+        .sort((a, b) => b.openedAt - a.openedAt)[0];
+      if (latest && !latest.closed && !latest.closedAt && !latest.dailyCloseSnapshot && !latest.dailyCloseFinalizedAt) return ss;
+      return [...ss, session];
+    });
   }, []);
 
   const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, staff?: StaffUser) => {
@@ -470,7 +476,7 @@ export function useStore() {
     mergeCloudData,
     applyCatalogRows,
     resetAllData,
-    discardEmptySession: (id: string) => setCashSessions((sessions) => sessions.map((session) => session.id === id ? { ...session, closed: true, discarded: true } : session)),
+    discardEmptySession: (id: string) => setCashSessions((sessions) => sessions.map((session) => session.id === id && canDiscardCashSession(session, transactions) ? { ...session, closed: true, discarded: true } : session)),
     applyCloudBookingReset,
     exportBackup,
     importBackup,
