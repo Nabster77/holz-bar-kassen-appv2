@@ -1,3 +1,4 @@
+import { movementBadgeHTML } from '@/lib/movementStyle';
 import type { Category, Transaction, Location } from '@/types';
 import { formatCurrency, formatDate, formatTime } from '@/lib/format';
 import { isTaxFreeItem, getTaxByRate } from '@/lib/tax';
@@ -221,7 +222,7 @@ function transactionRows(txs: Transaction[]): string {
       const isPfandPayout = tx.total < 0 && tx.items.some((item) => item.isPfandRetoure);
       const kind = isPfandPayout ? 'Pfandausgabe' : tx.paymentMethod === 'cash' ? 'Bareinnahme' : 'Karteneinnahme';
       const articles = tx.items.map((item) => `${item.quantity}× ${item.isPfandRetoure ? 'Pfand-Retoure' : item.name}`).join(', ');
-      return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)}</td><td>${formatTime(tx.timestamp)}</td><td>${escapeHtml(tx.employeeName ?? '—')}</td><td>${escapeHtml(kind)}</td><td>${escapeHtml(articles)}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td></tr>`;
+      return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)}</td><td>${formatTime(tx.timestamp)}</td><td>${escapeHtml(tx.employeeName ?? '—')}</td><td>${movementBadgeHTML(kind)}</td><td>${escapeHtml(articles)}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td></tr>`;
     })
     .join('');
 }
@@ -237,7 +238,7 @@ function auditRows(records: CashAuditRecord[]): string {
     const value = record.kind === 'Korrektur'
       ? `${formatCurrency(record.oldAmount ?? 0)} → ${formatCurrency(record.newAmount ?? 0)} (${(record.newAmount ?? 0) - (record.oldAmount ?? 0) > 0 ? '+' : ''}${formatCurrency((record.newAmount ?? 0) - (record.oldAmount ?? 0))})`
       : `${record.kind === 'Einlage' ? '+' : '-'}${formatCurrency(record.amount ?? 0)}`;
-    return `<tr><td>${formatDate(record.timestamp)}</td><td>${formatTime(record.timestamp)}</td><td>${escapeHtml(record.employeeName ?? '—')}</td><td>${record.kind}</td><td style="text-align:right"><b>${value}</b></td><td>${escapeHtml(record.reason)}</td></tr>`;
+    return `<tr><td>${formatDate(record.timestamp)}</td><td>${formatTime(record.timestamp)}</td><td>${escapeHtml(record.employeeName ?? '—')}</td><td>${movementBadgeHTML(record.kind)}</td><td style="text-align:right"><b>${value}</b></td><td>${escapeHtml(record.reason)}</td></tr>`;
   }).join('');
 }
 

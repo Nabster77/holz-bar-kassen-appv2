@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { buildJournalHTML, type JournalReportData } from '@/lib/journalPdf';
 import { getWeekNumber } from '@/lib/format';
 import type { Location } from '@/types';
+import { colorNegativeMoney } from '@/lib/movementStyle';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const ALL_LABEL = 'Alle-Standorte';
@@ -315,6 +316,7 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
     const doc = iframe.contentDocument;
     const body = doc?.body;
     if (!doc || !body) throw new Error('Das Journal konnte nicht gerendert werden.');
+    colorNegativeMoney(doc);
     // The measurement iframe is shorter than a multi-page document. Its
     // scrollbar must not reduce the layout width: html2canvas's tall clone
     // has no scrollbar and would otherwise wrap text differently after cuts
@@ -481,6 +483,7 @@ function openPrintHtml(html: string): void {
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
+  colorNegativeMoney(printWindow.document);
 
   let printStarted = false;
   const print = () => {

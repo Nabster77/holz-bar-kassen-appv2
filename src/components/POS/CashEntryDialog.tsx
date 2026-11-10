@@ -26,7 +26,7 @@ export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
       <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-100">
-            {isDeposit ? <ArrowDownCircle className="h-5 w-5 text-green-600 dark:text-green-400" /> : <ArrowUpCircle className="h-5 w-5 text-red-600 dark:text-red-400" />}
+            {isDeposit ? <ArrowDownCircle className="h-5 w-5 text-violet-600 dark:text-violet-400" /> : <ArrowUpCircle className="h-5 w-5 text-red-600 dark:text-red-400" />}
             {isDeposit ? 'Bargeld-Einlage' : 'Bargeld-Ausgabe'}
           </h3>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -48,7 +48,7 @@ export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
           <button onClick={handleSave} disabled={!amount || !reason.trim()}
-            className={`w-full rounded-xl py-3 text-base font-semibold text-white shadow-md transition active:scale-95 disabled:opacity-50 ${isDeposit ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}`}>
+            className={`w-full rounded-xl py-3 text-base font-semibold text-white shadow-md transition active:scale-95 disabled:opacity-50 ${isDeposit ? 'bg-violet-600 hover:bg-violet-700' : 'bg-red-600 hover:bg-red-700'}`}>
             <Check className="mr-1.5 inline h-4 w-4" /> Bestätigen
           </button>
         </div>

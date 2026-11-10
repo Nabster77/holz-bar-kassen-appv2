@@ -104,7 +104,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
             <Check className="h-12 w-12 text-green-600 dark:text-green-400" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Bezahlung erfolgreich</h2>
-          <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(total)}</p>
+          <p className={`text-3xl font-bold ${total < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>{formatCurrency(total)}</p>
           {paymentMethod === 'cash' && change > 0 && (
             <p className="text-sm text-gray-500 dark:text-gray-400">Rückgeld: <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(change)}</span></p>
           )}
@@ -136,7 +136,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
                   {item.isPfandRetoure && <Recycle className="h-3.5 w-3.5" />}
                   {item.quantity}× {item.shot && item.shot.id !== 'none' ? `${item.product.name} + ${item.shot.name}` : item.product.name}
                 </span>
-                <span className={`font-medium ${item.isPfandRetoure ? 'text-teal-600 dark:text-teal-400' : ''}`}>
+                <span className={`font-medium ${(item.unitPrice + item.unitPfand) * item.quantity < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
                   {formatCurrency((item.unitPrice + item.unitPfand) * item.quantity)}
                 </span>
               </div>
@@ -156,7 +156,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
           </div>
           <div className="flex items-baseline justify-between border-t-2 border-gray-300 pt-3 dark:border-gray-600">
             <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Zu zahlen</span>
-            <span className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(total)}</span>
+            <span className={`text-3xl font-bold ${total < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>{formatCurrency(total)}</span>
           </div>
 
           {!isPfandOnly && (<>
@@ -166,7 +166,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
               onClick={() => setPaymentMethod('cash')}
               className={`flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition active:scale-95 ${
                 paymentMethod === 'cash'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-green-600 text-white shadow-md'
                   : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'
               }`}
             >
@@ -216,7 +216,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
           <button
             onClick={() => setConfirmBooking(true)}
             disabled={!isPfandOnly && (!paymentMethod || (paymentMethod === 'cash' && given < total))}
-            className="sticky bottom-0 w-full rounded-xl bg-green-600 py-4 text-lg font-bold text-white shadow-lg transition hover:bg-green-700 active:scale-95 disabled:opacity-50"
+            className={`sticky bottom-0 w-full rounded-xl py-4 text-lg font-bold text-white shadow-lg transition active:scale-95 disabled:opacity-50 ${isPfandOnly ? 'bg-teal-600 hover:bg-teal-700' : paymentMethod === 'card' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
           >
             {isPfandOnly ? 'Pfandausgabe' : 'Bezahlen bestätigen'}
           </button>
@@ -238,7 +238,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
             <div className="mb-4 space-y-1.5 rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-900/40">
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
                 <span>Gesamtbetrag</span>
-                <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(total)}</span>
+                <span className={`font-bold ${total < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>{formatCurrency(total)}</span>
               </div>
               {cashPayment && (
                 <>

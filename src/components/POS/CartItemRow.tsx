@@ -37,7 +37,7 @@ export function CartItemRow({ item, location, onInc, onDec, onRemove, onEditShot
             <Plus className="h-4 w-4" />
           </button>
         </div>
-        <span className="w-20 shrink-0 text-right text-sm font-semibold text-teal-600 dark:text-teal-400">
+        <span className={`w-20 shrink-0 text-right text-sm font-semibold ${unitTotal * item.quantity < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
           {formatCurrency(unitTotal * item.quantity)}
         </span>
         <button onClick={onRemove} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 active:scale-90 dark:hover:bg-red-900/30">

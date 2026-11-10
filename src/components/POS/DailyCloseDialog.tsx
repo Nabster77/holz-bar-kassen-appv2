@@ -1,3 +1,4 @@
+import { movementStyle, movementBadgeHTML, hasNegativeMoney, negativeMoneyClass } from '@/lib/movementStyle';
 import { useMemo, useState, type ReactNode } from 'react';
 import { X, Lock, FileDown, Check, TriangleAlert as AlertTriangle, Calculator, Coins, Banknote, ChevronDown } from 'lucide-react';
 import { formatCurrency, formatDateLong, formatDateGermanFromISO, formatTime } from '@/lib/format';
@@ -77,13 +78,7 @@ function transactionMovementRecords(transaction: Transaction): MovementRecord[] 
 
 const MOVEMENT_ORDER: MovementKind[] = ['Pfandausgabe', 'Bareinnahme', 'Karteneinnahme', 'Einlage', 'Ausgabe', 'Korrektur'];
 
-function movementColor(kind: MovementKind): string {
-  if (kind === 'Bareinnahme' || kind === 'Einlage') return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
-  if (kind === 'Karteneinnahme') return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
-  if (kind === 'Pfandausgabe') return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300';
-  if (kind === 'Ausgabe') return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
-  return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-}
+function movementColor(kind: MovementKind): string { return movementStyle(kind).badge; }
 
 interface Props {
   session: CashSession;
@@ -250,7 +245,7 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
           <div className="mb-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">{formatDateLong(session.openedAt)}</p>
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Standort: {session.location}</p>
-            <p className={`mt-1 text-sm font-bold ${session.closed ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            <p className={`mt-1 text-sm font-bold ${session.closed ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
               {session.closed ? 'Endgültig abgeschlossen' : 'Entwurf – noch nicht endgültig abgeschlossen'}
             </p>
             {session.dailyCloseReceiptNumber && <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">Belegnummer: {formatDailyCloseReceiptNumber(session.dailyCloseReceiptNumber, session.dailyCloseReceiptLocation ?? session.location, session.closedAt ?? session.openedAt, session.dailyCloseReceiptYear)}</p>}
@@ -258,28 +253,28 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
 
           {/* Summary */}
           <div className="mb-4 space-y-1.5 rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/40">
-            <Row label="Anfangsbestand" value={formatCurrency(session.openingBalance)} />
-            <Row label="Brutto-Umsatz (ohne Pfand)" value={formatCurrency(txTotal)} bold />
-            <Row label="davon Barumsatz (ohne Pfand)" value={formatCurrency(cashTxTotal)} />
-            <Row label="davon Kartenumsatz (ohne Pfand)" value={formatCurrency(cardTxTotal)} />
+            <Row label="Anfangsbestand" value={<MoneyAmount value={session.openingBalance} />} />
+            <Row label="Brutto-Umsatz (ohne Pfand)" value={<MoneyAmount value={txTotal} />} bold />
+            <Row label="davon Barumsatz (ohne Pfand)" value={<MoneyAmount value={cashTxTotal} />} />
+            <Row label="davon Kartenumsatz (ohne Pfand)" value={<MoneyAmount value={cardTxTotal} />} />
             <Row label="Pfandeinnahmen (bar)" value={`+ ${formatCurrency(cashPfandIncome)}`} />
             <Row label="Pfandretouren" value={`- ${formatCurrency(cashPfandPayout)}`} />
             <Row label="Bareinlagen" value={`+ ${formatCurrency(deposits)}`} />
             <Row label="Barausgaben" value={`- ${formatCurrency(withdrawals)}`} />
             {openingCorrectionTotal !== 0 && <Row label="Korrekturen am Anfangsbestand (bereits enthalten)" value={`${openingCorrectionTotal > 0 ? '+' : '-'} ${formatCurrency(Math.abs(openingCorrectionTotal))}`} />}
             <div className="border-t border-gray-200 pt-1.5 dark:border-gray-700">
-              <Row label="Erwarteter Kassenbestand" value={formatCurrency(expected)} bold />
+              <Row label="Erwarteter Kassenbestand" value={<MoneyAmount value={expected} />} bold />
             </div>
           </div>
 
           {/* Tax breakdown */}
           <div className="mb-4 space-y-1.5 rounded-2xl bg-gray-50 p-4 dark:bg-gray-900/40">
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Mehrwertsteuer</p>
-            <Row label="Nettoumsatz" value={formatCurrency(totalNet)} />
+            <Row label="Nettoumsatz" value={<MoneyAmount value={totalNet} />} />
             {sortedRateKeys(taxByRate).map((rate) => (
               <Row key={rate} label={`MwSt ${rate}%`} value={formatCurrency(taxByRate.get(rate) ?? 0)} />
             ))}
-            <Row label="MwSt gesamt" value={formatCurrency(totalTax)} bold />
+            <Row label="MwSt gesamt" value={<MoneyAmount value={totalTax} />} bold />
           </div>
 
           {/* Collapsible transaction and cash movement groups */}
@@ -303,7 +298,7 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
                           <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${movementColor(kind)}`}>{kind}</span>
                           <span className="text-xs text-gray-500 dark:text-gray-400">{records.length} Buchung{records.length === 1 ? '' : 'en'}</span>
                         </span>
-                        <span className={`shrink-0 font-bold ${total < 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}>{formatCurrency(total)}</span>
+                        <span className={`shrink-0 font-bold ${total < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}><MoneyAmount value={total} /></span>
                       </button>
                       {expanded && (
                         <div className="border-t border-gray-200 bg-gray-50 px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900/30">
@@ -313,7 +308,7 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
                                 <p className="font-medium text-gray-800 dark:text-gray-200">{formatTime(record.timestamp)} · {record.employeeName ?? 'Nicht zugeordnet'}</p>
                                 <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{record.details}</p>
                               </div>
-                              <span className={`shrink-0 text-sm font-semibold ${record.amount < 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-900 dark:text-gray-100'}`}>{formatCurrency(record.amount)}</span>
+                              <span className={`shrink-0 text-sm font-semibold ${record.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}><MoneyAmount value={record.amount} /></span>
                             </div>
                           ))}
                         </div>
@@ -363,7 +358,7 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
                 />
                 <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 dark:border-gray-700">
                   <span className="text-xs text-gray-500 dark:text-gray-400">Leere Felder zählen als 0. Gesamtsumme:</span>
-                  <span className="text-base font-bold text-gray-900 dark:text-gray-100">{formatCurrency(countedTotal)}</span>
+                  <span className="text-base font-bold text-gray-900 dark:text-gray-100"><MoneyAmount value={countedTotal} /></span>
                 </div>
               </div>
             ) : (
@@ -396,30 +391,30 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
             <div className="space-y-1">
               <div className="flex items-center justify-between text-sm text-green-700 dark:text-green-400">
                 <span>Brutto-Umsatz (ohne Pfand)</span>
-                <span className="text-lg font-bold text-green-700 dark:text-green-400">{formatCurrency(txTotal)}</span>
+                <span className="text-lg font-bold text-green-700 dark:text-green-400"><MoneyAmount value={txTotal} /></span>
               </div>
               <div className="flex items-center justify-between text-sm text-green-700/80 dark:text-green-500">
                 <span>davon Barumsatz (ohne Pfand)</span>
-                <span className="font-medium">{formatCurrency(cashTxTotal)}</span>
+                <span className="font-medium"><MoneyAmount value={cashTxTotal} /></span>
               </div>
               <div className="flex items-center justify-between text-sm text-green-700/80 dark:text-green-500">
                 <span>davon Kartenumsatz (ohne Pfand)</span>
-                <span className="font-medium">{formatCurrency(cardTxTotal)}</span>
+                <span className="font-medium"><MoneyAmount value={cardTxTotal} /></span>
               </div>
               <div className="flex items-center justify-between text-sm text-green-700/80 dark:text-green-500">
                 <span>Netto-Umsatz</span>
-                <span className="font-medium">{formatCurrency(totalNet)}</span>
+                <span className="font-medium"><MoneyAmount value={totalNet} /></span>
               </div>
               <div className="flex items-center justify-between text-sm text-green-700/80 dark:text-green-500">
                 <span>Enthaltene Mehrwertsteuer aus Warenumsätzen</span>
-                <span className="font-medium">{formatCurrency(totalTax)}</span>
+                <span className="font-medium"><MoneyAmount value={totalTax} /></span>
               </div>
             </div>
           </div>
 
           {!hasInput && (
             <div className="mb-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
-              Keine Stückelung eingegeben. Beim Abschließen wird der errechnete Bestand ({formatCurrency(expected)}) als Ist-Bestand übernommen.
+              Keine Stückelung eingegeben. Beim Abschließen wird der errechnete Bestand (<MoneyAmount value={expected} />) als Ist-Bestand übernommen.
             </div>
           )}
 
@@ -430,16 +425,16 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
           )}
 
           {withdrawalStep && (
-            <div className="mb-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-900/20">
-              <p className="font-bold text-amber-900 dark:text-amber-100">Entnahme zum Tagesabschluss</p>
-              <p className="mt-1 text-amber-800 dark:text-amber-200">Möchten Sie Geld aus der Kasse entnehmen? Ein Grund ist nicht erforderlich. Der Rest wird als Anfangsbestand für die nächste Kassenöffnung an diesem Standort vorgeschlagen.</p>
+            <div className="mb-3 rounded-2xl border border-red-300 bg-red-50 p-4 text-sm dark:border-red-800 dark:bg-red-900/20">
+              <p className="font-bold text-red-900 dark:text-red-100">Entnahme zum Tagesabschluss</p>
+              <p className="mt-1 text-red-800 dark:text-red-200">Möchten Sie Geld aus der Kasse entnehmen? Ein Grund ist nicht erforderlich. Der Rest wird als Anfangsbestand für die nächste Kassenöffnung an diesem Standort vorgeschlagen.</p>
               <label className="mt-3 block font-medium text-gray-700 dark:text-gray-200">Entnahmebetrag (€)
-                <input value={closingWithdrawalInput} onChange={(event) => { setClosingWithdrawalInput(event.target.value); setCloseError(null); }} placeholder="0,00 (keine Entnahme)" inputMode="decimal" autoFocus className="mt-1.5 w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-base text-gray-900 dark:border-amber-700 dark:bg-gray-900 dark:text-gray-100" />
+                <input value={closingWithdrawalInput} onChange={(event) => { setClosingWithdrawalInput(event.target.value); setCloseError(null); }} placeholder="0,00 (keine Entnahme)" inputMode="decimal" autoFocus className="mt-1.5 w-full rounded-xl border border-red-300 bg-white px-3 py-2.5 text-base text-gray-900 dark:border-red-700 dark:bg-gray-900 dark:text-gray-100" />
               </label>
               <div className="mt-3 space-y-1 rounded-xl bg-white/70 p-3 dark:bg-gray-900/50">
-                <Row label="Kassenbestand vor Entnahme" value={formatCurrency(expected)} />
+                <Row label="Kassenbestand vor Entnahme" value={<MoneyAmount value={expected} />} />
                 <Row label="Entnahme" value={`- ${formatCurrency(closingWithdrawalAmount)}`} />
-                <Row label="Restbestand / nächster Anfangsbestand" value={formatCurrency(remainingCash)} bold />
+                <Row label="Restbestand / nächster Anfangsbestand" value={<MoneyAmount value={remainingCash} />} bold />
               </div>
             </div>
           )}
@@ -490,7 +485,7 @@ function DenominationGroup({
           <span>{title}</span>
           <span className="text-xs font-normal text-gray-500 dark:text-gray-400">· {subtitle}</span>
         </div>
-        <span className="text-sm font-bold text-gray-800 dark:text-gray-100">{formatCurrency(total)}</span>
+        <span className="text-sm font-bold text-gray-800 dark:text-gray-100"><MoneyAmount value={total} /></span>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {denominations.map((denomination) => {
@@ -500,7 +495,7 @@ function DenominationGroup({
             <label key={denomination.value} className="rounded-lg bg-gray-50 px-2 py-1.5 dark:bg-gray-900/60">
               <span className="mb-1 flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-gray-200">
                 {denomination.label}
-                <span className="font-normal text-gray-500 dark:text-gray-400">{formatCurrency(itemTotal)}</span>
+                <span className="font-normal text-gray-500 dark:text-gray-400"><MoneyAmount value={itemTotal} /></span>
               </span>
               <input
                 type="number"
@@ -519,11 +514,15 @@ function DenominationGroup({
   );
 }
 
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+function MoneyAmount({ value }: { value: number }) {
+  return <span className={value < 0 ? negativeMoneyClass : undefined}>{formatCurrency(value)}</span>;
+}
+
+function Row({ label, value, bold }: { label: string; value: ReactNode; bold?: boolean }) {
   return (
     <div className="flex justify-between text-sm">
       <span className={bold ? 'font-bold text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}>{label}</span>
-      <span className={bold ? 'font-bold text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}>{value}</span>
+      <span className={`${bold ? 'font-bold' : ''} ${typeof value === 'string' && hasNegativeMoney(value) ? negativeMoneyClass : 'text-gray-600 dark:text-gray-300'}`}>{value}</span>
     </div>
   );
 }
@@ -626,12 +625,12 @@ async function generatePDF(
     .flatMap((transaction) => transactionMovementRecords(transaction))
     .sort((a, b) => a.timestamp - b.timestamp)
     .map((record) => ({ timestamp: record.timestamp, staff: record.employeeName ?? 'Unbekannt', kind: record.kind, value: formatCurrency(record.amount), reason: record.details }))
-    .map((row) => `<tr><td>${new Date(row.timestamp).toLocaleDateString('de-DE')}</td><td>${formatTime(row.timestamp)}</td><td>${escapeHtml(row.staff)}</td><td>${row.kind}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td></tr>`).join('');
+    .map((row) => `<tr><td>${new Date(row.timestamp).toLocaleDateString('de-DE')}</td><td>${formatTime(row.timestamp)}</td><td>${escapeHtml(row.staff)}</td><td>${movementBadgeHTML(row.kind)}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td></tr>`).join('');
   const cashMovementRows = [
     ...session.entries.map((entry) => ({ timestamp: entry.timestamp, staff: entry.employeeName ?? 'Unbekannt', kind: entry.type === 'deposit' ? 'Einlage' : entry.isPfandRetoure ? 'Pfand-Retoure' : 'Ausgabe', value: `${entry.type === 'deposit' ? '+' : '-'}${formatCurrency(entry.amount)}`, reason: entry.reason })),
-    ...session.corrections.map((correction) => ({ timestamp: correction.timestamp, staff: correction.employeeName ?? 'Unbekannt', kind: 'Korrektur', value: `${formatCurrency(correction.oldAmount)} → ${formatCurrency(correction.newAmount)}`, reason: correction.reason })),
+    ...session.corrections.map((correction) => ({ timestamp: correction.timestamp, staff: correction.employeeName ?? 'Unbekannt', kind: 'Korrektur', value: `${formatCurrency(correction.oldAmount)} → ${formatCurrency(correction.newAmount)} (${correction.newAmount - correction.oldAmount > 0 ? '+' : ''}${formatCurrency(correction.newAmount - correction.oldAmount)})`, reason: correction.reason })),
   ].sort((a, b) => a.timestamp - b.timestamp)
-    .map((row) => `<tr><td>${new Date(row.timestamp).toLocaleDateString('de-DE')}</td><td>${formatTime(row.timestamp)}</td><td>${escapeHtml(row.staff)}</td><td>${row.kind}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td></tr>`).join('');
+    .map((row) => `<tr><td>${new Date(row.timestamp).toLocaleDateString('de-DE')}</td><td>${formatTime(row.timestamp)}</td><td>${escapeHtml(row.staff)}</td><td>${movementBadgeHTML(row.kind)}</td><td>${escapeHtml(row.value)}</td><td>${escapeHtml(row.reason)}</td></tr>`).join('');
   const staffRows = staffTimesForFinalClose(session, documentTime)
     .map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${formatTime(row.loginAt)}</td><td>${formatTime(row.logoutAt)}</td><td>${formatDuration(row.durationMs)}</td></tr>`).join('');
   const staffTotals = new Map<string, number>();
