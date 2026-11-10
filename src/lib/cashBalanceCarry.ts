@@ -29,9 +29,11 @@ export function openingBalanceForLocation(sessions: CashSession[], transactions:
       continue;
     }
     if (session.discarded || !financial) {
-      // Legacy empty closes sometimes contain a default closingBalance=0.
-      // With no movement, the previously known balance must stay unchanged.
-      if (carry === null && Number.isFinite(session.openingBalance)) carry = session.openingBalance;
+      // Discarded periods never transfer money. For a finalized empty period,
+      // the counted closing balance (if available) is authoritative.
+      if (!session.discarded && session.dailyCloseReceiptNumber && Number.isFinite(session.closingBalance)) {
+        carry = Math.round(session.closingBalance! * 100) / 100;
+      }
       continue;
     }
     let remainder: number | undefined;

@@ -102,6 +102,20 @@ export function useStore() {
     });
   }, []);
 
+  const moveCategoryTo = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === SHOT_CATEGORY_ID || targetId === SHOT_CATEGORY_ID) return;
+    setCategories((cs) => {
+      const sorted = [...cs.filter(c => c.id !== SHOT_CATEGORY_ID)].sort((a, b) => a.sortOrder - b.sortOrder);
+      const sourceIdx = sorted.findIndex(c => c.id === sourceId);
+      const targetIdx = sorted.findIndex(c => c.id === targetId);
+      if (sourceIdx < 0 || targetIdx < 0 || sourceIdx === targetIdx) return cs;
+      const [moved] = sorted.splice(sourceIdx, 1);
+      sorted.splice(targetIdx, 0, moved);
+      const shot = cs.filter(c => c.id === SHOT_CATEGORY_ID);
+      return normalizeCategories([...sorted.map((c, i) => ({ ...c, sortOrder: i })), ...shot]);
+    });
+  }, []);
+
   // Product CRUD
   const addProduct = useCallback((data: Omit<Product, 'id'>) => {
     setProducts((ps) => [...ps, { ...data, id: uid('p') }]);
@@ -173,6 +187,7 @@ export function useStore() {
   }, [activeSession, selectedLocation]);
 
   const openCashSession = useCallback((location: Location, openingBalance: number, staff?: StaffUser) => {
+    if (!Number.isFinite(openingBalance) || openingBalance <= 0) return;
     setSelectedLocation(location);
     const openedAt = Date.now();
     const session: CashSession = {
@@ -198,6 +213,7 @@ export function useStore() {
   }, []);
 
   const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, staff?: StaffUser) => {
+    if (!Number.isFinite(newAmount) || newAmount <= 0 || !reason.trim()) return;
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
@@ -221,6 +237,15 @@ export function useStore() {
   }, []);
 
   const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure = false, staff?: StaffUser) => {
+    if (!Number.isFinite(amount) || amount <= 0 || !reason.trim()) return;
+    const session = cashSessions.find(item => item.id === sessionId && !item.closed && !item.discarded);
+    if (!session) return;
+    const cashTransactions = sessionTransactions(transactions, session)
+      .filter(transaction => transaction.paymentMethod === 'cash')
+      .reduce((total, transaction) => total + transaction.total, 0);
+    const movements = session.entries.reduce((total, entry) => total + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
+    const availableCents = Math.round((session.openingBalance + cashTransactions + movements) * 100);
+    if (type === 'withdrawal' && Math.round(amount * 100) > availableCents) return;
     const entry: CashEntry = {
       id: uid('entry'),
       type,
@@ -234,7 +259,7 @@ export function useStore() {
     setCashSessions((ss) =>
       ss.map((s) => (s.id === sessionId && !s.closed ? { ...s, entries: [...s.entries, entry], activities: staff ? [...(s.activities ?? []), { id: uid('activity'), type, staffId: staff.id, staffName: staff.name, timestamp: entry.timestamp, amount, reason }] : s.activities } : s)),
     );
-  }, []);
+  }, [cashSessions, transactions]);
 
   const closeCashSession = useCallback((
     sessionId: string,
@@ -459,6 +484,7 @@ export function useStore() {
     updateCategory,
     deleteCategory,
     reorderCategory,
+    moveCategoryTo,
     addProduct,
     updateProduct,
     deleteProduct,

@@ -1,6 +1,6 @@
 import type { CartItem, Location } from '@/types';
 import { formatCurrency } from '@/lib/format';
-import { taxRateForClass } from '@/lib/tax';
+import { taxRateForProduct } from '@/lib/tax';
 import { Minus, Plus, Trash2, Recycle } from 'lucide-react';
 
 interface Props {
@@ -16,7 +16,7 @@ export function CartItemRow({ item, location, onInc, onDec, onRemove, onEditShot
   const unitTotal = item.unitPrice + item.unitPfand;
   const shotPrice = item.shot && item.shot.id !== 'none' ? item.shot.price : 0;
   const basePrice = item.unitPrice - shotPrice;
-  const rate = taxRateForClass(item.product.taxClass, location);
+  const rate = taxRateForProduct(item.product, location);
 
   if (item.isPfandRetoure) {
     return (

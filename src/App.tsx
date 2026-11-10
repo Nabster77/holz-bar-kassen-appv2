@@ -436,6 +436,8 @@ export default function App() {
         {tab === 'admin' && (
           adminUnlocked ? (
             <AdminScreen
+              onPrepareCatalogImport={catalog.prepareImport}
+              onCommitCatalogImport={catalog.commitImport}
               shotOptions={store.shotOptions}
               onUpdateShotOptions={store.updateShotOptions}
               categories={store.categories}
@@ -449,10 +451,12 @@ export default function App() {
               onUpdateCategory={store.updateCategory}
               onDeleteCategory={store.deleteCategory}
               onReorderCategory={store.reorderCategory}
+              onMoveCategoryTo={store.moveCategoryTo}
               onAddProduct={store.addProduct}
               onUpdateProduct={store.updateProduct}
               onDeleteProduct={store.deleteProduct}
               onReorderProduct={store.reorderProduct}
+              onMoveProductTo={store.moveProductTo}
               onResetAllData={resetBookings}
               pfandSettings={store.pfandSettings}
               onUpdatePfandSettings={store.updatePfandSettings}
@@ -476,7 +480,7 @@ export default function App() {
                 // stored only as protected proofs; no readable password is exported.
                 const payload: CompleteBackup = {
                   ...coreBackup,
-                  version: 4,
+                  version: 5,
                   data: {
                     ...coreBackup.data,
                     ...recoveryMetadata,

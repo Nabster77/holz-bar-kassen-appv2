@@ -12,6 +12,7 @@ import { ShotSelectionDialog } from './ShotSelectionDialog';
 import { PfandRetoureDialog } from './PfandRetoureDialog';
 import { DynamicIcon } from '@/components/DynamicIcon';
 import { formatDateLong } from '@/lib/format';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import {
   ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro,
@@ -84,6 +85,7 @@ export function POSScreen({
   const [showPfandRetoure, setShowPfandRetoure] = useState(false);
   const [priceEntryProduct, setPriceEntryProduct] = useState<Product | null>(null);
   const [dragMode, setDragMode] = useState(false);
+  const [sortMode, setSortMode] = useState<'manual' | 'asc' | 'desc'>('manual');
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
@@ -110,6 +112,15 @@ export function POSScreen({
 
   const currentLocation: Location = activeSession?.location ?? (selectedLocation ?? 'Friedrichshafen');
 
+  const currentCashBalance = useMemo(() => {
+    if (!activeSession) return 0;
+    const cashSales = sessionTransactions(transactions, activeSession)
+      .filter(tx => tx.paymentMethod === 'cash')
+      .reduce((sum, tx) => sum + tx.total, 0);
+    const entries = activeSession.entries.reduce((sum, entry) => sum + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
+    return Math.round((activeSession.openingBalance + cashSales + entries) * 100) / 100;
+  }, [activeSession, transactions]);
+
   const visibleProducts = useMemo(() => {
     let list = products.filter((p) => p.available);
     if (search.trim()) {
@@ -117,8 +128,12 @@ export function POSScreen({
     } else if (activeCat) {
       list = list.filter((p) => p.categoryId === activeCat);
     }
-    return [...list].sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [products, activeCat, search]);
+    return [...list].sort(sortMode === 'asc'
+      ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+      : sortMode === 'desc'
+        ? (a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' })
+        : (a, b) => a.sortOrder - b.sortOrder);
+  }, [products, activeCat, search, sortMode]);
 
   function addToCart(product: Product, shot: ShotOption | null = null, customPrice?: number) {
     const basePrice = customPrice !== undefined ? customPrice : product.prices[currentLocation];
@@ -217,8 +232,8 @@ export function POSScreen({
                 className="min-h-10 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 active:scale-95 dark:border-green-700 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/50">
                 {currentStaff.name} · Abmelden
               </button>
-              <button onClick={() => setShowCorrection(true)}
-                className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
+              <button onClick={() => setShowCorrection(true)} disabled={currentCashBalance <= 0} title={currentCashBalance <= 0 ? "Korrektur erst bei positivem Kassenbestand möglich" : "Anfangsbestand korrigieren"}
+                className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
                 Korrektur
               </button>
               <button onClick={async () => {
@@ -256,10 +271,9 @@ export function POSScreen({
               <button
                 key={cat.id}
                 onClick={() => { setActiveCat(cat.id); setSearch(''); }}
-                className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-95 ${
-                  activeCat === cat.id && !search
-                    ? `bg-gradient-to-r ${cat.color} text-white shadow-md`
-                    : 'bg-white text-gray-600 shadow-sm hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                style={cat.color.startsWith('linear-gradient(') ? { background: cat.color } : cat.color.startsWith('#') ? { backgroundColor: cat.color } : undefined}
+                className={`flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-110 active:scale-95 bg-gradient-to-r ${cat.color.startsWith('linear-gradient(') || cat.color.startsWith('#') ? '' : cat.color} ${
+                  activeCat === cat.id && !search ? 'border-white ring-2 ring-blue-400 shadow-md' : 'border-transparent opacity-85'
                 }`}
               >
                 <DynamicIcon name={cat.icon} className="h-4 w-4" />
@@ -278,7 +292,7 @@ export function POSScreen({
               if (cat) {
                 return (
                   <h2 className="flex items-center gap-2 text-lg font-bold">
-                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${cat.color} text-white`}>
+                    <span style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : cat.color.startsWith("#") ? { backgroundColor: cat.color } : undefined} className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") || cat.color.startsWith("#") ? "" : cat.color} text-white`}>
                       <DynamicIcon name={cat.icon} className="h-4 w-4" />
                     </span>
                     <span className="text-gray-900 dark:text-gray-100">{cat.name}</span>
@@ -290,23 +304,29 @@ export function POSScreen({
               }
               return null;
             })()}
-            {visibleProducts.length > 1 && !search.trim() && (
-              <button
-                onClick={() => setDragMode((v) => !v)}
-                className={`ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  dragMode
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                <Move className="h-3.5 w-3.5" /> {dragMode ? 'Sortieren beenden' : 'Kacheln sortieren'}
-              </button>
-            )}
-            {dragMode && (
-              <div className="ml-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                Kachel antippen und ziehen, um neu anzuordnen
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                Sortierung:
+                <select aria-label="Kassenartikel sortieren" value={sortMode}
+                  onChange={event => { setSortMode(event.target.value as 'manual' | 'asc' | 'desc'); setDragMode(false); }}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  <option value="manual">Eigene Reihenfolge</option>
+                  <option value="asc">Aufsteigend (A–Z)</option>
+                  <option value="desc">Absteigend (Z–A)</option>
+                </select>
+              </label>
+              {visibleProducts.length > 1 && !search.trim() && (
+                <button type="button" aria-pressed={dragMode}
+                  onClick={() => { if (!dragMode) setSortMode('manual'); setDragMode(v => !v); }}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                    dragMode
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}>
+                  <Move className="h-3.5 w-3.5" /> {dragMode ? '✓ Verschieben aktiv' : 'Kacheln verschieben'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Search bar */}
@@ -399,10 +419,10 @@ export function POSScreen({
         <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
-        <CashCorrectionDialog session={activeSession} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
+        <CashCorrectionDialog session={activeSession} currentCashBalance={currentCashBalance} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
       )}
       {cashEntryType && activeSession && (
-        <CashEntryDialog session={activeSession} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
+        <CashEntryDialog session={activeSession} currentCashBalance={currentCashBalance} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
       )}
       {showPfandRetoure && activeSession && (
         <PfandRetoureDialog

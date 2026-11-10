@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CartItem, Transaction, PaymentMethod, Location } from '@/types';
 import { calcNet, calcTax, formatCurrency } from '@/lib/format';
-import { taxRateForClass } from '@/lib/tax';
+import { taxRateForProduct } from '@/lib/tax';
 import { X, Check, Receipt, Banknote, CreditCard, Coins, Recycle, AlertTriangle } from 'lucide-react';
 
 interface Props {
@@ -24,7 +24,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
       pfandRetoure += item.unitPrice * item.quantity;
       continue;
     }
-    const rate = taxRateForClass(item.product.taxClass, location);
+    const rate = taxRateForProduct(item.product, location);
     const gross = item.unitPrice * item.quantity;
     grossByRate.set(rate, (grossByRate.get(rate) ?? 0) + gross);
     totalPfand += item.unitPfand * item.quantity;
@@ -56,7 +56,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
           isPfandRetoure: true,
         };
       }
-      const rate = taxRateForClass(item.product.taxClass, location);
+      const rate = taxRateForProduct(item.product, location);
       const gross = item.unitPrice * item.quantity;
       const net = calcNet(gross, rate);
       const tax = calcTax(gross, rate);

@@ -1,3 +1,5 @@
+import { SHOT_SETTING_ID, validShots } from '@/lib/shotCatalog';
+import type { ShotOption } from '@/types';
 import { fetchLatestBookingReset, rememberBookingReset } from '@/lib/bookingReset';
 import { fetchCatalogRows, pushCatalogRows } from '@/lib/catalogCloud';
 import { buildLocalEntries, PFAND_SETTING_ID, type CatalogRow, type CatalogEntry } from '@/lib/catalogSync';
@@ -15,6 +17,7 @@ type BackupData = {
   categories?: Category[];
   products?: Product[];
   pfandSettings?: PfandSettings;
+  shotOptions?: ShotOption[];
   selectedLocation?: Location;
   staffUsers?: StaffUser[];
   managerCredential?: unknown;
@@ -80,7 +83,7 @@ function catalogKey(kind: CatalogRow['kind'], id: string): string {
   return `${kind}:${id}`;
 }
 
-function catalogToLocal(rows: CatalogRow[]): Pick<Required<BackupData>, 'categories' | 'products' | 'pfandSettings'> {
+function catalogToLocal(rows: CatalogRow[]): Pick<Required<BackupData>, 'categories' | 'products' | 'pfandSettings'> & Pick<BackupData, 'shotOptions'> {
   const categories = rows
     .filter((row) => row.kind === 'category' && !row.deleted)
     .map((row) => row.data as Category);
@@ -88,7 +91,8 @@ function catalogToLocal(rows: CatalogRow[]): Pick<Required<BackupData>, 'categor
     .filter((row) => row.kind === 'product' && !row.deleted)
     .map((row) => row.data as Product);
   const setting = rows.find((row) => row.kind === 'setting' && row.id === PFAND_SETTING_ID && !row.deleted);
-  return { categories, products, pfandSettings: (setting?.data as PfandSettings | undefined) ?? DEFAULT_PFAND_SETTINGS };
+  const shots = rows.find(row => row.kind === 'setting' && row.id === SHOT_SETTING_ID && !row.deleted);
+  return { categories, products, shotOptions: validShots(shots?.data) ? shots.data : undefined, pfandSettings: (setting?.data as PfandSettings | undefined) ?? DEFAULT_PFAND_SETTINGS };
 }
 
 function sanitizeBackupStaff(value: unknown, fallbackUpdatedAt: number): StaffUser[] {
@@ -146,7 +150,10 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
   const restorableCategories = backupCategories.filter((category) => canRestoreCatalog('category', category.id));
   const restorableProducts = backupProducts.filter((product) => canRestoreCatalog('product', product.id));
   const restorePfand = Boolean(backupPfand && canRestoreCatalog('setting', PFAND_SETTING_ID));
+  if (backup.data.shotOptions !== undefined && !validShots(backup.data.shotOptions)) throw new Error('Ungültige SCHUSS-Einstellungen im Backup.');
+  const restoreShots = validShots(backup.data.shotOptions) && canRestoreCatalog('setting', SHOT_SETTING_ID);
   const cloudCatalog = catalogToLocal(catalogRows);
+  const restoredShots = restoreShots ? backup.data.shotOptions : cloudCatalog.shotOptions;
   const restoredPfand = restorePfand && backupPfand ? backupPfand : cloudCatalog.pfandSettings;
 
   const cloudStaffById = new Map(staffRows.map((row) => [row.id, row]));
@@ -170,18 +177,17 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
 
   // Only records that are missing in the cloud or are newer in the backup are
   // written. Cloud-only records are never deleted by a restore.
-  if (restorableCategories.length || restorableProducts.length || restorePfand) {
+  if (restorableCategories.length || restorableProducts.length || restorePfand || restoreShots) {
     const catalog = {
       categories: restorableCategories,
       products: restorableProducts,
       pfandSettings: restoredPfand,
-      // Backup restore only writes explicitly permitted keys below. SCHUSS settings
-      // are not part of this legacy backup restore and must remain untouched.
-      shotOptions: [],
+      shotOptions: restoredShots ?? [],
     };
     const permittedKeys = new Set([
       ...restorableCategories.map((category) => catalogKey('category', category.id)),
       ...restorableProducts.map((product) => catalogKey('product', product.id)),
+      ...(restoreShots ? [catalogKey('setting', SHOT_SETTING_ID)] : []),
       ...(restorePfand ? [catalogKey('setting', PFAND_SETTING_ID)] : []),
     ]);
     const rows = [...buildLocalEntries(catalog, backupTime).values()]
@@ -233,6 +239,7 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
       categories: restoredCategories,
       products: restoredProducts,
       pfandSettings: restoredPfand,
+      shotOptions: restoredShots,
     },
     cloudReset: reset,
     staffUsers: restoredStaff,

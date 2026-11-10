@@ -5,17 +5,21 @@ import type { CashSession } from '@/types';
 
 interface Props {
   session: CashSession;
+  currentCashBalance: number;
   onSave: (newAmount: number, reason: string) => void;
   onClose: () => void;
 }
 
-export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
+export function CashCorrectionDialog({ session, currentCashBalance, onSave, onClose }: Props) {
   const [newAmount, setNewAmount] = useState(String(session.openingBalance));
   const [reason, setReason] = useState('');
 
+  const amount = Number(newAmount.trim().replace(',', '.'));
+  const validCorrection = newAmount.trim().length > 0 && Number.isFinite(amount) && amount > 0 && currentCashBalance > 0 && Boolean(reason.trim());
+
   function handleSave() {
-    const a = parseFloat(newAmount.replace(',', '.'));
-    if (isNaN(a) || a < 0 || !reason.trim()) return;
+    const a = amount;
+    if (!validCorrection) return;
     onSave(a, reason.trim());
   }
 
@@ -34,6 +38,7 @@ export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
           <div className="rounded-xl bg-gray-50 p-3 text-sm text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
             Aktueller Anfangsbestand: <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.openingBalance)}</span>
           </div>
+          {currentCashBalance <= 0 && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-400">Korrektur gesperrt: Es ist kein positiver Kassenbestand vorhanden.</p>}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Neuer Anfangsbestand (€)</label>
             <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="z.B. 200,00" inputMode="decimal"
@@ -44,7 +49,7 @@ export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="z.B. Zählfehler bei Eröffnung" rows={2}
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
-          <button onClick={handleSave} disabled={!newAmount || !reason.trim()}
+          <button onClick={handleSave} disabled={!validCorrection}
             className="w-full rounded-xl bg-orange-600 py-3 text-base font-semibold text-white shadow-md transition hover:bg-orange-700 active:scale-95 disabled:opacity-50">
             <Check className="mr-1.5 inline h-4 w-4" /> Korrektur speichern
           </button>

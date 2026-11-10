@@ -69,6 +69,8 @@ export interface Product {
   categoryId: string;
   imageUrl: string;
   taxClass: TaxClass;
+  /** Explicit imported rates; legacy products use the tax class. */
+  taxRates?: Record<Location, number>;
   available: boolean;
   sortOrder: number;
   hasShot: boolean;

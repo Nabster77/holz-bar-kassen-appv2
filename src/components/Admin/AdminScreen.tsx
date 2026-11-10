@@ -1,3 +1,6 @@
+import { CatalogTransferDialog } from './CatalogTransferDialog';
+import type { CatalogImportSession } from '@/lib/catalogEngine';
+import type { LocalCatalog } from '@/lib/catalogSync';
 import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser, ShotOption } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
@@ -15,6 +18,8 @@ import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
 
 interface Props {
+  onPrepareCatalogImport: () => Promise<CatalogImportSession>;
+  onCommitCatalogImport: (session: CatalogImportSession, next: LocalCatalog) => Promise<void>;
   shotOptions: ShotOption[];
   onUpdateShotOptions: (shots: ShotOption[]) => void;
   categories: Category[];
@@ -28,10 +33,12 @@ interface Props {
   onUpdateCategory: (id: string, data: Partial<Omit<Category, 'id'>>) => void;
   onDeleteCategory: (id: string) => void;
   onReorderCategory?: (id: string, direction: 'up' | 'down') => void;
+  onMoveCategoryTo?: (sourceId: string, targetId: string) => void;
   onAddProduct: (data: Omit<Product, 'id'>) => void;
   onUpdateProduct: (id: string, data: Partial<Omit<Product, 'id'>>) => void;
   onDeleteProduct: (id: string) => void;
   onReorderProduct?: (id: string, direction: 'up' | 'down') => void;
+  onMoveProductTo?: (sourceId: string, targetId: string) => void;
   onResetAllData?: () => Promise<void>;
   testMode?: boolean;
   onToggleMode?: () => void;
@@ -60,6 +67,14 @@ const COLOR_OPTIONS = [
   { label: 'Pink', value: 'from-pink-500 to-rose-600' },
   { label: 'Teal', value: 'from-teal-500 to-cyan-600' },
   { label: 'Indigo', value: 'from-indigo-500 to-blue-700' },
+  { label: 'Gelb', value: 'from-yellow-300 to-amber-500' },
+  { label: 'Limette', value: 'from-lime-400 to-green-600' },
+  { label: 'Türkis', value: 'from-cyan-400 to-teal-600' },
+  { label: 'Hellblau', value: 'from-sky-300 to-blue-500' },
+  { label: 'Dunkelblau', value: 'from-blue-700 to-indigo-900' },
+  { label: 'Braun', value: 'from-amber-700 to-stone-800' },
+  { label: 'Grau', value: 'from-slate-400 to-slate-700' },
+  { label: 'Schwarz', value: 'from-gray-700 to-gray-950' },
 ];
 
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
@@ -72,6 +87,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
     setShotDraftDirty(false);
     setTab(next);
   };
+  const [showCatalogTransfer, setShowCatalogTransfer] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -130,6 +146,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
               {testMode ? 'Auf aktiven Modus wechseln' : 'Auf Testmodus wechseln'}
             </button>
           )}
+          <button className="rounded-xl border border-blue-400 px-3 py-2 text-sm" onClick={() => { if (shotDraftDirty) { window.alert('Bitte zuerst SCHUSS-Änderungen speichern oder verwerfen.'); return; } setShowCatalogTransfer(true); }}>Excel-Import / Export</button>
           {onImportBackup && (
             <button
               onClick={() => setShowImport(true)}
@@ -153,6 +170,10 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
               : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} onDirtyChange={setShotDraftDirty} />
               : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
+      {showCatalogTransfer && <CatalogTransferDialog
+        catalog={{categories: props.categories, products: props.products, pfandSettings: props.pfandSettings, shotOptions: props.shotOptions}}
+        testMode={testMode} onPrepare={props.onPrepareCatalogImport} onCommit={props.onCommitCatalogImport}
+        onClose={() => setShowCatalogTransfer(false)} />}
       {showReset && (
         <ResetConfirmDialog
           onExport={onExportBackup}
@@ -207,11 +228,18 @@ function ConfirmDialog({ title, message, onConfirm, onClose }: {
 
 // ---- Category Manager ----
 
-function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onReorderCategory }: Props) {
+function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onMoveCategoryTo }: Props) {
   const [editing, setEditing] = useState<Category | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteCat, setDeleteCat] = useState<Category | null>(null);
-  const sorted = [...categories].filter((category) => category.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder);
+  const [sortMode, setSortMode] = useState<'manual' | 'asc' | 'desc'>('manual');
+  const [dragEnabled, setDragEnabled] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const sorted = [...categories].filter((category) => category.id !== SHOT_CATEGORY_ID).sort(
+    sortMode === 'asc' ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+    : sortMode === 'desc' ? (a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' })
+    : (a, b) => a.sortOrder - b.sortOrder
+  );
 
   return (
     <div>
@@ -221,26 +249,31 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
           <Plus className="h-4 w-4" /> Neue Gruppe
         </button>
       </div>
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
+        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          Sortierung:
+          <select aria-label="Warengruppen sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'manual' | 'asc' | 'desc'); setDragEnabled(false); }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="manual">Eigene Reihenfolge</option>
+            <option value="asc">Aufsteigend (A–Z)</option>
+            <option value="desc">Absteigend (Z–A)</option>
+          </select>
+        </label>
+        <button type="button" aria-pressed={dragEnabled} onClick={() => { if (!dragEnabled) setSortMode('manual'); setDragEnabled(!dragEnabled); }}
+          className={`rounded-lg px-3 py-2 text-sm font-semibold ${dragEnabled ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>
+          {dragEnabled ? '✓ Verschieben aktiv' : 'Kacheln verschieben'}
+        </button>
+      </div>
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {sorted.map((cat, idx) => (
-          <div key={cat.id} className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex flex-col gap-0.5">
-              <button
-                onClick={() => onReorderCategory?.(cat.id, 'up')}
-                disabled={idx === 0 || cat.id === SHOT_CATEGORY_ID}
-                className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => onReorderCategory?.(cat.id, 'down')}
-                disabled={idx === sorted.length - 1 || cat.id === SHOT_CATEGORY_ID}
-                className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-            </div>
-            <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color} text-white`}>
+        {sorted.map((cat) => (
+          <div key={cat.id}
+            draggable={dragEnabled && Boolean(onMoveCategoryTo)}
+            onDragStart={event => { if (!dragEnabled) return; setDraggedId(cat.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', cat.id); }}
+            onDragOver={event => { if (dragEnabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+            onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedId; if (dragEnabled && sourceId && sourceId !== cat.id) onMoveCategoryTo?.(sourceId, cat.id); setDraggedId(null); }}
+            onDragEnd={() => setDraggedId(null)}
+            className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedId === cat.id ? 'opacity-50' : ''}`}>
+            <div style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : cat.color.startsWith("#") ? { backgroundColor: cat.color } : undefined} className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") || cat.color.startsWith("#") ? "" : cat.color} text-white`}>
               <DynamicIcon name={cat.icon} className="h-6 w-6" />
             </div>
             <div className="flex-1">
@@ -297,6 +330,20 @@ function CategoryModal({ category, categories, onSave, onClose }: {
   const [name, setName] = useState(category?.name ?? '');
   const [icon, setIcon] = useState(category?.icon ?? 'Package');
   const [color, setColor] = useState(category?.color ?? COLOR_OPTIONS[0].value);
+  const oldGradient = color.match(/^linear-gradient\(135deg, (#[0-9a-fA-F]{6}), (#[0-9a-fA-F]{6})\)$/);
+  const initialHex = /^#[0-9a-fA-F]{6}$/.test(color) ? color : oldGradient?.[1] ?? '#0ea5e9';
+  const [rgb, setRgb] = useState(() => [1, 3, 5].map((i) => parseInt(initialHex.slice(i, i + 2), 16)));
+  const updateRgb = (index: number, value: number) => {
+    const next = [...rgb];
+    next[index] = Math.max(0, Math.min(255, Math.round(Number.isFinite(value) ? value : 0)));
+    setRgb(next);
+    setColor('#' + next.map(v => v.toString(16).padStart(2, '0')).join(''));
+  };
+  const updateHex = (hex: string) => {
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+    setRgb([1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+    setColor(hex);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -329,8 +376,20 @@ function CategoryModal({ category, categories, onSave, onClose }: {
             <div className="flex flex-wrap gap-2">
               {COLOR_OPTIONS.map((c) => (
                 <button key={c.value} onClick={() => setColor(c.value)}
-                  className={`h-10 w-10 rounded-xl bg-gradient-to-br ${c.value} transition ${color === c.value ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-gray-800' : ''}`} />
+                  title={c.label} aria-label={`Farbe ${c.label}`} className={`h-10 w-10 rounded-xl bg-gradient-to-br ${c.value} transition ${color === c.value ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-gray-800' : ''}`} />
               ))}
+            </div>
+            <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Eigene Farbe (RGB)</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <input type="color" aria-label="Farbe aus Farbpalette auswählen" value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : initialHex} onChange={e => updateHex(e.target.value)} className="h-12 w-16 cursor-pointer rounded-lg" />
+                {(['R', 'G', 'B'] as const).map((channel, index) => (
+                  <label key={channel} className="flex items-center gap-1 text-xs text-gray-700 dark:text-gray-200">{channel}
+                    <input type="number" min={0} max={255} value={rgb[index]} onChange={e => updateRgb(index, Number(e.target.value))} className="w-16 rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Eine Farbe auswählen oder RGB-Werte von 0 bis 255 eingeben.</p>
             </div>
           </div>
           <button onClick={() => name.trim() && onSave({ name: name.trim(), icon, color })}
@@ -346,16 +405,23 @@ function CategoryModal({ category, categories, onSave, onClose }: {
 
 // ---- Product Manager ----
 
-function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onReorderProduct, pfandSettings, onUpdatePfandSettings, getProductPfand }: Props) {
+function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onReorderProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings, getProductPfand }: Props) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [filterCat, setFilterCat] = useState<string>('');
+  const [sortMode, setSortMode] = useState<'alphabetical' | 'reverse' | 'manual'>('manual');
+  const [draggedProductId, setDraggedProductId] = useState<string | null>(null);
+  const [dragEnabled, setDragEnabled] = useState(false);
   const [pfandF, setPfandF] = useState(String(pfandSettings.Friedrichshafen));
   const [pfandB, setPfandB] = useState(String(pfandSettings.Bregenz));
   const [showPfandSaved, setShowPfandSaved] = useState(false);
 
-  const sorted = [...products].sort((a, b) => a.sortOrder - b.sortOrder);
+  const sorted = [...products].sort(sortMode === 'alphabetical'
+    ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+    : sortMode === 'reverse'
+      ? (a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' })
+      : (a, b) => a.sortOrder - b.sortOrder);
   const filtered = filterCat ? sorted.filter((p) => p.categoryId === filterCat) : sorted;
 
   function savePfandSettings() {
@@ -389,7 +455,7 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
             return (
               <div key={loc}>
                 <label className="mb-1 block text-xs font-semibold text-teal-700 dark:text-teal-400">{loc}</label>
-                <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1">
                   <input value={val} onChange={(e) => setVal(e.target.value)} onBlur={savePfandSettings} placeholder="0,00" inputMode="decimal"
                     className="w-24 rounded-lg border border-teal-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-teal-500 focus:outline-none dark:border-teal-700 dark:bg-gray-900 dark:text-gray-100" />
                   <span className="text-sm text-teal-600 dark:text-teal-400">€</span>
@@ -406,30 +472,35 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
       <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
         <button onClick={() => setFilterCat('')} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${!filterCat ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>Alle</button>
         {[...categories].filter((cat) => cat.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
-          <button key={cat.id} onClick={() => setFilterCat(cat.id)} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${filterCat === cat.id ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{cat.name}</button>
+          <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={cat.color.startsWith("#") ? { backgroundColor: cat.color } : cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`whitespace-nowrap rounded-lg bg-gradient-to-r px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 ${cat.color.startsWith("#") || cat.color.startsWith("linear-gradient(") ? "" : cat.color} ${filterCat === cat.id ? "ring-2 ring-blue-400 ring-offset-1 dark:ring-offset-gray-900" : "opacity-85"}`}>{cat.name}</button>
         ))}
+      </div>
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
+        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          Sortierung:
+          <select aria-label="Artikel sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'alphabetical' | 'reverse' | 'manual'); setDragEnabled(false); }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="manual">Eigene Reihenfolge</option>
+            <option value="alphabetical">Aufsteigend (A–Z)</option>
+            <option value="reverse">Absteigend (Z–A)</option>
+          </select>
+        </label>
+        <button type="button" aria-pressed={dragEnabled} onClick={() => { if (!dragEnabled) setSortMode('manual'); setDragEnabled(!dragEnabled); }}
+          className={`rounded-lg px-3 py-2 text-sm font-semibold ${dragEnabled ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>
+          {dragEnabled ? '✓ Verschieben aktiv' : 'Kacheln verschieben'}
+        </button>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((product, idx) => {
           const cat = categories.find((c) => c.id === product.categoryId);
           return (
-            <div key={product.id} className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex flex-col gap-0.5">
-                <button
-                  onClick={() => onReorderProduct?.(product.id, 'up')}
-                  disabled={idx === 0}
-                  className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-                >
-                  <ChevronUp className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => onReorderProduct?.(product.id, 'down')}
-                  disabled={idx === filtered.length - 1}
-                  className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </button>
-              </div>
+            <div key={product.id}
+              draggable={dragEnabled && Boolean(onMoveProductTo)}
+              onDragStart={event => { if (!dragEnabled) return; setDraggedProductId(product.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', product.id); }}
+              onDragOver={event => { if (dragEnabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+              onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedProductId; if (dragEnabled && sourceId && sourceId !== product.id) onMoveProductTo?.(sourceId, product.id); setDraggedProductId(null); }}
+              onDragEnd={() => setDraggedProductId(null)}
+              className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedProductId === product.id ? 'opacity-50' : ''}`}>
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
                 {product.imageUrl ? <img src={publicAssetUrl(product.imageUrl)} alt={product.name} className="h-full w-full object-cover" /> : <Package className="h-6 w-6 text-gray-400" />}
               </div>
@@ -538,7 +609,7 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
     const pfandF = isPfandArticle ? pfandSettings.Friedrichshafen : 0;
     const pfandB = isPfandArticle ? pfandSettings.Bregenz : 0;
     onSave({
-      name: name.trim(), categoryId, imageUrl: imageUrl.trim(), taxClass, available, hasShot,
+      name: name.trim(), categoryId, imageUrl: imageUrl.trim(), taxClass, taxRates: product?.taxClass === taxClass ? product?.taxRates : undefined, available, hasShot,
       isPfandArticle, hasIndividualPrice,
       shotPrices: undefined,
       prices: { Friedrichshafen: pF, Bregenz: pB },
@@ -576,6 +647,7 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
                   </button>
                 ))}
               </div>
+              {product?.taxRates && product.taxClass === taxClass && <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">Importierte Steuersätze gelten: DE {product.taxRates.Friedrichshafen}% / AT {product.taxRates.Bregenz}%. Eine andere Steuerklasse ersetzt diese Sätze beim Speichern.</p>}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Warengruppe</label>
@@ -767,7 +839,7 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Kassen-Übersicht</h3>
         </div>

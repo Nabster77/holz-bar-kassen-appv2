@@ -1,6 +1,6 @@
 import type { CartItem, Location } from '@/types';
 import { calcNet, calcTax, formatCurrency } from '@/lib/format';
-import { taxRateForClass } from '@/lib/tax';
+import { taxRateForProduct } from '@/lib/tax';
 import { ShoppingCart, Recycle } from 'lucide-react';
 
 interface Props {
@@ -17,7 +17,7 @@ export function CartSummary({ items, location }: Props) {
       pfandRetoure += item.unitPrice * item.quantity;
       continue;
     }
-    const rate = taxRateForClass(item.product.taxClass, location);
+    const rate = taxRateForProduct(item.product, location);
     const gross = item.unitPrice * item.quantity;
     grossByRate.set(rate, (grossByRate.get(rate) ?? 0) + gross);
     totalPfand += item.unitPfand * item.quantity;
