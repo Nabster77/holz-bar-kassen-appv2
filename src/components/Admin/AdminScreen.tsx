@@ -259,7 +259,7 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
                 <ChevronDown className="h-4 w-4" />
               </button>
             </div>
-            <div style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") ? "" : cat.color} text-white`}>
+            <div style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : cat.color.startsWith("#") ? { backgroundColor: cat.color } : undefined} className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") || cat.color.startsWith("#") ? "" : cat.color} text-white`}>
               <DynamicIcon name={cat.icon} className="h-6 w-6" />
             </div>
             <div className="flex-1">
@@ -316,10 +316,20 @@ function CategoryModal({ category, categories, onSave, onClose }: {
   const [name, setName] = useState(category?.name ?? '');
   const [icon, setIcon] = useState(category?.icon ?? 'Package');
   const [color, setColor] = useState(category?.color ?? COLOR_OPTIONS[0].value);
-  const customMatch = color.match(/^linear-gradient\(135deg, (#[0-9a-fA-F]{6}), (#[0-9a-fA-F]{6})\)$/);
-  const [customStart, setCustomStart] = useState(customMatch?.[1] ?? '#0ea5e9');
-  const [customEnd, setCustomEnd] = useState(customMatch?.[2] ?? '#2563eb');
-  const mixedColor = (start: string, end: string) => `linear-gradient(135deg, ${start}, ${end})`;
+  const oldGradient = color.match(/^linear-gradient\(135deg, (#[0-9a-fA-F]{6}), (#[0-9a-fA-F]{6})\)$/);
+  const initialHex = /^#[0-9a-fA-F]{6}$/.test(color) ? color : oldGradient?.[1] ?? '#0ea5e9';
+  const [rgb, setRgb] = useState(() => [1, 3, 5].map((i) => parseInt(initialHex.slice(i, i + 2), 16)));
+  const updateRgb = (index: number, value: number) => {
+    const next = [...rgb];
+    next[index] = Math.max(0, Math.min(255, Math.round(Number.isFinite(value) ? value : 0)));
+    setRgb(next);
+    setColor('#' + next.map(v => v.toString(16).padStart(2, '0')).join(''));
+  };
+  const updateHex = (hex: string) => {
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+    setRgb([1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+    setColor(hex);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -356,12 +366,16 @@ function CategoryModal({ category, categories, onSave, onClose }: {
               ))}
             </div>
             <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-              <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Eigene Farbe mischen</p>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">Von <input type="color" aria-label="Farbe von" value={customStart} onChange={(e) => { setCustomStart(e.target.value); setColor(mixedColor(e.target.value, customEnd)); }} className="h-10 w-12 cursor-pointer rounded" /></label>
-                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">Bis <input type="color" aria-label="Farbe bis" value={customEnd} onChange={(e) => { setCustomEnd(e.target.value); setColor(mixedColor(customStart, e.target.value)); }} className="h-10 w-12 cursor-pointer rounded" /></label>
-                <button type="button" onClick={() => setColor(mixedColor(customStart, customEnd))} style={{ background: mixedColor(customStart, customEnd) }} className="h-10 flex-1 rounded-lg border border-white/20 text-xs font-bold text-white shadow">Übernehmen</button>
+              <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Eigene Farbe (RGB)</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <input type="color" aria-label="Farbe aus Farbpalette auswählen" value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : initialHex} onChange={e => updateHex(e.target.value)} className="h-12 w-16 cursor-pointer rounded-lg" />
+                {(['R', 'G', 'B'] as const).map((channel, index) => (
+                  <label key={channel} className="flex items-center gap-1 text-xs text-gray-700 dark:text-gray-200">{channel}
+                    <input type="number" min={0} max={255} value={rgb[index]} onChange={e => updateRgb(index, Number(e.target.value))} className="w-16 rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+                  </label>
+                ))}
               </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Eine Farbe auswählen oder RGB-Werte von 0 bis 255 eingeben.</p>
             </div>
           </div>
           <button onClick={() => name.trim() && onSave({ name: name.trim(), icon, color })}
@@ -437,7 +451,7 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
       <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
         <button onClick={() => setFilterCat('')} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${!filterCat ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>Alle</button>
         {[...categories].filter((cat) => cat.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
-          <button key={cat.id} onClick={() => setFilterCat(cat.id)} className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${filterCat === cat.id ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{cat.name}</button>
+          <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={cat.color.startsWith("#") ? { backgroundColor: cat.color } : cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`whitespace-nowrap rounded-lg bg-gradient-to-r px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 ${cat.color.startsWith("#") || cat.color.startsWith("linear-gradient(") ? "" : cat.color} ${filterCat === cat.id ? "ring-2 ring-blue-400 ring-offset-1 dark:ring-offset-gray-900" : "opacity-85"}`}>{cat.name}</button>
         ))}
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
