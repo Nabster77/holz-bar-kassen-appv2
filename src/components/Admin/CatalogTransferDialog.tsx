@@ -151,12 +151,22 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           <h3 className="font-semibold">Excel-Tabelle richtig anlegen</h3>
           <p>Oberhalb der Kopfzeile stehen die Pfandbeträge: in Spalte A „Friedrichshafen“ und „Bregenz“, in Spalte B jeweils der gewünschte Betrag in Euro. Die Beträge dürfen je Stadt unterschiedlich sein und werden beim Import übernommen.</p>
           <div className="overflow-x-auto">
+            <table className="border-collapse text-left text-sm">
+              <thead><tr><th className="border border-gray-400 p-2">Standort</th><th className="border border-gray-400 p-2">Pfand</th></tr></thead>
+              <tbody>
+                <tr><td className="border border-gray-400 p-2">Friedrichshafen</td><td className="border border-gray-400 p-2">1,00 €</td></tr>
+                <tr><td className="border border-gray-400 p-2">Bregenz</td><td className="border border-gray-400 p-2">2,00 €</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Diese Beträge sind nur Beispiele. Trage in deiner Excel-Datei die tatsächlichen Pfandbeträge je Standort ein. Danach folgt eine Leerzeile und die Artikel-Kopfzeile.</p>
+          <div className="overflow-x-auto">
             <table className="min-w-max border-collapse text-left text-xs">
               <thead><tr>{['Produktname App','VK','Warengruppe','Preis fix / individuell','Steuer DE in %','Steuer AT in %','Schuss','Pfand'].map(h => <th key={h} className="border border-gray-400 p-2">{h}</th>)}</tr></thead>
               <tbody>
                 <tr>{['Glühwein Rot','4,5','Getränke','fix','19','20','x','x'].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
                 <tr>{['Glühwein Weiß','4,5','Getränke','fix','19','20','x','x'].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
-                <tr>{['Küchenbretter','0','Verkauf','individuell','19','20','',''].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
+                <tr>{['Küchenbretter','0','Handwerk','individuell','19','20','',''].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
               </tbody>
             </table>
           </div>
