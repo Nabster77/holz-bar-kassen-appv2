@@ -43,7 +43,10 @@ function imageSimilarity(article: string, filePath: string): number {
 function imageIdentity(value: string): string {
   // Remove Windows duplicate suffixes before stripping punctuation, e.g. Duftklotz(2).jpg.
   const withoutCopy = value.replace(/\s*\(\d+\)\s*$/, '');
-  const withoutSize = withoutCopy.replace(/\((?:s|m|l)\)/gi, ' ').replace(/\b(?:klein|gross|groß)\b/gi, ' ');
+  const withoutSize = withoutCopy
+    .replace(/\s*\((?:s|m|l|xl)\)\s*/gi, ' ')
+    .replace(/(?:^|[\s_-])(?:s|m|l|xl)\s*$/gi, ' ')
+    .replace(/\b(?:klein|mittel|medium|gross|groß|large|extra\s*large|extra\s*groß)\b/gi, ' ');
   return imageNameKey(withoutSize)
     .replace(/^aromaboxen$/, 'aromabox')
     .replace(/^duftkloetze$/, 'duftklotz')
@@ -199,16 +202,20 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         }
         const exactImages = archive.filter(f => sameImageName(imageStem(f.path), name));
         const identityImages = archive.filter(f => imageIdentity(imageStem(f.path)) === imageIdentity(name));
-        // Prefer exact filenames, then same-size files, then a stable path order.
+        // A name without size suffix is the same product as (S), (M), (L), (XL),
+        // klein, mittel, groß. Prefer the compact S variant, then M, L, XL.
+        // Exact filename matches always take priority; tie-break by stable ZIP path.
+        const imageSizeRank = (path: string) => {
+          const stem = imageStem(path).toLocaleLowerCase('de-DE');
+          if (/(?:\(s\)|(?:^|[\s_-])s$|\bklein\b)/i.test(stem)) return 0;
+          if (/(?:\(m\)|(?:^|[\s_-])m$|\bmittel\b|\bmedium\b)/i.test(stem)) return 1;
+          if (/(?:\(l\)|(?:^|[\s_-])l$|\bgroß\b|\bgross\b|\blarge\b)/i.test(stem)) return 2;
+          if (/(?:\(xl\)|(?:^|[\s_-])xl$|\bextra\s*(?:groß|gross|large)\b)/i.test(stem)) return 3;
+          return 4;
+        };
         const candidatesImage = (exactImages.length ? exactImages : identityImages)
-          .sort((a,b) => {
-            const aSame = normalizeName(imageStem(a.path)) === normalizeName(name) ? 1 : 0;
-            const bSame = normalizeName(imageStem(b.path)) === normalizeName(name) ? 1 : 0;
-            return bSame-aSame || a.path.localeCompare(b.path, 'de');
-          });
-        if (!exactImages.length && identityImages.length > 1) throw new Error(`Mehrere ZIP-Bilder passen sinngemäß zu „${name}“: ${identityImages.map(x => x.path).join(', ')}. Bitte eindeutigen Bildnamen verwenden.`);
+          .sort((a,b) => imageSizeRank(a.path) - imageSizeRank(b.path) || a.path.localeCompare(b.path, 'de'));
         let image: string | undefined;
-        if (exactImages.length > 1) throw new Error(`Mehrere identische ZIP-Bildnamen passen zu „${name}“: ${exactImages.map(x => x.path).join(', ')}. ZIP bereinigen.`);
         if (candidatesImage.length && (!p.imageUrl || replaceImages || /[?&]woodmoIllustration=1(?:&|$)/.test(p.imageUrl))) { plan.images[p.id] = candidatesImage[0]; image = candidatesImage[0].path; }
         else if (candidatesImage.length) plan.warnings.push(`${name}: ZIP-Bild nicht übernommen, vorhandenes Bild bleibt erhalten.`);
         else if (archive.length) {
