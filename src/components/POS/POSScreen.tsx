@@ -256,8 +256,8 @@ export function POSScreen({
               <button
                 key={cat.id}
                 onClick={() => { setActiveCat(cat.id); setSearch(''); }}
-                style={cat.color.startsWith('linear-gradient(') ? { background: cat.color } : undefined}
-                className={`flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-110 active:scale-95 bg-gradient-to-r ${cat.color.startsWith('linear-gradient(') ? '' : cat.color} ${
+                style={cat.color.startsWith('linear-gradient(') ? { background: cat.color } : cat.color.startsWith('#') ? { backgroundColor: cat.color } : undefined}
+                className={`flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-110 active:scale-95 bg-gradient-to-r ${cat.color.startsWith('linear-gradient(') || cat.color.startsWith('#') ? '' : cat.color} ${
                   activeCat === cat.id && !search ? 'border-white ring-2 ring-blue-400 shadow-md' : 'border-transparent opacity-85'
                 }`}
               >
@@ -277,7 +277,7 @@ export function POSScreen({
               if (cat) {
                 return (
                   <h2 className="flex items-center gap-2 text-lg font-bold">
-                    <span style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") ? "" : cat.color} text-white`}>
+                    <span style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : cat.color.startsWith("#") ? { backgroundColor: cat.color } : undefined} className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") || cat.color.startsWith("#") ? "" : cat.color} text-white`}>
                       <DynamicIcon name={cat.icon} className="h-4 w-4" />
                     </span>
                     <span className="text-gray-900 dark:text-gray-100">{cat.name}</span>
