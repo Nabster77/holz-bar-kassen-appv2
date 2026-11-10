@@ -1,3 +1,4 @@
+import { canDiscardCashSession, openingBalanceForLocation } from '@/lib/cashBalanceCarry';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useStore } from '@/hooks/useStore';
@@ -84,14 +85,7 @@ export default function App() {
   // The last finalized balance per location is a suggestion only. It is not
   // copied until the user actually opens the next cash session.
   const openingBalanceSuggestions = useMemo<Record<Location, number | null>>(() => {
-    const latestFor = (location: Location) => {
-      const latest = [...store.cashSessions]
-        .filter((session) => session.location === location && session.closed && !session.discarded)
-        .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))[0];
-      if (!latest) return null;
-      const remainder = closedSessionReport(latest, store.transactions, store.categories).dailyCloseCash?.remainingBalance;
-      return typeof remainder === 'number' && Number.isFinite(remainder) ? Math.round(remainder * 100) / 100 : null;
-    };
+    const latestFor = (location: Location) => openingBalanceForLocation(store.cashSessions, store.transactions, location);
     return { Friedrichshafen: latestFor('Friedrichshafen'), Bregenz: latestFor('Bregenz') };
   }, [store.cashSessions, store.transactions, store.categories]);
 
@@ -209,6 +203,7 @@ export default function App() {
   async function discardUnusedSession() {
     const session = store.activeSession;
     if (!session) return;
+    if (!canDiscardCashSession(session, store.transactions)) throw new Error('Eine Kasse mit Bestand oder Bewegungen darf nicht verworfen werden. Bitte den Tagesabschluss verwenden.');
     if (!testMode) {
       const sync = await syncEverything();
       if (!sync.ok) throw new Error(sync.error ?? 'Cloud-Abgleich fehlgeschlagen.');
@@ -224,7 +219,7 @@ export default function App() {
 
   async function handleStaffLogout() {
     const session = store.activeSession;
-    if (session && !session.entries.length && !session.corrections.length && !store.transactions.some((t) => t.location === session.location && t.timestamp >= session.openedAt)) {
+    if (session && canDiscardCashSession(session, store.transactions)) {
       try { await discardUnusedSession(); } catch (error) { alert(readableSyncError(error)); return; }
     } else {
     if (currentStaff) recordStaff('logout', currentStaff);
@@ -376,6 +371,8 @@ export default function App() {
               const finalizedAt = Date.now();
               const finalizedIntervals = (session.staffLoginIntervals ?? []).map((interval) => interval.logoutAt ? interval : { ...interval, logoutAt: finalizedAt });
               try {
+                const sync = await syncEverything();
+                if (!sync.ok) throw new Error(sync.error ?? 'Kassensitzung konnte nicht mit der Cloud abgeglichen werden.');
                 // A final close without the cloud-wide, immutable receipt
                 // number is not allowed. The RPC is idempotent per session.
                 const receipt = await issueDailyCloseReceipt(session.id, currentStaff.name, session.location, finalizedAt);
@@ -405,11 +402,16 @@ export default function App() {
                   receipt,
                   snapshot,
                 });
-                await saveJournalPdf(closedSessionReport({ ...finalized, dailyCloseSnapshot: snapshot }, store.transactions, store.categories, currentStaff.name));
+                try {
+                  await saveJournalPdf(closedSessionReport({ ...finalized, dailyCloseSnapshot: snapshot }, store.transactions, store.categories, currentStaff.name));
+                } catch (pdfError) {
+                  console.warn('Kasse abgeschlossen; PDF-Export fehlgeschlagen.', pdfError);
+                  alert('Der Tagesabschluss wurde gespeichert. Nur der PDF-Export ist fehlgeschlagen. Bitte den Bericht in der Verwaltung erneut exportieren. Die Kasse nicht nochmals abschließen.');
+                }
                 return { ok: true };
               } catch (error) {
                 console.warn('Tagesabschluss ohne Belegnummer abgelehnt.', error);
-                return { ok: false, error: 'Beleg konnte nicht erstellt werden. Bitte Internetverbindung prüfen und erneut versuchen.' };
+                return { ok: false, error: `Tagesabschluss nicht durchgeführt: ${readableSyncError(error)} Die aktive Kasse und ihr Bestand bleiben erhalten.` };
               }
             }}
             onEnterAdmin={openManagementFromCashOpening}

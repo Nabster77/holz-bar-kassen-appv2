@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapPin, Euro, Check, Store, Settings, KeyRound, Loader2, WifiOff } from 'lucide-react';
 import type { CashSession, Location, StaffSecurityQuestion, StaffUser } from '@/types';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
@@ -42,6 +42,9 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
   const selectedStaff = availableStaff.find((user) => user.id === selectedStaffId) ?? null;
   const carriedBalance = existingSession?.openingBalance ?? openingBalanceSuggestions?.[location];
   const hasCarriedBalance = typeof carriedBalance === 'number' && Number.isFinite(carriedBalance) && carriedBalance > 0;
+  useEffect(() => {
+    setBalance(formatSuggestedBalance(carriedBalance));
+  }, [carriedBalance]);
   const firstPassword = Boolean(selectedStaff && !selectedStaff.passwordHash);
   const needsSecuritySetup = Boolean(selectedStaff && !selectedStaff.securityConfigured);
 
