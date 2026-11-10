@@ -10,6 +10,28 @@ export type PreviewRow = { id?: string; kind: string; name: string; status: 'neu
 export type ImageEntry = { path: string; bytes: Uint8Array; mime: string };
 export type ImportPlan = { base: LocalCatalog; next: LocalCatalog; rows: PreviewRow[]; errors: string[]; warnings: string[]; images: Record<string, ImageEntry> };
 export const normalizeName = (v: unknown): string => String(v ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').toLocaleLowerCase('de-DE').replace(/\(\d+\)\s*$/, '').replace(/[^a-z0-9]/g, '');
+/** Conservative similarity suggestions; never silently assign a fuzzy match. */
+function imageSimilarity(article: string, filePath: string): number {
+  const file = filePath.split('/').pop()!.replace(/\.[^.]+$/, '');
+  const a = normalizeName(article);
+  const b = normalizeName(file);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  // Preserve size distinctions: large and small images are not interchangeable.
+  const size = (v: string) => /(?:\\(l\\)|\\bgro(?:ß|ss)\\b|\\bklein\\b)/i.test(v) ? 'large' : /(?:\\(s\\)|\\bklein\\b)/i.test(v) ? 'small' : '';
+  const sa = size(article), sb = size(file);
+  if (sa && sb && sa !== sb) return 0;
+  const distance = (x: string, y: string) => {
+    let prev = Array.from({length:y.length+1}, (_,i)=>i);
+    for (let i=1;i<=x.length;i++) {
+      const cur = [i];
+      for (let j=1;j<=y.length;j++) cur[j] = Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(x[i-1]===y[j-1]?0:1));
+      prev = cur;
+    }
+    return prev[y.length];
+  };
+  return 1 - distance(a,b)/Math.max(a.length,b.length);
+}
 const text = (v: unknown) => String(v ?? '').trim();
 const empty = (v: unknown) => v === undefined || v === null || v === '';
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
@@ -147,7 +169,13 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         if (candidatesImage.length > 1) throw new Error(`Mehrere ZIP-Bilder passen zu „${name}“: ${candidatesImage.map(x => x.path).join(', ')}. ZIP bereinigen.`);
         if (candidatesImage.length && (!p.imageUrl || replaceImages)) { plan.images[p.id] = candidatesImage[0]; image = candidatesImage[0].path; }
         else if (candidatesImage.length) plan.warnings.push(`${name}: ZIP-Bild nicht übernommen, vorhandenes Bild bleibt erhalten.`);
-        else if (archive.length) plan.warnings.push(`${name}: kein passendes ZIP-Bild; Artikel wird trotzdem importiert.`);
+        else if (archive.length) {
+          const suggestions = archive.map(f => ({path:f.path, score:imageSimilarity(name,f.path)}))
+            .filter(f => f.score >= 0.75 && f.score < 1)
+            .sort((a,b) => b.score-a.score).slice(0,3);
+          const hint = suggestions.length ? ` Mögliche Bilder (nur Vorschläge, nicht übernommen): ${suggestions.map(f => `${f.path} (${Math.round(f.score*100)} %)`).join(', ')}.` : '';
+          plan.warnings.push(`${name}: kein exaktes ZIP-Bild;${hint} Artikel wird trotzdem importiert.`);
+        }
         record('Artikel', p, old, image); upsert(next.products, p);
       }));
     });
