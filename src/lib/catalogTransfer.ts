@@ -389,7 +389,7 @@ export function readImageZip(bytes: Uint8Array): ImageEntry[] {
     file.ondata = (err, chunk, final) => {
       if (err) { failure = err; return; }
       size += chunk.length; total += chunk.length;
-      if (size > 10 * 1024 * 1024 || total > 200 * 1024 * 1024) { file.terminate(); throw new Error('ZIP entpackt zu groß (10 MB je Bild / 200 MB insgesamt).'); }
+      if (size > 500 * 1024 || total > 200 * 1024 * 1024) { file.terminate(); throw new Error('Bild in ZIP zu groß (maximal 500 KB je Bild).'); }
       chunks.push(chunk);
       if (final) { const data = new Uint8Array(size); let offset = 0; for (const c of chunks) {data.set(c,offset); offset += c.length;} if (!validImageSignature(data, mime)) { failure = new Error(`„${decodedPath}“ hat kein gültiges Bildformat (${ext}). Bitte das Bild neu speichern.`); return; } result.push({path:decodedPath,bytes:data,mime}); }
     }; file.start();
