@@ -37,6 +37,7 @@ interface Props {
   onUpdateProduct: (id: string, data: Partial<Omit<Product, 'id'>>) => void;
   onDeleteProduct: (id: string) => void;
   onReorderProduct?: (id: string, direction: 'up' | 'down') => void;
+  onMoveProductTo?: (sourceId: string, targetId: string) => void;
   onResetAllData?: () => Promise<void>;
   testMode?: boolean;
   onToggleMode?: () => void;
@@ -391,16 +392,20 @@ function CategoryModal({ category, categories, onSave, onClose }: {
 
 // ---- Product Manager ----
 
-function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onReorderProduct, pfandSettings, onUpdatePfandSettings, getProductPfand }: Props) {
+function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onReorderProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings, getProductPfand }: Props) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [filterCat, setFilterCat] = useState<string>('');
+  const [sortMode, setSortMode] = useState<'alphabetical' | 'manual'>('manual');
+  const [draggedProductId, setDraggedProductId] = useState<string | null>(null);
   const [pfandF, setPfandF] = useState(String(pfandSettings.Friedrichshafen));
   const [pfandB, setPfandB] = useState(String(pfandSettings.Bregenz));
   const [showPfandSaved, setShowPfandSaved] = useState(false);
 
-  const sorted = [...products].sort((a, b) => a.sortOrder - b.sortOrder);
+  const sorted = [...products].sort(sortMode === 'alphabetical'
+    ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+    : (a, b) => a.sortOrder - b.sortOrder);
   const filtered = filterCat ? sorted.filter((p) => p.categoryId === filterCat) : sorted;
 
   function savePfandSettings() {
@@ -434,7 +439,13 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
             return (
               <div key={loc}>
                 <label className="mb-1 block text-xs font-semibold text-teal-700 dark:text-teal-400">{loc}</label>
-                <div className="flex items-center gap-1">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400">Artikelreihenfolge:</span>
+          <button type="button" onClick={() => setSortMode('alphabetical')} aria-pressed={sortMode === 'alphabetical'} className={`rounded-lg px-3 py-2 text-xs font-semibold ${sortMode === 'alphabetical' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>Alphabetisch (A–Z)</button>
+          <button type="button" onClick={() => setSortMode('manual')} aria-pressed={sortMode === 'manual'} className={`rounded-lg px-3 py-2 text-xs font-semibold ${sortMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>Eigene Reihenfolge · Ziehen</button>
+          {sortMode === 'manual' && <span className="text-xs text-gray-500 dark:text-gray-400">Kachel gedrückt halten und auf eine andere Kachel ziehen. Reihenfolge wird gespeichert.</span>}
+        </div>
+      <div className="flex items-center gap-1">
                   <input value={val} onChange={(e) => setVal(e.target.value)} onBlur={savePfandSettings} placeholder="0,00" inputMode="decimal"
                     className="w-24 rounded-lg border border-teal-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-teal-500 focus:outline-none dark:border-teal-700 dark:bg-gray-900 dark:text-gray-100" />
                   <span className="text-sm text-teal-600 dark:text-teal-400">€</span>
@@ -458,7 +469,13 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
         {filtered.map((product, idx) => {
           const cat = categories.find((c) => c.id === product.categoryId);
           return (
-            <div key={product.id} className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div key={product.id}
+              draggable={sortMode === 'manual' && Boolean(onMoveProductTo)}
+              onDragStart={event => { if (sortMode !== 'manual') return; setDraggedProductId(product.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', product.id); }}
+              onDragOver={event => { if (sortMode === 'manual') { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+              onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedProductId; if (sortMode === 'manual' && sourceId && sourceId !== product.id) onMoveProductTo?.(sourceId, product.id); setDraggedProductId(null); }}
+              onDragEnd={() => setDraggedProductId(null)}
+              className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${sortMode === 'manual' ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedProductId === product.id ? 'opacity-50' : ''}`}>
               <div className="flex flex-col gap-0.5">
                 <button
                   onClick={() => onReorderProduct?.(product.id, 'up')}
