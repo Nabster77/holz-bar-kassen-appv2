@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, type ReactNode, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser, ShotOption } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
 import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
@@ -11,6 +11,7 @@ import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, ChevronUp, ChevronDown, Wine, Recycle, MonitorDot, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, ArrowRightLeft, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
+import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
 
 interface Props {
@@ -65,6 +66,12 @@ const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
 export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, onExportBackup, onImportBackup, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
+  const [shotDraftDirty, setShotDraftDirty] = useState(false);
+  const changeTab = (next: typeof tab) => {
+    if (tab === 'shots' && shotDraftDirty && !window.confirm('Ungespeicherte Schuss-Änderungen verwerfen und Bereich wechseln?')) return;
+    setShotDraftDirty(false);
+    setTab(next);
+  };
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -73,7 +80,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
           <button
-            onClick={() => setTab('sessions')}
+            onClick={() => changeTab('sessions')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               tab === 'sessions' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
             }`}
@@ -81,7 +88,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
             <MonitorDot className="h-4 w-4" /> Kassen-Übersicht
           </button>
           <button
-            onClick={() => setTab('categories')}
+            onClick={() => changeTab('categories')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               tab === 'categories' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
             }`}
@@ -89,7 +96,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
             <Tag className="h-4 w-4" /> Warengruppen
           </button>
           <button
-            onClick={() => setTab('products')}
+            onClick={() => changeTab('products')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               tab === 'products' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
             }`}
@@ -97,11 +104,11 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
             <Package className="h-4 w-4" /> Artikel
           </button>
           <button
-            onClick={() => setTab('shots')}
+            onClick={() => changeTab('shots')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === 'shots' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'}`}
           ><Wine className="h-4 w-4" /> SCHUSS</button>
           <button
-            onClick={() => setTab('staff')}
+            onClick={() => changeTab('staff')}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               tab === 'staff' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
             }`}
@@ -143,7 +150,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
         {tab === 'sessions' ? <LiveSessionOverview transactions={props.transactions} cashSessions={props.cashSessions} categories={props.categories} activeSession={props.activeSession} selectedLocation={props.selectedLocation} onSwitchLocation={props.onSwitchLocation} exportedByName={props.currentStaff?.name} />
           : tab === 'categories' ? <CategoryManager {...props} />
             : tab === 'products' ? <ProductManager {...props} />
-              : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} />
+              : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} onDirtyChange={setShotDraftDirty} />
               : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
       {showReset && (
@@ -197,122 +204,6 @@ function ConfirmDialog({ title, message, onConfirm, onClose }: {
 }
 
 
-
-function ShotManager({ shots, onChange }: { shots: ShotOption[]; onChange: (options: ShotOption[]) => void }) {
-  type Draft = { name: string; price: string; Friedrichshafen: string; Bregenz: string };
-  const blank = (): Draft => ({ name: '', price: '', Friedrichshafen: '', Bregenz: '' });
-  const [draft, setDraft] = useState<Draft>(blank);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [edit, setEdit] = useState<Draft>(blank);
-
-  const parsePrice = (raw: string): number | null => {
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    const number = Number(trimmed.replace(',', '.'));
-    return Number.isFinite(number) && number >= 0 && number <= 99999 ? Math.round(number * 100) / 100 : null;
-  };
-  const getValues = (form: Draft) => {
-    const name = form.name.trim();
-    const price = parsePrice(form.price);
-    if (!name || price === null) return null;
-    const locationPrices: NonNullable<ShotOption['locationPrices']> = {};
-    for (const location of ['Friedrichshafen', 'Bregenz'] as const) {
-      if (form[location].trim()) {
-        const override = parsePrice(form[location]);
-        if (override === null) return null;
-        locationPrices[location] = override;
-      }
-    }
-    return { name, price, locationPrices: Object.keys(locationPrices).length ? locationPrices : undefined };
-  };
-  const isDuplicate = (name: string, exceptId?: string | null) =>
-    shots.some((shot) => shot.id !== exceptId && shot.name.trim().toLocaleLowerCase('de-DE') === name.toLocaleLowerCase('de-DE'));
-  const add = () => {
-    const values = getValues(draft);
-    if (!values || isDuplicate(values.name)) return;
-    onChange([...shots, { ...values, id: 'shot-' + crypto.randomUUID() }]);
-    setDraft(blank());
-  };
-  const save = () => {
-    const values = getValues(edit);
-    if (!editingId || !values || isDuplicate(values.name, editingId)) return;
-    onChange(shots.map((shot) => shot.id === editingId ? { ...shot, ...values } : shot));
-    setEditingId(null);
-  };
-  const onEnter = (fn: () => void) => (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      fn();
-    }
-  };
-  const inputs = (form: Draft, setForm: (next: Draft) => void, submit: () => void) => (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-      {([
-        ['price', 'Grundpreis (alle Standorte)'],
-        ['Friedrichshafen', 'Friedrichshafen (optional)'],
-        ['Bregenz', 'Bregenz (optional)'],
-      ] as const).map(([field, label]) => (
-        <label key={field} className="text-xs font-medium text-gray-600 dark:text-gray-300">
-          {label} €
-          <input type="text" inputMode="decimal" aria-label={label} value={form[field]}
-            placeholder={field === 'price' ? 'z. B. 2,00' : 'Grundpreis gilt'}
-            onChange={(event) => setForm({ ...form, [field]: event.target.value })}
-            onKeyDown={onEnter(submit)}
-            className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-        </label>
-      ))}
-    </div>
-  );
-  return <div className="space-y-4">
-    <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-900/20">
-      <h3 className="flex items-center gap-2 text-lg font-bold text-violet-900 dark:text-violet-100"><Wine className="h-5 w-5" /> SCHUSS – zentrale Verwaltung</h3>
-      <p className="mt-1 text-sm text-violet-800 dark:text-violet-200">
-        Der Grundpreis gilt für alle Standorte. Nur bei Bedarf abweichende Preise für Friedrichshafen oder Bregenz eintragen.
-        Leere Standortfelder verwenden automatisch den Grundpreis. Zum Speichern genügt Enter.
-      </p>
-    </div>
-    <div className="space-y-2">
-      {shots.map((shot) => <div key={shot.id} className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-        {editingId === shot.id ? <div className="space-y-3">
-          <input aria-label="SCHUSS-Sorte bearbeiten" value={edit.name}
-            onChange={(event) => setEdit({ ...edit, name: event.target.value })} onKeyDown={onEnter(save)}
-            className="w-full rounded-lg border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-          {inputs(edit, setEdit, save)}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-500 dark:text-gray-400">Enter = Speichern</span>
-            <button onClick={save} disabled={!getValues(edit) || isDuplicate(edit.name.trim(), editingId)}
-              className="rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Speichern</button>
-            <button onClick={() => setEditingId(null)} className="rounded-lg border px-3 py-2 text-sm dark:text-white">Abbrechen</button>
-          </div>
-        </div> : <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-0 flex-1 font-semibold text-gray-900 dark:text-white">{shot.name}</span>
-          <span className="font-bold text-violet-700 dark:text-violet-300">{formatCurrency(shot.price)} (alle)</span>
-          {shot.locationPrices?.Friedrichshafen !== undefined && <span className="rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Friedrichshafen: {formatCurrency(shot.locationPrices.Friedrichshafen)}</span>}
-          {shot.locationPrices?.Bregenz !== undefined && <span className="rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Bregenz: {formatCurrency(shot.locationPrices.Bregenz)}</span>}
-          <button onClick={() => { setEditingId(shot.id); setEdit({
-            name: shot.name, price: String(shot.price),
-            Friedrichshafen: shot.locationPrices?.Friedrichshafen?.toString() ?? '',
-            Bregenz: shot.locationPrices?.Bregenz?.toString() ?? '',
-          }); }} className="rounded-lg border px-3 py-2 text-sm dark:text-white">Bearbeiten</button>
-          <button onClick={() => { if (window.confirm('SCHUSS-Sorte „' + shot.name + '“ entfernen? Alte Buchungen bleiben unverändert.')) onChange(shots.filter((item) => item.id !== shot.id)); }}
-            className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 dark:text-red-300">Löschen</button>
-        </div>}
-      </div>)}
-    </div>
-    <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <h4 className="font-semibold text-gray-900 dark:text-white">Neue SCHUSS-Sorte anlegen</h4>
-      <input aria-label="Neue SCHUSS-Sorte" placeholder="z. B. Amaretto" value={draft.name}
-        onChange={(event) => setDraft({ ...draft, name: event.target.value })} onKeyDown={onEnter(add)}
-        className="w-full rounded-lg border border-gray-300 bg-white p-2 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-      {inputs(draft, setDraft, add)}
-      <div className="flex flex-wrap items-center gap-3">
-        <button onClick={add} disabled={!getValues(draft) || isDuplicate(draft.name.trim())}
-          className="rounded-lg bg-violet-600 px-4 py-2 font-bold text-white disabled:opacity-40">+ Hinzufügen</button>
-        <span className="text-xs text-gray-500 dark:text-gray-400">Oder Enter drücken – Grundpreis genügt.</span>
-      </div>
-    </div>
-  </div>;
-}
 
 // ---- Category Manager ----
 

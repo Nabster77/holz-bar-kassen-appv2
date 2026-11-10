@@ -48,19 +48,19 @@ export function CartItemRow({ item, location, onInc, onDec, onRemove, onEditShot
   }
 
   return (
-    <div className="flex items-start gap-2 border-b border-gray-100 py-2 dark:border-gray-700">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-2 border-b border-gray-100 py-2 dark:border-gray-700">
+      <div className="col-span-3 min-w-0">
+        <p className="break-words text-sm font-medium text-gray-900 dark:text-gray-100">
           {item.product.name}
           {item.shot && item.shot.id !== 'none' && (
-            <span className="text-blue-600 dark:text-blue-400"> + {item.shot.name}</span>
+            <span className="inline-block text-blue-600 dark:text-blue-400"> +&nbsp;{item.shot.name}</span>
           )}
         </p>
         <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
           {shotPrice > 0 ? (
             <span className="block">
               Grundpreis {formatCurrency(basePrice)}
-              <span className="text-blue-600 dark:text-blue-400"> + {item.shot?.name} {formatCurrency(shotPrice)}</span>
+              <span className="inline-block text-blue-600 dark:text-blue-400"> +&nbsp;{item.shot?.name} {formatCurrency(shotPrice)}</span>
               <span className="text-gray-400"> = {formatCurrency(unitTotal)}</span>
             </span>
           ) : (
