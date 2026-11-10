@@ -4,6 +4,7 @@ import type { CatalogImportSession } from '@/lib/catalogEngine';
 import { buildImportPlan, exportWorkbook, readImageZip, readWorkbook, type ImportPlan } from '@/lib/catalogTransfer';
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { importFileToDataURL } from '@/lib/imageImport';
+import { supabase } from '@/lib/supabaseClient';
 
 export interface CatalogTransferProps {
   catalog: LocalCatalog;
@@ -16,6 +17,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [excel, setExcel] = useState<File | null>(null);
   const [zip, setZip] = useState<File | null>(null);
   const [zipSummary, setZipSummary] = useState('');
+  const [generated, setGenerated] = useState<Record<string, {url:string; bytes:Uint8Array}>>({});
   const [replace, setReplace] = useState(false);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [session, setSession] = useState<CatalogImportSession | null>(null);
@@ -23,7 +25,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [done, setDone] = useState(false);
-  const invalidate = () => {setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
+  const invalidate = () => {setGenerated({});setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
   const stale = session && JSON.stringify(session.base) !== JSON.stringify(catalog);
   async function preview() {
     if (!excel) return;
@@ -39,6 +41,25 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       const snapshot = testMode ? {base: structuredClone(catalog), cloud: []} : await onPrepare();
       setSession(snapshot); setPlan(buildImportPlan(sheets, snapshot.base, images, replace));
     } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
+  }
+  async function generateImage(productId: string, name: string) {
+    if (!supabase || !plan || busy || testMode || generated[productId]) return;
+    setBusy(true); setMessage('');
+    try {
+      const {data,error} = await supabase.functions.invoke('generate-catalog-image',{body:{name}});
+      if (error || !data?.image || data.mime !== 'image/png') throw new Error('KI-Bilddienst nicht eingerichtet oder nicht erreichbar.');
+      const binary = atob(data.image as string);
+      const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+      const blob = new Blob([new Uint8Array(bytes)],{type:'image/png'});
+      const url = URL.createObjectURL(blob);
+      setGenerated(prev => ({...prev,[productId]:{url,bytes}}));
+    } catch (e) {setMessage((e as Error).message);}
+    finally {setBusy(false);}
+  }
+  function discardGenerated(productId: string) {
+    const item = generated[productId];
+    if (item) URL.revokeObjectURL(item.url);
+    setGenerated(prev => {const next={...prev};delete next[productId];return next;});
   }
   async function commit() {
     if (!plan || !session || !confirmed || plan.errors.length || stale || testMode || busy || done) return;
@@ -61,6 +82,13 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         if (!url) throw new Error(`Bild „${image.path}“ konnte nicht hochgeladen werden. Katalog wurde nicht importiert. Bereits hochgeladene neue Bilder bleiben unreferenziert; vorhandene Bilder bleiben erhalten.`);
         uploaded++;
         next.products.find(p => p.id === productId)!.imageUrl = url;
+      }
+      for (const [productId, generatedImage] of Object.entries(generated)) {
+        const product = next.products.find(p => p.id === productId);
+        if (!product || (product.imageUrl && !replace)) continue;
+        const url = await uploadArticleImage(new File([new Uint8Array(generatedImage.bytes)], 'ki-bild.png', {type:'image/png'}));
+        if (!url) throw new Error('KI-Bild konnte nicht gespeichert werden; Katalog wurde nicht importiert.');
+        uploaded++; product.imageUrl = url;
       }
       await onCommit(session, next);
       setDone(true); setConfirmed(false); setMessage('Import vollständig in Supabase gespeichert und lokal übernommen.');
@@ -98,6 +126,18 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           <p className="font-semibold">{plan.rows.filter(r => r.status === 'neu').length} neu · {plan.rows.filter(r => r.status === 'geändert').length} geändert · {plan.rows.filter(r => r.status === 'unverändert').length} unverändert · {plan.errors.length} Konflikte</p>
           {plan.errors.length > 0 && <div role="alert" className="rounded-xl border border-red-500 p-3"><strong>Import gesperrt – Konflikte zuerst beheben:</strong><ul className="list-disc pl-5">{plan.errors.map((e,i) => <li key={i}>{e}</li>)}</ul></div>}
           {plan.warnings.length > 0 && <details><summary>{plan.warnings.length} Bildhinweise</summary><ul className="list-disc pl-5">{plan.warnings.map((w,i) => <li key={i}>{w}</li>)}</ul></details>}
+          {plan.rows.filter(r => r.kind === 'Artikel' && r.id && !plan.images[r.id] && !plan.next.products.find(p => p.id === r.id)?.imageUrl).length > 0 && <section className="space-y-2 rounded-xl border border-gray-400 p-3">
+            <h3 className="font-semibold">KI-Bilder für Artikel ohne Bild (optional)</h3>
+            <p className="text-sm">Erst nach Klick erzeugen (kostenpflichtiger Dienst). Vor dem Import ansehen; nur bestätigte Vorschläge werden beim Import hochgeladen. Ohne KI-Bild wird der Artikel normal angelegt.</p>
+            {plan.rows.filter(r => r.kind === 'Artikel' && r.id && !plan.images[r.id] && !plan.next.products.find(p => p.id === r.id)?.imageUrl).map(r => <div key={r.id} className="flex flex-wrap items-center gap-3 border-t border-gray-400 py-2">
+              <span className="font-medium">{r.name}</span>
+              {generated[r.id!] ? <>
+                <img src={generated[r.id!].url} alt={`KI-Vorschau: ${r.name}`} className="h-24 w-24 rounded object-cover" />
+                <button className={button} disabled={busy} onClick={() => discardGenerated(r.id!)}>Bild verwerfen</button>
+                <span className="text-sm">Bild für Import ausgewählt</span>
+              </> : <button className={button} disabled={busy || testMode || !supabase} onClick={() => void generateImage(r.id!,r.name)}>KI-Bild erstellen und prüfen</button>}
+            </div>)}
+          </section>}
           <div className="max-h-80 overflow-auto rounded-xl border border-gray-400"><table className="w-full text-left text-sm"><thead className="sticky top-0 bg-gray-100 dark:bg-gray-900"><tr><th className="p-2">Typ</th><th>Name</th><th>Status</th><th>Änderungen / Bild</th></tr></thead><tbody>{plan.rows.map((r,i) => <tr className="border-t border-gray-300 align-top" key={i}><td className="p-2">{r.kind}</td><td className="p-2">{r.name}</td><td className="p-2">{r.status}</td><td className="p-2 break-all"><details><summary>{r.changes.length} Feldänderungen{r.image ? ` · ZIP: ${r.image}${replace ? ' (Bildersatz freigegeben)' : ''}` : ''}</summary>{r.changes.map((c,j) => <p key={j}>{c}</p>)}</details></td></tr>)}</tbody></table></div>
           {stale && !done && <p role="alert">Der lokale Katalog hat sich geändert. Bitte Vorschau neu erstellen.</p>}
           <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || done || !session || !!stale || testMode || !!plan.errors.length} checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Ich habe die Vorschau einschließlich SCHUSS-, Pfand- und Bildänderungen geprüft und bestätige den Import.</label>
