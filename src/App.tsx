@@ -451,6 +451,7 @@ export default function App() {
               onUpdateCategory={store.updateCategory}
               onDeleteCategory={store.deleteCategory}
               onReorderCategory={store.reorderCategory}
+              onMoveCategoryTo={store.moveCategoryTo}
               onAddProduct={store.addProduct}
               onUpdateProduct={store.updateProduct}
               onDeleteProduct={store.deleteProduct}
