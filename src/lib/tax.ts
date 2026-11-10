@@ -1,4 +1,4 @@
-import type { Location, TaxClass, Transaction, TransactionItem } from '@/types';
+import type { Location, Product, TaxClass, Transaction, TransactionItem } from '@/types';
 
 export const LOCATION_TAX_RATES: Record<Location, Record<TaxClass, number>> = {
   Friedrichshafen: { reduced: 7, standard: 19, zero: 0 },
@@ -60,4 +60,8 @@ export function taxByRateToObject(map: Map<number, number>): Record<number, numb
 
 export function sortedRateKeys(map: Map<number, number>): number[] {
   return [...map.keys()].sort((a, b) => a - b);
+}
+
+export function taxRateForProduct(product: Product, location: Location): number {
+  return product.taxRates?.[location] ?? taxRateForClass(product.taxClass, location);
 }

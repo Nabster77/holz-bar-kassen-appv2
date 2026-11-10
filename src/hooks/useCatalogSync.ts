@@ -38,5 +38,5 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
   const syncCatalog = useCallback(() => engine.sync(), [engine]);
   const resolveConflict = useCallback((choice: ConflictChoice) => engine.resolveConflict(choice), [engine]);
 
-  return { conflict, syncCatalog, resolveConflict };
+  return { conflict, syncCatalog, resolveConflict, prepareImport: engine.prepareImport, commitImport: engine.commitImport };
 }

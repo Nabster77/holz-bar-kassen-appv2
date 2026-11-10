@@ -436,6 +436,8 @@ export default function App() {
         {tab === 'admin' && (
           adminUnlocked ? (
             <AdminScreen
+              onPrepareCatalogImport={catalog.prepareImport}
+              onCommitCatalogImport={catalog.commitImport}
               shotOptions={store.shotOptions}
               onUpdateShotOptions={store.updateShotOptions}
               categories={store.categories}
@@ -476,7 +478,7 @@ export default function App() {
                 // stored only as protected proofs; no readable password is exported.
                 const payload: CompleteBackup = {
                   ...coreBackup,
-                  version: 4,
+                  version: 5,
                   data: {
                     ...coreBackup.data,
                     ...recoveryMetadata,

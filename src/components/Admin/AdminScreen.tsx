@@ -1,3 +1,6 @@
+import { CatalogTransferDialog } from './CatalogTransferDialog';
+import type { CatalogImportSession } from '@/lib/catalogEngine';
+import type { LocalCatalog } from '@/lib/catalogSync';
 import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser, ShotOption } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
@@ -15,6 +18,8 @@ import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
 
 interface Props {
+  onPrepareCatalogImport: () => Promise<CatalogImportSession>;
+  onCommitCatalogImport: (session: CatalogImportSession, next: LocalCatalog) => Promise<void>;
   shotOptions: ShotOption[];
   onUpdateShotOptions: (shots: ShotOption[]) => void;
   categories: Category[];
@@ -72,6 +77,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
     setShotDraftDirty(false);
     setTab(next);
   };
+  const [showCatalogTransfer, setShowCatalogTransfer] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -130,6 +136,7 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
               {testMode ? 'Auf aktiven Modus wechseln' : 'Auf Testmodus wechseln'}
             </button>
           )}
+          <button className="rounded-xl border border-blue-400 px-3 py-2 text-sm" onClick={() => { if (shotDraftDirty) { window.alert('Bitte zuerst SCHUSS-Änderungen speichern oder verwerfen.'); return; } setShowCatalogTransfer(true); }}>Excel-Import / Export</button>
           {onImportBackup && (
             <button
               onClick={() => setShowImport(true)}
@@ -153,6 +160,10 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
               : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} onDirtyChange={setShotDraftDirty} />
               : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
+      {showCatalogTransfer && <CatalogTransferDialog
+        catalog={{categories: props.categories, products: props.products, pfandSettings: props.pfandSettings, shotOptions: props.shotOptions}}
+        testMode={testMode} onPrepare={props.onPrepareCatalogImport} onCommit={props.onCommitCatalogImport}
+        onClose={() => setShowCatalogTransfer(false)} />}
       {showReset && (
         <ResetConfirmDialog
           onExport={onExportBackup}
@@ -538,7 +549,7 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
     const pfandF = isPfandArticle ? pfandSettings.Friedrichshafen : 0;
     const pfandB = isPfandArticle ? pfandSettings.Bregenz : 0;
     onSave({
-      name: name.trim(), categoryId, imageUrl: imageUrl.trim(), taxClass, available, hasShot,
+      name: name.trim(), categoryId, imageUrl: imageUrl.trim(), taxClass, taxRates: product?.taxClass === taxClass ? product?.taxRates : undefined, available, hasShot,
       isPfandArticle, hasIndividualPrice,
       shotPrices: undefined,
       prices: { Friedrichshafen: pF, Bregenz: pB },
@@ -576,6 +587,7 @@ function ProductModal({ product, categories, pfandSettings, onSave, onClose }: {
                   </button>
                 ))}
               </div>
+              {product?.taxRates && product.taxClass === taxClass && <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">Importierte Steuersätze gelten: DE {product.taxRates.Friedrichshafen}% / AT {product.taxRates.Bregenz}%. Eine andere Steuerklasse ersetzt diese Sätze beim Speichern.</p>}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Warengruppe</label>

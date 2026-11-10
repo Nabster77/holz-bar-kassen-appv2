@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
-import { fetchCatalogRows, pushCatalogRows } from '@/lib/catalogCloud';
+import { fetchCatalogRows, pushCatalogRows, commitCatalogImport } from '@/lib/catalogCloud';
 import {
   buildLocalEntries,
+  stableStringify,
   computePending,
   keyOf,
   rowToEntry,
@@ -14,7 +15,11 @@ import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 
 export type ConflictChoice = 'cloud' | 'local';
 
+export type CatalogImportSession = { base: LocalCatalog; cloud: CatalogRow[] };
+
 export interface CatalogEngine {
+  prepareImport: () => Promise<CatalogImportSession>;
+  commitImport: (session: CatalogImportSession, next: LocalCatalog) => Promise<void>;
   sync: () => Promise<CatalogSyncResult>;
   localChanged: () => void;
   resolveConflict: (choice: ConflictChoice) => void;
@@ -58,6 +63,7 @@ function differsFromCloud(local: Map<string, CatalogEntry>, rows: CatalogRow[]):
 
 export function createCatalogEngine(deps: CatalogEngineDeps): CatalogEngine {
   const state = loadState();
+  let importing = false;
   let conflictRows: CatalogRow[] | null = null;
   let inFlight: Promise<CatalogSyncResult> | null = null;
 
@@ -130,9 +136,10 @@ export function createCatalogEngine(deps: CatalogEngineDeps): CatalogEngine {
   }
 
   function sync(): Promise<CatalogSyncResult> {
+    if (importing) return Promise.resolve({ ok: false, error: 'Katalogimport läuft.' });
     if (!deps.isEnabled() || !supabase) return Promise.resolve({ ok: false, error: 'Artikel-Synchronisierung ist nicht konfiguriert.' });
     inFlight ??= step()
-      .then(() => ({ ok: true }))
+      .then((complete) => complete ? ({ ok: true }) : ({ ok: false, error: 'Bitte zuerst den Katalogkonflikt auflösen.' }))
       .catch((err) => {
         console.warn('Artikel-Synchronisierung pausiert, neuer Versuch folgt automatisch.', err);
         return { ok: false, error: errorMessage(err) };
@@ -160,5 +167,36 @@ export function createCatalogEngine(deps: CatalogEngineDeps): CatalogEngine {
     void sync();
   }
 
-  return { sync, localChanged, resolveConflict };
+  async function prepareImport(): Promise<CatalogImportSession> {
+    const result = await sync();
+    if (!result.ok) throw new Error(result.error);
+    if (!state.initialized || conflictRows || Object.keys(state.pending).length) throw new Error('Bitte zuerst alle Katalogänderungen synchronisieren.');
+    const cloud = await fetchCatalogRows();
+    const base = structuredClone(deps.getLocal());
+    if (differsFromCloud(buildLocalEntries(base, Date.now()), cloud)) throw new Error('Katalog wird aktualisiert. Bitte Vorschau erneut erstellen, sobald die Synchronisierung abgeschlossen ist.');
+    return { base, cloud };
+  }
+
+  async function commitImport(session: CatalogImportSession, next: LocalCatalog): Promise<void> {
+    if (!deps.isEnabled() || !supabase) throw new Error('Import nur im aktiven Modus mit konfigurierter Test-Cloud möglich.');
+    if (importing) throw new Error('Ein Import läuft bereits.');
+    importing = true;
+    try {
+      if (inFlight) await inFlight;
+      if (stableStringify(deps.getLocal()) !== stableStringify(session.base) || Object.keys(state.pending).length || conflictRows) {
+        throw new Error('Lokaler Katalog wurde seit der Vorschau geändert. Bitte Vorschau neu erstellen.');
+      }
+      const before = buildLocalEntries(session.base, 0);
+      const changes = [...buildLocalEntries(next, Date.now()).entries()]
+        .filter(([key, entry]) => before.get(key)?.json !== entry.json)
+        .map(([, entry]): CatalogRow => ({kind: entry.kind, id: entry.id, data: JSON.parse(entry.json!), updated_at: entry.updatedAt, deleted: false}));
+      if (!changes.length) return;
+      const accepted = await commitCatalogImport(session.cloud, changes);
+      state.synced = Object.fromEntries(accepted.map(row => [keyOf(row.kind, row.id), rowToEntry(row)]));
+      state.pending = {};
+      persist();
+      deps.applyRows(accepted, new Set());
+    } finally { importing = false; }
+  }
+  return { sync, localChanged, resolveConflict, prepareImport, commitImport };
 }

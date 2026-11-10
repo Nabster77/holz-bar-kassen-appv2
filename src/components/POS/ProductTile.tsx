@@ -1,6 +1,6 @@
 import type { Product, Location } from '@/types';
 import { formatCurrency } from '@/lib/format';
-import { taxRateForClass } from '@/lib/tax';
+import { taxRateForProduct } from '@/lib/tax';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Package, GripVertical, Euro } from 'lucide-react';
 
@@ -41,7 +41,7 @@ export function ProductTile({
           <Package className="h-10 w-10 text-gray-300 dark:text-gray-500" />
         )}
         <span className="absolute right-1.5 top-1.5 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-white">
-          {taxRateForClass(product.taxClass, location)}%
+          {taxRateForProduct(product, location)}%
         </span>
         {product.hasShot && (
           <span className="absolute left-1.5 top-1.5 rounded-full bg-blue-600/90 px-1.5 py-0.5 text-[9px] font-bold text-white">

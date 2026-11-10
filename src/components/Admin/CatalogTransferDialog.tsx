@@ -1,0 +1,104 @@
+import { useState } from 'react';
+import type { LocalCatalog } from '@/lib/catalogSync';
+import type { CatalogImportSession } from '@/lib/catalogEngine';
+import { buildImportPlan, exportWorkbook, readImageZip, readWorkbook, type ImportPlan } from '@/lib/catalogTransfer';
+import { uploadArticleImage } from '@/lib/imageUpload';
+import { importFileToDataURL } from '@/lib/imageImport';
+
+export interface CatalogTransferProps {
+  catalog: LocalCatalog;
+  testMode: boolean;
+  onPrepare: () => Promise<CatalogImportSession>;
+  onCommit: (session: CatalogImportSession, next: LocalCatalog) => Promise<void>;
+  onClose: () => void;
+}
+export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, onClose }: CatalogTransferProps) {
+  const [excel, setExcel] = useState<File | null>(null);
+  const [zip, setZip] = useState<File | null>(null);
+  const [replace, setReplace] = useState(false);
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
+  const [session, setSession] = useState<CatalogImportSession | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [done, setDone] = useState(false);
+  const invalidate = () => {setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
+  const stale = session && JSON.stringify(session.base) !== JSON.stringify(catalog);
+  async function preview() {
+    if (!excel) return;
+    setBusy(true); invalidate();
+    try {
+      if (excel.size > 10 * 1024 * 1024) throw new Error('Excel-Datei ist größer als 10 MB.');
+      if (zip && zip.size > 100 * 1024 * 1024) throw new Error('ZIP ist größer als 100 MB.');
+      const sheets = await readWorkbook(await excel.arrayBuffer());
+      const images = zip ? readImageZip(new Uint8Array(await zip.arrayBuffer())) : [];
+      const snapshot = testMode ? {base: structuredClone(catalog), cloud: []} : await onPrepare();
+      setSession(snapshot); setPlan(buildImportPlan(sheets, snapshot.base, images, replace));
+    } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
+  }
+  async function commit() {
+    if (!plan || !session || !confirmed || plan.errors.length || stale || testMode || busy || done) return;
+    setBusy(true); setMessage('');
+    let uploaded = 0;
+    try {
+      const next = structuredClone(plan.next);
+      // Validate and decode each image. Unique object names preserve old storage objects.
+      for (const [productId, image] of Object.entries(plan.images)) {
+        const file = new File([new Uint8Array(image.bytes)], image.path.split('/').pop()!, {type: image.mime});
+        let converted = file;
+        if (image.mime !== 'image/webp') {
+          const dataUrl = await importFileToDataURL(file);
+          const blob = await (await fetch(dataUrl)).blob();
+          converted = new File([blob], 'image', {type: blob.type});
+        } else {
+          const bitmap = await createImageBitmap(file); bitmap.close();
+        }
+        const url = await uploadArticleImage(converted);
+        if (!url) throw new Error(`Bild „${image.path}“ konnte nicht hochgeladen werden. Katalog wurde nicht importiert. Bereits hochgeladene neue Bilder bleiben unreferenziert; vorhandene Bilder bleiben erhalten.`);
+        uploaded++;
+        next.products.find(p => p.id === productId)!.imageUrl = url;
+      }
+      await onCommit(session, next);
+      setDone(true); setConfirmed(false); setMessage('Import vollständig in Supabase gespeichert und lokal übernommen.');
+    } catch (e) {
+      setMessage(`${(e as Error).message}${uploaded ? ` ${uploaded} neue Bilddateien wurden hochgeladen und können unreferenziert sein. Vor erneutem Import synchronisieren und Vorschau neu erstellen.` : ''}`); setConfirmed(false);
+      // After an uncertain network result, force a fresh cloud read rather than retrying stale data.
+      setSession(null);
+    } finally {setBusy(false);}
+  }
+  async function download() {
+    setBusy(true); setMessage('');
+    try {
+      const bytes = await exportWorkbook(catalog);
+      const url = URL.createObjectURL(new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      const a = document.createElement('a'); a.href = url; a.download = `WOODMO-Katalog-${new Date().toISOString().slice(0,10)}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
+  }
+  const button = 'rounded-xl border border-gray-400 px-4 py-2 disabled:opacity-40';
+  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="catalog-transfer-title">
+    <div className="flex max-h-[94vh] w-full max-w-5xl flex-col rounded-2xl bg-white p-5 text-gray-900 shadow-2xl dark:bg-gray-800 dark:text-white">
+      <div className="flex items-center justify-between gap-4"><h2 id="catalog-transfer-title" className="text-lg font-bold">Excel-Import / Export</h2><button disabled={busy} onClick={onClose} className={button}>Schließen</button></div>
+      <div className="mt-3 overflow-auto space-y-4">
+        <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert.</p>
+        <button disabled={busy} onClick={download} className={button}>Vollständigen Katalog als Excel exportieren</button>
+        <p className="text-sm">Die Preisliste 2026 und das Exportformat werden unterstützt. Neue Artikel sind ohne Pfand und ohne SCHUSS-Zuschlag voreingestellt; diese Merkmale können im Export über „Pfandartikel“ und „Schuss erlaubt“ geändert werden.</p>
+        <label className="block">Excel (.xlsx)<input disabled={busy} className="ml-3" type="file" accept=".xlsx" onChange={e => {invalidate();setExcel(e.target.files?.[0] ?? null);}} /></label>
+        <label className="block">Bilder-ZIP (optional)<input disabled={busy} className="ml-3" type="file" accept=".zip" onChange={e => {invalidate();setZip(e.target.files?.[0] ?? null);}} /></label>
+        <label className="flex items-center gap-2"><input disabled={busy} type="checkbox" checked={replace} onChange={e => {invalidate();setReplace(e.target.checked);}} />Vorhandene Bildzuordnungen ausdrücklich ersetzen (alte Bilddateien bleiben erhalten)</label>
+        <p className="text-sm">ZIP-Unterordner werden berücksichtigt. Groß-/Kleinschreibung, Umlaute, Leerzeichen und Kopienummern wie „(2)“ werden beim Bildabgleich vereinheitlicht. Abweichende Namen bitte vorab in der ZIP korrigieren.</p>
+        {testMode && <p className="rounded-xl bg-amber-100 p-3 text-amber-900">Testmodus: lokale Vorschau und Export möglich. Import und Bild-Uploads sind gesperrt. Für den vollständigen Test einen isolierten Supabase-Testbestand verwenden.</p>}
+        <button disabled={busy || !excel} onClick={preview} className={button}>{busy ? 'Bitte warten …' : 'Vorschau erstellen'}</button>
+        {message && <p role="status" className="rounded-xl border border-blue-400 p-3 whitespace-pre-wrap">{message}</p>}
+        {plan && <>
+          <p className="font-semibold">{plan.rows.filter(r => r.status === 'neu').length} neu · {plan.rows.filter(r => r.status === 'geändert').length} geändert · {plan.rows.filter(r => r.status === 'unverändert').length} unverändert · {plan.errors.length} Konflikte</p>
+          {plan.errors.length > 0 && <div role="alert" className="rounded-xl border border-red-500 p-3"><strong>Import gesperrt – Konflikte zuerst beheben:</strong><ul className="list-disc pl-5">{plan.errors.map((e,i) => <li key={i}>{e}</li>)}</ul></div>}
+          {plan.warnings.length > 0 && <details><summary>{plan.warnings.length} Bildhinweise</summary><ul className="list-disc pl-5">{plan.warnings.map((w,i) => <li key={i}>{w}</li>)}</ul></details>}
+          <div className="max-h-80 overflow-auto rounded-xl border border-gray-400"><table className="w-full text-left text-sm"><thead className="sticky top-0 bg-gray-100 dark:bg-gray-900"><tr><th className="p-2">Typ</th><th>Name</th><th>Status</th><th>Änderungen / Bild</th></tr></thead><tbody>{plan.rows.map((r,i) => <tr className="border-t border-gray-300 align-top" key={i}><td className="p-2">{r.kind}</td><td className="p-2">{r.name}</td><td className="p-2">{r.status}</td><td className="p-2 break-all"><details><summary>{r.changes.length} Feldänderungen{r.image ? ` · ZIP: ${r.image}${replace ? ' (Bildersatz freigegeben)' : ''}` : ''}</summary>{r.changes.map((c,j) => <p key={j}>{c}</p>)}</details></td></tr>)}</tbody></table></div>
+          {stale && !done && <p role="alert">Der lokale Katalog hat sich geändert. Bitte Vorschau neu erstellen.</p>}
+          <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || done || !session || !!stale || testMode || !!plan.errors.length} checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Ich habe die Vorschau einschließlich SCHUSS-, Pfand- und Bildänderungen geprüft und bestätige den Import.</label>
+          <button className="rounded-xl bg-blue-700 px-4 py-2 font-bold text-white disabled:opacity-40" disabled={!confirmed || busy || done || !session || !!stale || testMode || !!plan.errors.length} onClick={commit}>Jetzt verbindlich importieren</button>
+        </>}
+      </div>
+    </div>
+  </div>;
+}
