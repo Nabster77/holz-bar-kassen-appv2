@@ -34,7 +34,7 @@ function imageSimilarity(article: string, filePath: string): number {
 }
 /** Product sizes and copied-file suffixes do not affect the photo identity. */
 function imageIdentity(value: string): string {
-  const withoutSize = value.replace(/\\((?:s|m|l)\\)/gi, ' ').replace(/\\b(?:klein|gross|groß)\\b/gi, ' ');
+  const withoutSize = value.replace(/\((?:s|m|l)\)/gi, ' ').replace(/\b(?:klein|gross|groß)\b/gi, ' ');
   return normalizeName(withoutSize)
     .replace(/^aromaboxen$/, 'aromabox')
     .replace(/^duftklotze$/, 'duftklotz')
@@ -42,7 +42,7 @@ function imageIdentity(value: string): string {
     .replace(/^schnapssbrett/, 'schnapsbrett');
 }
 function imageStem(path: string): string {
-  return path.split('/').pop()!.replace(/\\.[^.]+$/, '');
+  return path.split('/').pop()!.replace(/\.[^.]+$/, '');
 }
 const text = (v: unknown) => String(v ?? '').trim();
 const empty = (v: unknown) => v === undefined || v === null || v === '';
