@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createCatalogEngine, type ConflictChoice } from '@/lib/catalogEngine';
-import type { CatalogRow } from '@/lib/catalogSync';
+import { stableStringify, type CatalogRow } from '@/lib/catalogSync';
 import type { Category, PfandSettings, Product, ShotOption } from '@/types';
 
 interface CatalogSyncOptions {
@@ -16,6 +16,7 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
   const [conflict, setConflict] = useState<CatalogRow[] | null>(null);
   const [syncStatus, setSyncStatus] = useState<'pending' | 'syncing' | 'saved' | 'error'>('pending');
   const revision = useRef(0);
+  const lastCatalogSnapshot = useRef<string | null>(null);
 
   const localRef = useRef({ categories, products, pfandSettings, shotOptions });
   localRef.current = { categories, products, pfandSettings, shotOptions };
@@ -33,7 +34,7 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
     }),
   );
 
-  const syncCatalog = useCallback(async (background = false) => {
+  const syncCatalog = useCallback(async (background = true) => {
     if (testModeRef.current) return { ok: false, error: 'Im Testmodus ist die Cloud-Synchronisierung deaktiviert.' };
     const startedAt = revision.current;
     if (!background) setSyncStatus('syncing');
@@ -47,13 +48,18 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
   }, [engine]);
 
   useEffect(() => {
+    // React can replace arrays with identical data after a cloud pull. Only a
+    // real catalog content change should put the status back into pending.
+    const snapshot = stableStringify({ categories, products, pfandSettings, shotOptions });
+    if (lastCatalogSnapshot.current === snapshot) return;
+    const firstRender = lastCatalogSnapshot.current === null;
+    lastCatalogSnapshot.current = snapshot;
     engine.localChanged();
     if (testMode) return;
     const current = ++revision.current;
-    setSyncStatus('pending');
-    // Allow rapid field edits to settle before verifying the automatic cloud sync.
+    if (!firstRender) setSyncStatus('pending');
     const timer = window.setTimeout(() => {
-      if (revision.current === current) void syncCatalog();
+      if (revision.current === current) void syncCatalog(firstRender);
     }, 700);
     return () => window.clearTimeout(timer);
   }, [engine, categories, products, pfandSettings, shotOptions, testMode, syncCatalog]);
