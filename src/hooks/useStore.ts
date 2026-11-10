@@ -102,6 +102,20 @@ export function useStore() {
     });
   }, []);
 
+  const moveCategoryTo = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === SHOT_CATEGORY_ID || targetId === SHOT_CATEGORY_ID) return;
+    setCategories((cs) => {
+      const sorted = [...cs.filter(c => c.id !== SHOT_CATEGORY_ID)].sort((a, b) => a.sortOrder - b.sortOrder);
+      const sourceIdx = sorted.findIndex(c => c.id === sourceId);
+      const targetIdx = sorted.findIndex(c => c.id === targetId);
+      if (sourceIdx < 0 || targetIdx < 0 || sourceIdx === targetIdx) return cs;
+      const [moved] = sorted.splice(sourceIdx, 1);
+      sorted.splice(targetIdx, 0, moved);
+      const shot = cs.filter(c => c.id === SHOT_CATEGORY_ID);
+      return normalizeCategories([...sorted.map((c, i) => ({ ...c, sortOrder: i })), ...shot]);
+    });
+  }, []);
+
   // Product CRUD
   const addProduct = useCallback((data: Omit<Product, 'id'>) => {
     setProducts((ps) => [...ps, { ...data, id: uid('p') }]);
@@ -459,6 +473,7 @@ export function useStore() {
     updateCategory,
     deleteCategory,
     reorderCategory,
+    moveCategoryTo,
     addProduct,
     updateProduct,
     deleteProduct,
