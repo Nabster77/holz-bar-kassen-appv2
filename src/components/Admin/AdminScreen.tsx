@@ -251,7 +251,7 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
       </div>
       <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          Nach Name:
+          Sortierung:
           <select aria-label="Warengruppen sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'manual' | 'asc' | 'desc'); setDragEnabled(false); }}
             className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
             <option value="manual">Eigene Reihenfolge</option>
@@ -477,7 +477,7 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
       </div>
       <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          Nach Name:
+          Sortierung:
           <select aria-label="Artikel sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'alphabetical' | 'reverse' | 'manual'); setDragEnabled(false); }}
             className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
             <option value="manual">Eigene Reihenfolge</option>
