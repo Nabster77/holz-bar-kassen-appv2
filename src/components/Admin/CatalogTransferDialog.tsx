@@ -15,6 +15,7 @@ export interface CatalogTransferProps {
 export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, onClose }: CatalogTransferProps) {
   const [excel, setExcel] = useState<File | null>(null);
   const [zip, setZip] = useState<File | null>(null);
+  const [zipSummary, setZipSummary] = useState('');
   const [replace, setReplace] = useState(false);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [session, setSession] = useState<CatalogImportSession | null>(null);
@@ -22,7 +23,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [done, setDone] = useState(false);
-  const invalidate = () => {setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
+  const invalidate = () => {setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
   const stale = session && JSON.stringify(session.base) !== JSON.stringify(catalog);
   async function preview() {
     if (!excel) return;
@@ -32,6 +33,9 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       if (zip && zip.size > 100 * 1024 * 1024) throw new Error('ZIP ist größer als 100 MB.');
       const sheets = await readWorkbook(await excel.arrayBuffer());
       const images = zip ? readImageZip(new Uint8Array(await zip.arrayBuffer())) : [];
+      const counts = new Map<string, number>();
+      for (const image of images) { const folder = image.path.includes('/') ? image.path.split('/')[0] : '(Hauptordner)'; counts.set(folder, (counts.get(folder) ?? 0) + 1); }
+      setZipSummary(zip ? `ZIP „${zip.name}“: ${images.length} Bilder erkannt (${Array.from(counts, ([folder, count]) => `${folder}: ${count}`).join(', ') || 'keine Bilddateien'}).` : 'Keine ZIP-Datei ausgewählt.');
       const snapshot = testMode ? {base: structuredClone(catalog), cloud: []} : await onPrepare();
       setSession(snapshot); setPlan(buildImportPlan(sheets, snapshot.base, images, replace));
     } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
@@ -85,7 +89,8 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         <label className="block">Excel (.xlsx)<input disabled={busy} className="ml-3" type="file" accept=".xlsx" onChange={e => {invalidate();setExcel(e.target.files?.[0] ?? null);}} /></label>
         <label className="block">Bilder-ZIP (optional)<input disabled={busy} className="ml-3" type="file" accept=".zip" onChange={e => {invalidate();setZip(e.target.files?.[0] ?? null);}} /></label>
         <label className="flex items-center gap-2"><input disabled={busy} type="checkbox" checked={replace} onChange={e => {invalidate();setReplace(e.target.checked);}} />Vorhandene Bildzuordnungen ausdrücklich ersetzen (alte Bilddateien bleiben erhalten)</label>
-        <p className="text-sm">ZIP-Unterordner werden berücksichtigt. Groß-/Kleinschreibung, Umlaute, Leerzeichen und Kopienummern wie „(2)“ werden beim Bildabgleich vereinheitlicht. Abweichende Namen bitte vorab in der ZIP korrigieren.</p>
+        <p className="text-sm">ZIP-Unterordner werden berücksichtigt. Groß-/Kleinschreibung, Umlaute, Leerzeichen und Kopienummern wie „(2)“ werden beim Bildabgleich vereinheitlicht. Bei abweichenden Namen werden unverbindliche Bildvorschläge angezeigt; sie werden nicht automatisch importiert.</p>
+        {zipSummary && <p role="status" className="text-sm font-semibold">{zipSummary}</p>}
         {testMode && <p className="rounded-xl bg-amber-100 p-3 text-amber-900">Testmodus: lokale Vorschau und Export möglich. Import und Bild-Uploads sind gesperrt. Für den vollständigen Test einen isolierten Supabase-Testbestand verwenden.</p>}
         <button disabled={busy || !excel} onClick={preview} className={button}>{busy ? 'Bitte warten …' : 'Vorschau erstellen'}</button>
         {message && <p role="status" className="rounded-xl border border-blue-400 p-3 whitespace-pre-wrap">{message}</p>}
