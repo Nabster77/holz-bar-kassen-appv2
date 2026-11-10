@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Lock, Check, X, Loader2 } from 'lucide-react';
 import { verifyManagerPassword } from '@/lib/managerAuth';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
@@ -24,27 +24,7 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
-  const [visibleArea, setVisibleArea] = useState<{ top: number; height: number } | null>(null);
-
-  // Center the gate in the actual visible viewport when Android opens its keyboard.
-  // A fixed overlay avoids the parent page's overflow:hidden clipping the dialog.
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const update = () => setVisibleArea({
-      top: viewport.offsetTop,
-      height: viewport.height,
-    });
-    update();
-    viewport.addEventListener('resize', update);
-    viewport.addEventListener('scroll', update);
-    window.addEventListener('orientationchange', update);
-    return () => {
-      viewport.removeEventListener('resize', update);
-      viewport.removeEventListener('scroll', update);
-      window.removeEventListener('orientationchange', update);
-    };
-  }, []);
+  const [passwordFocused, setPasswordFocused] = useState(false);
 
   async function handleSubmit() {
     if (checking) return;
@@ -74,13 +54,12 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 z-40 flex items-center justify-center overflow-y-auto px-3 py-3"
-      style={{ top: visibleArea?.top ?? 0, height: visibleArea?.height ?? '100dvh' }}
+      className={`pointer-events-none fixed inset-0 z-40 flex justify-center overflow-y-auto px-3 ${passwordFocused ? 'items-start py-2' : 'items-center py-3'}`}
     >
-      <div className="pointer-events-auto my-auto w-full max-w-sm shrink-0 rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800">
-        <div className="mb-5 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg">
-            <Lock className="h-8 w-8" />
+      <div className={`pointer-events-auto w-full max-w-sm shrink-0 rounded-3xl bg-white shadow-xl dark:bg-gray-800 ${passwordFocused ? 'my-0 p-3' : 'my-auto p-6'}`}>
+        <div className={`${passwordFocused ? 'mb-2 gap-1' : 'mb-5 gap-3'} flex flex-col items-center text-center`}>
+          <div className={`${passwordFocused ? 'h-9 w-9' : 'h-16 w-16'} flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg`}>
+            <Lock className={passwordFocused ? "h-5 w-5" : "h-8 w-8"} />
           </div>
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h3>
         </div>
@@ -94,6 +73,8 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
             name="admin-gate-secret"
             autoComplete="new-password"
             value={input}
+            onFocus={() => setPasswordFocused(true)}
+            onBlur={() => setPasswordFocused(false)}
             onChange={(e) => { setInput(e.target.value); setError(null); }}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
             placeholder="Passwort"
