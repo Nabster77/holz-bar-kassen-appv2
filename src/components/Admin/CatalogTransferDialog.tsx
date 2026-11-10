@@ -185,7 +185,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           <p className="mt-2"><strong>Dateien:</strong> Produktbilder in einem ZIP-Archiv (.zip) speichern; Unterordner mit Bildern sind erlaubt. Pro Bild max. 500 KB und 800 × 800 Pixel; erlaubt sind PNG, JPG/JPEG, WebP und BMP.</p>
         <div className="mt-3 rounded-lg border border-red-400 px-3 py-3 leading-relaxed">
           <p className="text-base font-bold">WICHTIG: Bilddateiname muss zum Produktnamen passen!</p>
-          <p className="mt-2 text-sm">Beispiel: „Gluehwein Rot.png“ zu „Glühwein Rot“.</p>
+          <p className="mt-2 text-sm">Beispiel: „Gluehwein Rot.png“ zu „Glühwein Rot“. z. B. Ü oder UE ist egal – das System erkennt beides als gleich!</p>
         </div>
         </div>
         <div className="flex flex-wrap gap-2">
