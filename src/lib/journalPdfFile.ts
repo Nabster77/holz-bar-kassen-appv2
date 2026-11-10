@@ -269,6 +269,12 @@ function getSafePages(doc: Document, maxPageHeightPx: number): PageSlice[] {
   });
   // Unlike browser printing, canvas slicing does not repeat THEAD automatically.
   const rows = [...doc.querySelectorAll('tr')].map(row => ({ start: relativeTop(row, bodyRect), end: relativeBottom(row, bodyRect) }));
+  // A daily close also has sections without a table (e.g. deposit control).
+  // Keep their heading with the box rather than leaving it on the prior page.
+  const textSections = [...doc.querySelectorAll('.report-block')]
+    .filter(section => !section.querySelector('table'))
+    .map(section => ({ start: relativeTop(section, bodyRect), end: relativeBottom(section, bodyRect) }))
+    .filter(section => section.end - section.start <= maxPageHeightPx);
 
   const pages: PageSlice[] = [];
   let from = 0;
@@ -287,7 +293,7 @@ function getSafePages(doc: Document, maxPageHeightPx: number): PageSlice[] {
       end: block.end - block.start <= maxPageHeightPx ? block.end : block.requiredEnd,
     }));
     const unbrokenRows = rows.filter(row => row.end - row.start <= capacity);
-    const isSafe = (point: number) => ![...protectedRanges, ...unbrokenRows]
+    const isSafe = (point: number) => ![...protectedRanges, ...unbrokenRows, ...textSections]
       .some(block => point > block.start && point < block.end);
     const safe = candidates.filter(point => point > from && point <= target && isSafe(point)).pop();
     const next = safe ?? target;
@@ -323,6 +329,7 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
     const contentHeight = pageHeight - PDF_CONTENT_TOP_MM - PDF_CONTENT_BOTTOM_MM;
     const maxPageHeightPx = Math.floor(contentHeight / (contentWidth / RENDER_WIDTH_PX));
     let pages: PageSlice[] = [];
+    let pageLabels: { start: number; text: string; color: string }[] = [];
 
     const canvas = await html2canvas(body, {
       scale: 2,
@@ -333,7 +340,14 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
       useCORS: true,
       // Measure the very DOM that is rasterized. html2canvas may reflow a
       // cloned table; measuring the original can cut through a title instead.
-      onclone: (renderDoc) => { pages = getSafePages(renderDoc, maxPageHeightPx); },
+      onclone: (renderDoc) => {
+        pages = getSafePages(renderDoc, maxPageHeightPx);
+        const bounds = renderDoc.body.getBoundingClientRect();
+        pageLabels = [...renderDoc.querySelectorAll<HTMLElement>('[data-pdf-page-header]')]
+          .map(element => ({ start: relativeTop(element, bounds), text: element.dataset.pdfPageHeader ?? '',
+            color: element.dataset.pdfPageLocation === 'Bregenz' ? '#0f766e' : '#1e3a5f' }))
+          .filter(label => label.text.trim()).sort((a, b) => a.start - b.start);
+      },
     });
     const canvasScale = canvas.width / RENDER_WIDTH_PX;
 
@@ -360,6 +374,16 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
 
       const sliceHeightMm = (slice.height / canvas.width) * contentWidth;
       pdf.addImage(slice.toDataURL('image/png'), 'PNG', PDF_MARGIN_X_MM, PDF_CONTENT_TOP_MM, contentWidth, sliceHeightMm, undefined, 'FAST');
+      const label = pageLabels.filter(candidate => candidate.start <= from).pop();
+      if (index > 0 && label && from > label.start) {
+        // Use the existing top margin, leaving pagination and totals unchanged.
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        const width = pdf.getTextWidth(label.text);
+        if (width > contentWidth) pdf.setFontSize(8 * contentWidth / width);
+        pdf.setTextColor(label.color);
+        pdf.text(label.text, PDF_MARGIN_X_MM, 8);
+      }
       pdf.setDrawColor(203, 213, 225);
       pdf.line(PDF_MARGIN_X_MM, pageHeight - 13, pageWidth - PDF_MARGIN_X_MM, pageHeight - 13);
       pdf.setFont('helvetica', 'normal');
