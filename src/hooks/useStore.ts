@@ -187,6 +187,7 @@ export function useStore() {
   }, [activeSession, selectedLocation]);
 
   const openCashSession = useCallback((location: Location, openingBalance: number, staff?: StaffUser) => {
+    if (!Number.isFinite(openingBalance) || openingBalance <= 0) return;
     setSelectedLocation(location);
     const openedAt = Date.now();
     const session: CashSession = {
@@ -212,6 +213,7 @@ export function useStore() {
   }, []);
 
   const correctOpeningBalance = useCallback((sessionId: string, newAmount: number, reason: string, staff?: StaffUser) => {
+    if (!Number.isFinite(newAmount) || newAmount <= 0 || !reason.trim()) return;
     setCashSessions((ss) =>
       ss.map((s) => {
         if (s.id !== sessionId || s.closed) return s;
