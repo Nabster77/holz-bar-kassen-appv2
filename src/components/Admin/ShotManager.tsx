@@ -58,8 +58,18 @@ export function ShotManager({ shots, onChange, onDirtyChange }: { shots: ShotOpt
     });
     pending.current = JSON.stringify(next);
     onChange(next);
-    setNotice('Änderungen lokal übernommen. Den Cloud-Abgleich bitte über „Synchronisieren“ prüfen.');
+    setNotice('Änderung automatisch übernommen. Der Cloud-Status steht oben in der Kopfzeile.');
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!dirty || invalid || conflict) return;
+    // Commit valid edits automatically after typing stops. This also covers
+    // deleting a row or switching tabs without requiring a manual save.
+    const timer = window.setTimeout(() => saveRef.current(), 900);
+    return () => window.clearTimeout(timer);
+  }, [rows, dirty, invalid, conflict]);
+
   const update = (id: string, field: keyof Row, value: string) => {
     setRows(current => current.map(row => row.id === id ? { ...row, [field]: value } : row));
     setNotice('');
@@ -72,14 +82,14 @@ export function ShotManager({ shots, onChange, onDirtyChange }: { shots: ShotOpt
         aria-invalid={!!error} aria-describedby={error ? `shot-${row.id}-${field}-error` : undefined}
         inputMode={field === 'name' ? 'text' : 'decimal'} value={row[field]}
         placeholder={field === 'name' ? 'Neue Schuss-Sorte' : field === 'price' ? '2,00' : 'Grundpreis gilt'}
-        onChange={event => update(row.id, field, event.target.value)} className={inputClass} />
+        onChange={event => update(row.id, field, event.target.value)} onBlur={() => { if (dirty && !invalid && !conflict) saveRef.current(); }} className={inputClass} />
       {error && <p id={`shot-${row.id}-${field}-error`} className="mt-1 text-xs text-red-600 dark:text-red-300">{error}</p>}
     </td>;
   };
   return <div className="space-y-4">
     <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-900/20">
       <h3 className="text-lg font-bold text-violet-900 dark:text-violet-100">SCHUSS – zentrale Verwaltung</h3>
-      <p className="mt-1 text-sm text-violet-800 dark:text-violet-200">Namen und Preise direkt ändern, mit Tab zum nächsten Feld wechseln und anschließend gemeinsam speichern. Leere Standortpreise übernehmen den Grundpreis.</p>
+      <p className="mt-1 text-sm text-violet-800 dark:text-violet-200">Namen und Preise direkt ändern: Beim Verlassen des Feldes oder nach kurzer Eingabepause wird automatisch gespeichert und mit der Cloud abgeglichen. Leere Standortpreise übernehmen den Grundpreis.</p>
     </div>
     <label className="flex items-center gap-2 text-sm dark:text-white">
       <input type="checkbox" checked={showLocations} onChange={event => setShowLocations(event.target.checked)} /> Standortpreise anzeigen
@@ -103,7 +113,7 @@ export function ShotManager({ shots, onChange, onDirtyChange }: { shots: ShotOpt
     </div>
     <div className="flex flex-wrap items-center gap-3">
       <button type="button" onClick={() => { setRows(current => [...current, { id: 'shot-' + crypto.randomUUID(), name: '', price: '', Friedrichshafen: '', Bregenz: '' }]); setNotice(''); }} className="rounded-lg border px-4 py-2 dark:text-white">+ Schussartikel</button>
-      <button type="button" disabled={!dirty || invalid || conflict} onClick={save} className="rounded-lg bg-green-600 px-4 py-2 font-bold text-white disabled:opacity-40">Änderungen speichern</button>
+      <button type="button" disabled={!dirty || invalid || conflict} onClick={save} className="rounded-lg bg-green-600 px-4 py-2 font-bold text-white disabled:opacity-40">Jetzt speichern</button>
       <button type="button" disabled={!dirty} onClick={reset} className="rounded-lg border px-4 py-2 disabled:opacity-40 dark:text-white">Verwerfen</button>
       {dirty && <span className="text-sm text-amber-700 dark:text-amber-300">Ungespeicherte Änderungen</span>}
     </div>
