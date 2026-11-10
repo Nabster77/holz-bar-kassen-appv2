@@ -28,6 +28,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [helpOpen, setHelpOpen] = useState(false);
   const [importProgress, setImportProgress] = useState<{done:number;total:number;stage:string} | null>(null);
   const [message, setMessage] = useState('');
+  const [fileError, setFileError] = useState('');
   const [done, setDone] = useState(false);
   const invalidate = () => {setGenerated({});setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setImportProgress(null); setMessage('');};
   const stale = session && JSON.stringify(session.base) !== JSON.stringify(catalog);
@@ -41,12 +42,12 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
     const limit = kind === 'excel' ? 10 : 100;
     if (!file.name.toLocaleLowerCase('de-DE').endsWith(expected)) {
       if (kind === 'excel') setExcel(null); else setZip(null);
-      setMessage(`Falsches Dateiformat: Für ${kind === 'excel' ? 'Excel' : 'Bilder'} bitte eine ${expected}-Datei auswählen. „${file.name}“ wurde nicht übernommen.`);
+      setFileError(`Falsches Dateiformat: Für ${kind === 'excel' ? 'Excel' : 'Bilder'} bitte eine ${expected}-Datei auswählen. „${file.name}“ wurde nicht übernommen.`);
       return;
     }
     if (file.size > limit * 1024 * 1024) {
       if (kind === 'excel') setExcel(null); else setZip(null);
-      setMessage(`„${file.name}“ ist zu groß. Maximum: ${limit} MB.`);
+      setFileError(`„${file.name}“ ist zu groß. Maximum: ${limit} MB.`);
       return;
     }
     if (kind === 'excel') setExcel(file); else setZip(file);
@@ -64,7 +65,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       setZipSummary(zip ? `ZIP „${zip.name}“: ${images.length} Bilder erkannt (${Array.from(counts, ([folder, count]) => `${folder}: ${count}`).join(', ') || 'keine Bilddateien'}).` : 'Keine ZIP-Datei ausgewählt.');
       const snapshot = testMode ? {base: structuredClone(catalog), cloud: []} : await onPrepare();
       setSession(snapshot); setPlan(buildImportPlan(sheets, snapshot.base, images, replace));
-    } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
+    } catch (e) {setFileError((e as Error).message);} finally {setBusy(false);}
   }
   async function generateImage(productId: string, name: string) {
     if (!supabase || !plan || busy || testMode || generated[productId]) return;
@@ -106,6 +107,10 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         } else {
           const bitmap = await createImageBitmap(file); bitmap.close();
         }
+        const bitmapCheck = await createImageBitmap(converted);
+        const tooLarge = bitmapCheck.width > 800 || bitmapCheck.height > 800;
+        bitmapCheck.close();
+        if (tooLarge || converted.size > 500 * 1024) throw new Error(`Bild „${image.path}“ überschreitet 800 × 800 Pixel oder 500 KB.`);
         const url = await uploadArticleImage(converted);
         if (!url) throw new Error(`Bild „${image.path}“ konnte nicht hochgeladen werden. Katalog wurde nicht importiert. Bereits hochgeladene neue Bilder bleiben unreferenziert; vorhandene Bilder bleiben erhalten.`);
         uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'ZIP-Bilder hochladen'});
@@ -160,11 +165,18 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="catalog-transfer-title">
     <div className="flex max-h-[94vh] w-full max-w-5xl flex-col rounded-2xl bg-white p-5 text-gray-900 shadow-2xl dark:bg-gray-800 dark:text-white">
       <div className="flex items-center justify-between gap-4"><h2 id="catalog-transfer-title" className="text-lg font-bold">Excel-Import / Export</h2><button disabled={busy} onClick={onClose} className={button}>Schließen</button></div>
+      {fileError && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4" role="presentation">
+        <div role="alertdialog" aria-modal="true" aria-labelledby="catalog-file-error-title" aria-describedby="catalog-file-error-text" className="w-full max-w-md rounded-xl bg-white p-5 text-gray-900 shadow-2xl dark:bg-gray-800 dark:text-white">
+          <h3 id="catalog-file-error-title" className="text-lg font-bold text-red-600">Dateifehler</h3>
+          <p id="catalog-file-error-text" className="my-4">{fileError}</p>
+          <button autoFocus type="button" onClick={() => setFileError('')} className={button}>OK</button>
+        </div>
+      </div>}
       <div className="mt-3 overflow-auto space-y-4">
         <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert.</p>
         <div className="rounded-xl border-2 border-red-600 p-3 text-sm text-red-700 dark:text-red-300" role="note">
           <strong>WICHTIG – Import richtig vorbereiten:</strong> Lade zuerst die „Excel-Mustervorlage“ herunter. Du darfst Artikel, Preise und Pfandbeträge ändern oder weitere Artikelzeilen ergänzen. Behalte die Pfandzeilen oberhalb der Tabelle und die acht Spaltenüberschriften bei.
-          <p className="mt-2"><strong>Dateien:</strong> Excel nur als .xlsx (max. 10 MB), Bilder nur als .zip (max. 100 MB). Pro Bild max. 10 MB; erlaubt sind PNG, JPG/JPEG, WebP und BMP. Der Bilddateiname muss zum Produktnamen passen, z. B. „Gluehwein Rot.png“ zu „Glühwein Rot“.</p>
+          <p className="mt-2"><strong>Dateien:</strong> Excel nur als .xlsx (max. 10 MB), Bilder nur als .zip (max. 100 MB). Pro Bild max. 500 KB und 800 × 800 Pixel; erlaubt sind PNG, JPG/JPEG, WebP und BMP. Der Bilddateiname muss zum Produktnamen passen, z. B. „Gluehwein Rot.png“ zu „Glühwein Rot“.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} onClick={download} className={button}>Vollständigen Katalog als Excel exportieren</button>
@@ -197,7 +209,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           </div>
           <p><strong>Preis:</strong> „fix“ bedeutet fester Verkaufspreis, „individuell“ erlaubt die Eingabe an der Kasse. <strong>Steuer DE</strong> gilt für Friedrichshafen, <strong>Steuer AT</strong> für Bregenz. <strong>Schuss und Pfand:</strong> „x“ aktiviert das jeweilige Häkchen, eine leere Zelle deaktiviert es. Der Pfandbetrag kommt aus dem oberen Tabellenbereich.</p>
           <h3 className="font-semibold">Eigene Artikelbilder als ZIP hinzufügen (optional)</h3>
-          <p className="font-semibold text-red-700 dark:text-red-300">WICHTIG: Excel = .xlsx (max. 10 MB), Bilder = .zip (max. 100 MB). Jedes Bild maximal 10 MB und nur PNG, JPG/JPEG, WebP oder BMP. Bildname = Produktname (Umlaute dürfen als ae/oe/ue geschrieben werden).</p>
+          <p className="font-semibold text-red-700 dark:text-red-300">WICHTIG: Excel = .xlsx (max. 10 MB), Bilder = .zip (max. 100 MB). Jedes Bild maximal 500 KB, höchstens 800 × 800 Pixel und nur PNG, JPG/JPEG, WebP oder BMP. Bildname = Produktname (Umlaute dürfen als ae/oe/ue geschrieben werden).</p>
           <p>Lege deine Produktbilder in einen Ordner und komprimiere ihn als ZIP-Datei. Benenne jedes Bild wie den Artikel in der Spalte „Produktname App“, zum Beispiel „Glühwein Rot.png“ und „Glühwein Weiß.jpg“. Deutsche Umlaute werden auch als ae, oe oder ue erkannt: „Gluehwein Rot.png“ passt zu „Glühwein Rot“. Unterstützt werden PNG, JPG/JPEG, WebP und BMP. ZIP-Unterordner sind möglich. Wähle beim Import sowohl die Excel-Datei als auch die ZIP-Datei aus. Ohne ZIP werden die Artikel trotzdem importiert; vorhandene Bilder bleiben erhalten, sofern du den Bildersatz nicht ausdrücklich aktivierst.</p>
           <p>Ältere Excel-Spaltennamen werden weiterhin unterstützt. Für die neue Tabelle empfehlen wir die herunterladbare Mustervorlage.</p>
         </section>}
