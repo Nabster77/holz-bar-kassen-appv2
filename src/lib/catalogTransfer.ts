@@ -10,11 +10,18 @@ export type PreviewRow = { id?: string; kind: string; name: string; status: 'neu
 export type ImageEntry = { path: string; bytes: Uint8Array; mime: string };
 export type ImportPlan = { base: LocalCatalog; next: LocalCatalog; rows: PreviewRow[]; errors: string[]; warnings: string[]; images: Record<string, ImageEntry> };
 export const normalizeName = (v: unknown): string => String(v ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').toLocaleLowerCase('de-DE').replace(/\(\d+\)\s*$/, '').replace(/[^a-z0-9]/g, '');
+/** Image filenames may spell German umlauts as ae/oe/ue instead of ä/ö/ü. */
+function imageNameKey(value: string): string {
+  return normalizeName(value.replace(/ä/gi, 'ae').replace(/ö/gi, 'oe').replace(/ü/gi, 'ue'));
+}
+function sameImageName(left: string, right: string): boolean {
+  return normalizeName(left) === normalizeName(right) || imageNameKey(left) === imageNameKey(right);
+}
 /** Conservative similarity suggestions; never silently assign a fuzzy match. */
 function imageSimilarity(article: string, filePath: string): number {
   const file = filePath.split('/').pop()!.replace(/\.[^.]+$/, '');
-  const a = normalizeName(article);
-  const b = normalizeName(file);
+  const a = imageNameKey(article);
+  const b = imageNameKey(file);
   if (!a || !b) return 0;
   if (a === b) return 1;
   // Preserve size distinctions: large and small images are not interchangeable.
@@ -35,7 +42,7 @@ function imageSimilarity(article: string, filePath: string): number {
 /** Product sizes and copied-file suffixes do not affect the photo identity. */
 function imageIdentity(value: string): string {
   const withoutSize = value.replace(/\((?:s|m|l)\)/gi, ' ').replace(/\b(?:klein|gross|groß)\b/gi, ' ');
-  return normalizeName(withoutSize)
+  return imageNameKey(withoutSize)
     .replace(/^aromaboxen$/, 'aromabox')
     .replace(/^duftklotze$/, 'duftklotz')
     .replace(/^kafee$/, 'kaffee')
@@ -187,7 +194,7 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
           if (!p.imageUrl || replaceImages) p.imageUrl = imageUrl;
           else plan.warnings.push(`${name}: vorhandenes Bild bleibt erhalten.`);
         }
-        const exactImages = archive.filter(f => normalizeName(imageStem(f.path)) === normalizeName(name));
+        const exactImages = archive.filter(f => sameImageName(imageStem(f.path), name));
         const identityImages = archive.filter(f => imageIdentity(imageStem(f.path)) === imageIdentity(name));
         // Prefer exact filenames, then same-size files, then a stable path order.
         const candidatesImage = (exactImages.length ? exactImages : identityImages)
