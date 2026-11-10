@@ -501,22 +501,6 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
               onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedProductId; if (dragEnabled && sourceId && sourceId !== product.id) onMoveProductTo?.(sourceId, product.id); setDraggedProductId(null); }}
               onDragEnd={() => setDraggedProductId(null)}
               className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedProductId === product.id ? 'opacity-50' : ''}`}>
-              <div className="flex flex-col gap-0.5">
-                <button
-                  onClick={() => onReorderProduct?.(product.id, 'up')}
-                  disabled={idx === 0}
-                  className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-                >
-                  <ChevronUp className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => onReorderProduct?.(product.id, 'down')}
-                  disabled={idx === filtered.length - 1}
-                  className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </button>
-              </div>
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-700">
                 {product.imageUrl ? <img src={publicAssetUrl(product.imageUrl)} alt={product.name} className="h-full w-full object-cover" /> : <Package className="h-6 w-6 text-gray-400" />}
               </div>
