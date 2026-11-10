@@ -45,6 +45,17 @@ function imageStem(path: string): string {
   return path.split('/').pop()!.replace(/\.[^.]+$/, '');
 }
 const text = (v: unknown) => String(v ?? '').trim();
+const field = (r: Record<string, unknown>, ...names: string[]) => {
+  for (const name of names) if (Object.prototype.hasOwnProperty.call(r, name)) return r[name];
+  return undefined;
+};
+const hasField = (r: Record<string, unknown>, ...names: string[]) => names.some(name => Object.prototype.hasOwnProperty.call(r, name));
+function flag(v: unknown, label: string): boolean {
+  const value = text(v).toLocaleLowerCase('de-DE');
+  if (!value || ['-', 'nein', 'false', '0'].includes(value)) return false;
+  if (['x', 'schuss', 'pfand', 'ja', 'true', '1'].includes(value)) return true;
+  throw new Error(`${label}: Bitte „x“ für aktiv oder eine leere Zelle für inaktiv verwenden.`);
+}
 const empty = (v: unknown) => v === undefined || v === null || v === '';
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 function number(v: unknown, label: string, fallback?: number): number {
@@ -127,8 +138,8 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         const name = text(r['Produktname App']); const group = text(r.Warengruppe);
         if (!name || !group) throw new Error('Artikelname oder Warengruppe fehlt.');
         const isShot = normalizeName(group) === 'schuss';
-        const priceKind = text(r['Preis durch Mitarbeiter oder fix']).trim().toLocaleLowerCase('de-DE');
-        if (!['fix', 'individuell eintragen', 'individuell'].includes(priceKind)) throw new Error('Preisart muss „fix“ oder „individuell eintragen“ sein.');
+        const priceKind = text(field(r, 'Preis fix / individuell', 'Preis durch Mitarbeiter oder fix')).toLocaleLowerCase('de-DE');
+        if (!['fix', 'individuell eintragen', 'individuell'].includes(priceKind)) throw new Error('Preisart muss „fix“ oder „individuell“ sein.');
         if (isShot && priceKind !== 'fix') throw new Error('SCHUSS benötigt einen festen Preis.');
         const oldShot = isShot ? match(base.shotOptions, r.ID, name, shotKey) : undefined;
         let category = next.categories.find(c => normalizeName(c.name) === normalizeName(group));
@@ -142,7 +153,7 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         const old = !isShot ? match(empty(r.ID) ? candidates : base.products, r.ID, name) : undefined;
         if (old?.categoryId === SHOT_CATEGORY_ID) throw new Error('Normaler Artikel darf nicht in SCHUSS umgewandelt werden.');
         const individual = priceKind === 'individuell eintragen' || priceKind === 'individuell';
-        const shared = number(r['VK 2026'], 'Grundpreis', individual ? old?.prices.Friedrichshafen ?? 0 : oldShot?.price);
+        const shared = number(field(r, 'VK', 'VK 2026'), 'Grundpreis', individual ? old?.prices.Friedrichshafen ?? 0 : oldShot?.price);
         const prices = { Friedrichshafen: number(r['VK DE'], 'VK DE', shared), Bregenz: number(r['VK AT'], 'VK AT', shared) };
         const rates = { Friedrichshafen: tax(r['Steuer DE in %'], 'Friedrichshafen', old ? taxRateForProduct(old, 'Friedrichshafen') : undefined), Bregenz: tax(r['Steuer AT in %'], 'Bregenz', old ? taxRateForProduct(old, 'Bregenz') : undefined) };
         if (isShot) {
@@ -158,8 +169,8 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         if (!['standard','reduced','zero'].includes(cls)) throw new Error('Ungültige Steuerklasse.');
         const p: Product = { ...old, id: old?.id ?? id('p'), name, categoryId: category!.id, imageUrl: old?.imageUrl ?? '', taxClass: cls,
           prices, taxRates: rates, available: bool(r.Verfügbar, old?.available ?? true), sortOrder: number(r.Sortierung, 'Sortierung', old?.sortOrder ?? next.products.length),
-          hasShot: bool(r['Schuss erlaubt'], !empty(r.Schuss) ? normalizeName(r.Schuss) === 'schuss' : old?.hasShot ?? false), hasIndividualPrice: individual,
-          isPfandArticle: bool(r.Pfandartikel, old?.isPfandArticle ?? false), pfand: { Friedrichshafen: number(r['Pfand DE'], 'Pfand DE', old?.pfand.Friedrichshafen ?? 0), Bregenz: number(r['Pfand AT'], 'Pfand AT', old?.pfand.Bregenz ?? 0) } };
+          hasShot: hasField(r, 'Schuss') ? flag(r.Schuss, 'Schuss') : bool(r['Schuss erlaubt'], old?.hasShot ?? false), hasIndividualPrice: individual,
+          isPfandArticle: hasField(r, 'Pfand') ? flag(r.Pfand, 'Pfand') : bool(r.Pfandartikel, old?.isPfandArticle ?? false), pfand: { Friedrichshafen: number(r['Pfand DE'], 'Pfand DE', old?.pfand.Friedrichshafen ?? 0), Bregenz: number(r['Pfand AT'], 'Pfand AT', old?.pfand.Bregenz ?? 0) } };
         if (!empty(r.Schusspreise)) {
           const parsed: unknown = JSON.parse(text(r.Schusspreise));
           if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Schusspreise müssen ein JSON-Objekt sein.');
@@ -261,18 +272,73 @@ export async function readWorkbook(bytes: ArrayBuffer): Promise<SheetRows> {
   }
   return sheets;
 }
+export async function exportTemplateWorkbook(): Promise<ArrayBuffer> {
+  const { default: ExcelJS } = await import('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Preisliste');
+  sheet.addRow(['Artikel_Verkaufspreise_2026']);
+  sheet.addRow(['', 'Pfand']);
+  sheet.addRow(['Friedrichshafen', 1]);
+  sheet.addRow(['Bregenz', 2]);
+  sheet.addRow([]);
+  sheet.addRow(['Produktname App', 'VK', 'Warengruppe', 'Preis fix / individuell', 'Steuer DE in %', 'Steuer AT in %', 'Schuss', 'Pfand']);
+  sheet.addRow(['Glühwein Rot', 4.5, 'Getränke', 'fix', 19, 20, 'x', 'x']);
+  sheet.addRow(['Glühwein Weiß', 4.5, 'Getränke', 'fix', 19, 20, 'x', 'x']);
+  sheet.addRow(['Küchenbretter', 0, 'Verkauf', 'individuell', 19, 20, '', '']);
+  sheet.getRow(6).font = {bold: true};
+  sheet.columns.forEach(column => {column.width = 24;});
+  return await workbook.xlsx.writeBuffer() as ArrayBuffer;
+}
 export async function exportWorkbook(catalog: LocalCatalog): Promise<ArrayBuffer> {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  function add(name: string, rows: unknown[][]) {
-    const s = workbook.addWorksheet(name); rows.forEach(r => s.addRow(r)); s.views = [{state: 'frozen', ySplit: 1}];
-    s.getRow(1).font = {bold: true}; s.columns.forEach(c => { c.width = 24; });
-  }
-  const headers = ['ID','Produktname App','Warengruppe','VK 2026','VK DE','VK AT','Preis durch Mitarbeiter oder fix','Steuer DE in %','Steuer AT in %','Pfandartikel','Pfand DE','Pfand AT','Schuss erlaubt','Schusspreise','Verfügbar','Sortierung','Bild','Steuerklasse'];
-  add('Artikel', [headers, ...catalog.products.map(p => [p.id,p.name,catalog.categories.find(c => c.id === p.categoryId)?.name ?? '',p.prices.Friedrichshafen,p.prices.Friedrichshafen,p.prices.Bregenz,p.hasIndividualPrice ? 'individuell eintragen' : 'fix',taxRateForProduct(p,'Friedrichshafen'),taxRateForProduct(p,'Bregenz'),!!p.isPfandArticle,p.pfand.Friedrichshafen,p.pfand.Bregenz,p.hasShot,JSON.stringify(p.shotPrices ?? {}),p.available,p.sortOrder,p.imageUrl,p.taxClass])]);
-  add('SCHUSS', [headers, ...catalog.shotOptions.map(s => [s.id,s.name,'SCHUSS',s.price,s.locationPrices?.Friedrichshafen ?? '',s.locationPrices?.Bregenz ?? '','fix',19,20])]);
-  add('Warengruppen', [['ID','Warengruppe','Icon','Farbe','Sortierung'], ...catalog.categories.map(c => [c.id,c.name,c.icon,c.color,c.sortOrder])]);
-  add('Einstellungen', [['Standort','Pfand'], ...locations.map(loc => [loc,catalog.pfandSettings[loc]])]);
+  const add = (name: string, rows: unknown[][]) => {
+    const sheet = workbook.addWorksheet(name);
+    rows.forEach(row => sheet.addRow(row));
+    sheet.columns.forEach(column => {column.width = 22;});
+    return sheet;
+  };
+  const headers = ['Produktname App', 'VK', 'Warengruppe', 'Preis fix / individuell',
+    'Steuer DE in %', 'Steuer AT in %', 'Schuss', 'Pfand',
+    'ID', 'VK DE', 'VK AT', 'Pfand DE', 'Pfand AT', 'Verfügbar',
+    'Sortierung', 'Bild', 'Steuerklasse', 'Schusspreise'];
+  const rows: unknown[][] = [
+    ['Artikel_Verkaufspreise_2026'],
+    ['', 'Pfand'],
+    ['Friedrichshafen', catalog.pfandSettings.Friedrichshafen],
+    ['Bregenz', catalog.pfandSettings.Bregenz],
+    [],
+    headers,
+    ...catalog.products.map(p => [
+      p.name, p.prices.Friedrichshafen,
+      catalog.categories.find(c => c.id === p.categoryId)?.name ?? '',
+      p.hasIndividualPrice ? 'individuell' : 'fix',
+      taxRateForProduct(p, 'Friedrichshafen'), taxRateForProduct(p, 'Bregenz'),
+      p.hasShot ? 'x' : '', p.isPfandArticle ? 'x' : '',
+      p.id, p.prices.Friedrichshafen, p.prices.Bregenz,
+      p.pfand.Friedrichshafen, p.pfand.Bregenz, p.available,
+      p.sortOrder, p.imageUrl, p.taxClass, JSON.stringify(p.shotPrices ?? {})
+    ])
+  ];
+  const sheet = add('Preisliste', rows);
+  sheet.getRow(6).font = {bold: true};
+  add('SCHUSS', [
+    ['ID', 'Produktname App', 'Warengruppe', 'VK', 'VK DE', 'VK AT',
+      'Preis fix / individuell', 'Steuer DE in %', 'Steuer AT in %'],
+    ...catalog.shotOptions.map(shot => [
+      shot.id, shot.name, 'SCHUSS', shot.price,
+      shot.locationPrices?.Friedrichshafen ?? '',
+      shot.locationPrices?.Bregenz ?? '', 'fix', 19, 20
+    ])
+  ]);
+  add('Warengruppen', [
+    ['ID', 'Warengruppe', 'Icon', 'Farbe', 'Sortierung'],
+    ...catalog.categories.map(c => [c.id, c.name, c.icon, c.color, c.sortOrder])
+  ]);
+  add('Einstellungen', [
+    ['Standort', 'Pfand'],
+    ...locations.map(loc => [loc, catalog.pfandSettings[loc]])
+  ]);
   return await workbook.xlsx.writeBuffer() as ArrayBuffer;
 }
 
