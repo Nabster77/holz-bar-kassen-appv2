@@ -84,6 +84,7 @@ export function POSScreen({
   const [showPfandRetoure, setShowPfandRetoure] = useState(false);
   const [priceEntryProduct, setPriceEntryProduct] = useState<Product | null>(null);
   const [dragMode, setDragMode] = useState(false);
+  const [sortMode, setSortMode] = useState<'manual' | 'asc' | 'desc'>('manual');
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
@@ -117,8 +118,12 @@ export function POSScreen({
     } else if (activeCat) {
       list = list.filter((p) => p.categoryId === activeCat);
     }
-    return [...list].sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [products, activeCat, search]);
+    return [...list].sort(sortMode === 'asc'
+      ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+      : sortMode === 'desc'
+        ? (a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' })
+        : (a, b) => a.sortOrder - b.sortOrder);
+  }, [products, activeCat, search, sortMode]);
 
   function addToCart(product: Product, shot: ShotOption | null = null, customPrice?: number) {
     const basePrice = customPrice !== undefined ? customPrice : product.prices[currentLocation];
@@ -289,23 +294,29 @@ export function POSScreen({
               }
               return null;
             })()}
-            {visibleProducts.length > 1 && !search.trim() && (
-              <button
-                onClick={() => setDragMode((v) => !v)}
-                className={`ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  dragMode
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                <Move className="h-3.5 w-3.5" /> {dragMode ? 'Sortieren beenden' : 'Kacheln sortieren'}
-              </button>
-            )}
-            {dragMode && (
-              <div className="ml-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                Kachel antippen und ziehen, um neu anzuordnen
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                Sortierung:
+                <select aria-label="Kassenartikel sortieren" value={sortMode}
+                  onChange={event => { setSortMode(event.target.value as 'manual' | 'asc' | 'desc'); setDragMode(false); }}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  <option value="manual">Eigene Reihenfolge</option>
+                  <option value="asc">Aufsteigend (A–Z)</option>
+                  <option value="desc">Absteigend (Z–A)</option>
+                </select>
+              </label>
+              {visibleProducts.length > 1 && !search.trim() && (
+                <button type="button" aria-pressed={dragMode}
+                  onClick={() => { if (!dragMode) setSortMode('manual'); setDragMode(v => !v); }}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                    dragMode
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                  }`}>
+                  <Move className="h-3.5 w-3.5" /> {dragMode ? '✓ Verschieben aktiv' : 'Kacheln verschieben'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Search bar */}
