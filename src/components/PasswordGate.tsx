@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Lock, Check, X, Loader2 } from 'lucide-react';
 import { verifyManagerPassword } from '@/lib/managerAuth';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
@@ -24,6 +24,25 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  // Android keyboards can overlay the page instead of resizing its layout.
+  // Adjust only the password panel; authentication and cash logic stay unchanged.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const update = () => {
+      const coveredHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardOffset(coveredHeight > 100 ? coveredHeight / 2 : 0);
+    };
+    update();
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    return () => {
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+    };
+  }, []);
 
   async function handleSubmit() {
     if (checking) return;
@@ -52,8 +71,8 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   }
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800">
+    <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto">
+      <div className="w-full max-w-sm shrink-0 rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800" style={{ transform: keyboardOffset ? `translateY(-${keyboardOffset}px)` : undefined }}>
         <div className="mb-5 flex flex-col items-center gap-3 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg">
             <Lock className="h-8 w-8" />
@@ -73,7 +92,6 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
             onChange={(e) => { setInput(e.target.value); setError(null); }}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
             placeholder="Passwort"
-            autoFocus
             className={`w-full rounded-xl border px-3 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 dark:bg-gray-900 dark:text-gray-100 ${
               error
                 ? 'border-red-500 focus:ring-red-500/30'
