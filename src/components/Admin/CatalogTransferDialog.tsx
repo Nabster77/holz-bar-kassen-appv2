@@ -31,6 +31,26 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [done, setDone] = useState(false);
   const invalidate = () => {setGenerated({});setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setImportProgress(null); setMessage('');};
   const stale = session && JSON.stringify(session.base) !== JSON.stringify(catalog);
+  function chooseFile(file: File | null, kind: 'excel' | 'zip') {
+    invalidate();
+    if (!file) {
+      if (kind === 'excel') setExcel(null); else setZip(null);
+      return;
+    }
+    const expected = kind === 'excel' ? '.xlsx' : '.zip';
+    const limit = kind === 'excel' ? 10 : 100;
+    if (!file.name.toLocaleLowerCase('de-DE').endsWith(expected)) {
+      if (kind === 'excel') setExcel(null); else setZip(null);
+      setMessage(`Falsches Dateiformat: Für ${kind === 'excel' ? 'Excel' : 'Bilder'} bitte eine ${expected}-Datei auswählen. „${file.name}“ wurde nicht übernommen.`);
+      return;
+    }
+    if (file.size > limit * 1024 * 1024) {
+      if (kind === 'excel') setExcel(null); else setZip(null);
+      setMessage(`„${file.name}“ ist zu groß. Maximum: ${limit} MB.`);
+      return;
+    }
+    if (kind === 'excel') setExcel(file); else setZip(file);
+  }
   async function preview() {
     if (!excel) return;
     setBusy(true); invalidate();
@@ -142,6 +162,10 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       <div className="flex items-center justify-between gap-4"><h2 id="catalog-transfer-title" className="text-lg font-bold">Excel-Import / Export</h2><button disabled={busy} onClick={onClose} className={button}>Schließen</button></div>
       <div className="mt-3 overflow-auto space-y-4">
         <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert.</p>
+        <div className="rounded-xl border-2 border-red-600 p-3 text-sm text-red-700 dark:text-red-300" role="note">
+          <strong>WICHTIG – Import richtig vorbereiten:</strong> Lade zuerst die „Excel-Mustervorlage“ herunter. Du darfst Artikel, Preise und Pfandbeträge ändern oder weitere Artikelzeilen ergänzen. Behalte die Pfandzeilen oberhalb der Tabelle und die acht Spaltenüberschriften bei.
+          <p className="mt-2"><strong>Dateien:</strong> Excel nur als .xlsx (max. 10 MB), Bilder nur als .zip (max. 100 MB). Pro Bild max. 10 MB; erlaubt sind PNG, JPG/JPEG, WebP und BMP. Der Bilddateiname muss zum Produktnamen passen, z. B. „Gluehwein Rot.png“ zu „Glühwein Rot“.</p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} onClick={download} className={button}>Vollständigen Katalog als Excel exportieren</button>
           <button disabled={busy} onClick={downloadTemplate} className={button}>Excel-Mustervorlage herunterladen</button>
@@ -149,6 +173,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         </div>
         {helpOpen && <section className="space-y-3 rounded-xl border border-gray-400 p-3 text-sm">
           <h3 className="font-semibold">Excel-Tabelle richtig anlegen</h3>
+          <p className="font-semibold text-red-700 dark:text-red-300">WICHTIG: Die herunterladbare Excel-Mustervorlage als Grundlage verwenden! Pfandzeilen und Spaltenüberschriften beibehalten; nur Werte und Artikel anpassen bzw. ergänzen.</p>
           <p>Oberhalb der Kopfzeile stehen die Pfandbeträge: in Spalte A „Friedrichshafen“ und „Bregenz“, in Spalte B jeweils der gewünschte Betrag in Euro. Die Beträge dürfen je Stadt unterschiedlich sein und werden beim Import übernommen.</p>
           <div className="overflow-x-auto">
             <table className="border-collapse text-left text-sm">
@@ -172,11 +197,13 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           </div>
           <p><strong>Preis:</strong> „fix“ bedeutet fester Verkaufspreis, „individuell“ erlaubt die Eingabe an der Kasse. <strong>Steuer DE</strong> gilt für Friedrichshafen, <strong>Steuer AT</strong> für Bregenz. <strong>Schuss und Pfand:</strong> „x“ aktiviert das jeweilige Häkchen, eine leere Zelle deaktiviert es. Der Pfandbetrag kommt aus dem oberen Tabellenbereich.</p>
           <h3 className="font-semibold">Eigene Artikelbilder als ZIP hinzufügen (optional)</h3>
+          <p className="font-semibold text-red-700 dark:text-red-300">WICHTIG: Excel = .xlsx (max. 10 MB), Bilder = .zip (max. 100 MB). Jedes Bild maximal 10 MB und nur PNG, JPG/JPEG, WebP oder BMP. Bildname = Produktname (Umlaute dürfen als ae/oe/ue geschrieben werden).</p>
           <p>Lege deine Produktbilder in einen Ordner und komprimiere ihn als ZIP-Datei. Benenne jedes Bild wie den Artikel in der Spalte „Produktname App“, zum Beispiel „Glühwein Rot.png“ und „Glühwein Weiß.jpg“. Deutsche Umlaute werden auch als ae, oe oder ue erkannt: „Gluehwein Rot.png“ passt zu „Glühwein Rot“. Unterstützt werden PNG, JPG/JPEG, WebP und BMP. ZIP-Unterordner sind möglich. Wähle beim Import sowohl die Excel-Datei als auch die ZIP-Datei aus. Ohne ZIP werden die Artikel trotzdem importiert; vorhandene Bilder bleiben erhalten, sofern du den Bildersatz nicht ausdrücklich aktivierst.</p>
           <p>Ältere Excel-Spaltennamen werden weiterhin unterstützt. Für die neue Tabelle empfehlen wir die herunterladbare Mustervorlage.</p>
         </section>}
-        <label className="block">Excel (.xlsx)<input disabled={busy} className="ml-3" type="file" accept=".xlsx" onChange={e => {invalidate();setExcel(e.target.files?.[0] ?? null);}} /></label>
-        <label className="block">Bilder-ZIP (optional)<input disabled={busy} className="ml-3" type="file" accept=".zip" onChange={e => {invalidate();setZip(e.target.files?.[0] ?? null);}} /></label>
+        <p className="text-xs text-red-700 dark:text-red-300">Falsche Dateitypen werden beim Auswählen abgefangen und vor der Vorschau auf ihren Inhalt geprüft.</p>
+        <label className="block">Excel (.xlsx)<input disabled={busy} className="ml-3" type="file" accept=".xlsx" onChange={e => {chooseFile(e.target.files?.[0] ?? null, 'excel'); e.target.value = '';}} /></label>
+        <label className="block">Bilder-ZIP (optional)<input disabled={busy} className="ml-3" type="file" accept=".zip" onChange={e => {chooseFile(e.target.files?.[0] ?? null, 'zip'); e.target.value = '';}} /></label>
         <label className="flex items-center gap-2"><input disabled={busy} type="checkbox" checked={replace} onChange={e => {invalidate();setReplace(e.target.checked);}} />Vorhandene Bildzuordnungen ausdrücklich ersetzen (alte Bilddateien bleiben erhalten)</label>
         <label className="flex items-center gap-2"><input type="checkbox" disabled={busy} checked={autoIllustrations} onChange={e => {invalidate();setAutoIllustrations(e.target.checked);}} />Fehlende Artikelbilder automatisch kostenlos illustrieren (ohne KI/API; eigene Fotos bleiben erhalten)</label>
         <p className="text-sm">ZIP-Unterordner werden berücksichtigt. Groß-/Kleinschreibung, Umlaute, Leerzeichen und Kopienummern wie „(2)“ werden beim Bildabgleich vereinheitlicht. Bei abweichenden Namen werden unverbindliche Bildvorschläge angezeigt; sie werden nicht automatisch importiert.</p>
