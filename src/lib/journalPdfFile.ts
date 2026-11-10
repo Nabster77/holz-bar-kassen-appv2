@@ -168,6 +168,7 @@ type ProtectedTableBlock = {
   start: number;
   /** Bottom edge of the table heading plus its first visible content row. */
   requiredEnd: number;
+  end: number;
 };
 
 function relativeTop(element: Element, bodyRect: DOMRect): number {
@@ -214,7 +215,7 @@ function protectedTableBlocks(doc: Document, bodyRect: DOMRect): ProtectedTableB
       ? relativeBottom(firstRow, bodyRect)
       : relativeBottom(table.querySelector('thead') ?? table, bodyRect);
     const existing = blocks.get(start);
-    if (!existing || requiredEnd > existing.requiredEnd) blocks.set(start, { start, requiredEnd });
+    if (!existing || requiredEnd > existing.requiredEnd) blocks.set(start, { start, requiredEnd, end: relativeBottom(table, bodyRect) });
   };
 
   // Wrapped sections are used by the journal and the daily-close report.
@@ -243,40 +244,57 @@ function protectedTableBlocks(doc: Document, bodyRect: DOMRect): ProtectedTableB
  * sliced. A title, its table header and the first row are treated as one
  * unit, preventing isolated table titles at the bottom of a page.
  */
-function getSafeBreaks(doc: Document, maxPageHeightPx: number): number[] {
+type PageSlice = { from: number; until: number; header?: { start: number; end: number } };
+
+function getSafePages(doc: Document, maxPageHeightPx: number): PageSlice[] {
   const body = doc.body;
   const bodyRect = body.getBoundingClientRect();
   const totalHeight = Math.ceil(Math.max(body.scrollHeight, bodyRect.height));
-  const candidates = [...doc.querySelectorAll<HTMLElement>('.loc-header, .summary-grid, .tax-section, h2, tr, .empty, .batch-pagebreak')]
-    .map((el) => Math.round(el.getBoundingClientRect().top - bodyRect.top))
+  const candidates = [...doc.querySelectorAll<HTMLElement>('.loc-header, .summary-grid, .tax-section, h2, tr, table, .empty, .batch-pagebreak')]
+    .flatMap((el) => [relativeTop(el, bodyRect), relativeBottom(el, bodyRect)])
     .filter((top) => top > 0 && top < totalHeight)
     .sort((a, b) => a - b);
   const tableBlocks = protectedTableBlocks(doc, bodyRect);
+  // Keep a short document footer with the final table instead of creating a
+  // nearly empty extra page just for the "automatisch generiert" line.
+  const footer = doc.querySelector('.footer');
+  const lastTable = [...tableBlocks].sort((a, b) => b.end - a.end)[0];
+  if (footer && lastTable) {
+    const footerEnd = relativeBottom(footer, bodyRect);
+    if (relativeTop(footer, bodyRect) >= lastTable.end && footerEnd - lastTable.start <= maxPageHeightPx) lastTable.end = footerEnd;
+  }
+  const tables = [...doc.querySelectorAll<HTMLTableElement>('table')].flatMap(table => {
+    const head = table.querySelector('thead');
+    return head ? [{ start: relativeTop(head, bodyRect), end: relativeBottom(head, bodyRect), tableEnd: relativeBottom(table, bodyRect) }] : [];
+  });
+  // Unlike browser printing, canvas slicing does not repeat THEAD automatically.
+  const rows = [...doc.querySelectorAll('tr')].map(row => ({ start: relativeTop(row, bodyRect), end: relativeBottom(row, bodyRect) }));
 
-  const breaks: number[] = [];
+  const pages: PageSlice[] = [];
   let from = 0;
   while (from < totalHeight) {
-    const target = Math.min(from + maxPageHeightPx, totalHeight);
+    const head = tables.find(table => from >= table.end && from < table.tableEnd);
+    const header = head && head.end - head.start < maxPageHeightPx / 2 ? { start: head.start, end: head.end } : undefined;
+    const capacity = maxPageHeightPx - (header ? header.end - header.start : 0);
+    const target = Math.min(from + capacity, totalHeight);
     if (target === totalHeight) {
-      breaks.push(totalHeight);
+      pages.push({ from, until: totalHeight, header });
       break;
     }
 
-    // A table title must never be stranded at the bottom of a page. This is
-    // deliberately checked before the ordinary candidate search: CSS rules
-    // alone cannot protect a canvas-based PDF slice.
-    const blockToMove = tableBlocks.find((block) =>
-      block.start > from + 1 && block.start < target && block.requiredEnd > target,
-    );
-    // Do not create nearly empty pages for ordinary content boundaries. A
-    // protected table block above is an exception: visual grouping wins.
-    const minimum = from + Math.min(220, maxPageHeightPx * 0.35);
-    const safe = blockToMove?.start ?? candidates.filter((point) => point >= minimum && point <= target).pop();
+    // Short tables move as a whole; long tables protect title + first row.
+    const protectedRanges = tableBlocks.map(block => ({ start: block.start,
+      end: block.end - block.start <= maxPageHeightPx ? block.end : block.requiredEnd,
+    }));
+    const unbrokenRows = rows.filter(row => row.end - row.start <= capacity);
+    const isSafe = (point: number) => ![...protectedRanges, ...unbrokenRows]
+      .some(block => point > block.start && point < block.end);
+    const safe = candidates.filter(point => point > from && point <= target && isSafe(point)).pop();
     const next = safe ?? target;
-    breaks.push(next);
+    pages.push({ from, until: next, header });
     from = next;
   }
-  return breaks;
+  return pages;
 }
 
 /** Renders HTML into a real PDF with stable, printed page numbers. */
@@ -291,6 +309,12 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
     const doc = iframe.contentDocument;
     const body = doc?.body;
     if (!doc || !body) throw new Error('Das Journal konnte nicht gerendert werden.');
+    // The measurement iframe is shorter than a multi-page document. Its
+    // scrollbar must not reduce the layout width: html2canvas's tall clone
+    // has no scrollbar and would otherwise wrap text differently after cuts
+    // have already been measured (even clipping headings at page boundaries).
+    doc.documentElement.style.overflow = 'hidden';
+    await doc.fonts.ready;
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -298,7 +322,7 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
     const contentWidth = pageWidth - PDF_MARGIN_X_MM * 2;
     const contentHeight = pageHeight - PDF_CONTENT_TOP_MM - PDF_CONTENT_BOTTOM_MM;
     const maxPageHeightPx = Math.floor(contentHeight / (contentWidth / RENDER_WIDTH_PX));
-    const breaks = getSafeBreaks(doc, maxPageHeightPx);
+    let pages: PageSlice[] = [];
 
     const canvas = await html2canvas(body, {
       scale: 2,
@@ -307,26 +331,31 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
       windowHeight: Math.max(body.scrollHeight, 1200),
       backgroundColor: '#ffffff',
       useCORS: true,
+      // Measure the very DOM that is rasterized. html2canvas may reflow a
+      // cloned table; measuring the original can cut through a title instead.
+      onclone: (renderDoc) => { pages = getSafePages(renderDoc, maxPageHeightPx); },
     });
     const canvasScale = canvas.width / RENDER_WIDTH_PX;
-    let from = 0;
 
-    breaks.forEach((until, index) => {
+    pages.forEach(({ from, until, header }, index) => {
       if (index > 0) pdf.addPage();
       const slice = document.createElement('canvas');
       slice.width = canvas.width;
-      slice.height = Math.max(1, Math.round((until - from) * canvasScale));
+      const headerHeight = header ? Math.round((header.end - header.start) * canvasScale) : 0;
+      const contentHeight = Math.max(1, Math.round((until - from) * canvasScale));
+      slice.height = contentHeight + headerHeight;
       const context = slice.getContext('2d');
+      if (header) context?.drawImage(canvas, 0, Math.round(header.start * canvasScale), canvas.width, headerHeight, 0, 0, canvas.width, headerHeight);
       context?.drawImage(
         canvas,
         0,
         Math.round(from * canvasScale),
         canvas.width,
-        slice.height,
+        contentHeight,
         0,
-        0,
+        headerHeight,
         canvas.width,
-        slice.height,
+        contentHeight,
       );
 
       const sliceHeightMm = (slice.height / canvas.width) * contentWidth;
@@ -336,8 +365,7 @@ export async function renderPdfHtml(html: string): Promise<Blob> {
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
       pdf.setTextColor(71, 85, 105);
-      pdf.text(`Seite ${index + 1} von ${breaks.length}`, pageWidth - PDF_MARGIN_X_MM, pageHeight - 8, { align: 'right' });
-      from = until;
+      pdf.text(`Seite ${index + 1} von ${pages.length}`, pageWidth - PDF_MARGIN_X_MM, pageHeight - 8, { align: 'right' });
     });
 
     return pdf.output('blob');

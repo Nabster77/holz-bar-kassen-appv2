@@ -510,6 +510,8 @@ export function buildJournalHTML(data: JournalReportData): string {
     table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; }
     th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #334155; color: #334155; font-size: 10px; text-transform: uppercase; }
     td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; }
+    .transaction-table th:nth-child(2), .transaction-table td:nth-child(2),
+    .audit-table th:first-child, .audit-table td:first-child { white-space: nowrap; }
     .article-table td:first-child { font-size: 12px; font-weight: 600; }
     tr:nth-child(even) { background: #fafafa; }
     .compare-table th { background: #1e3a5f; color: white; }
