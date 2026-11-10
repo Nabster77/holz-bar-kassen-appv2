@@ -422,7 +422,7 @@ export function POSScreen({
         <CashCorrectionDialog session={activeSession} currentCashBalance={currentCashBalance} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
       )}
       {cashEntryType && activeSession && (
-        <CashEntryDialog session={activeSession} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
+        <CashEntryDialog session={activeSession} currentCashBalance={currentCashBalance} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
       )}
       {showPfandRetoure && activeSession && (
         <PfandRetoureDialog
