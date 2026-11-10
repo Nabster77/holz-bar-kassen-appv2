@@ -18,7 +18,7 @@ function imageSimilarity(article: string, filePath: string): number {
   if (!a || !b) return 0;
   if (a === b) return 1;
   // Preserve size distinctions: large and small images are not interchangeable.
-  const size = (v: string) => /(?:\\(l\\)|\\bgro(?:ß|ss)\\b)/i.test(v) ? 'large' : /(?:\\(s\\)|\\bklein\\b)/i.test(v) ? 'small' : '';
+  const size = (v: string) => /(?:\(l\)|\bgro(?:ß|ss)\b)/i.test(v) ? 'large' : /(?:\(s\)|\bklein\b)/i.test(v) ? 'small' : '';
   const sa = size(article), sb = size(file);
   if (sa && sb && sa !== sb) return 0;
   const distance = (x: string, y: string) => {
