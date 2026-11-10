@@ -455,6 +455,7 @@ export default function App() {
               onUpdateProduct={store.updateProduct}
               onDeleteProduct={store.deleteProduct}
               onReorderProduct={store.reorderProduct}
+              onMoveProductTo={store.moveProductTo}
               onResetAllData={resetBookings}
               pfandSettings={store.pfandSettings}
               onUpdatePfandSettings={store.updatePfandSettings}
