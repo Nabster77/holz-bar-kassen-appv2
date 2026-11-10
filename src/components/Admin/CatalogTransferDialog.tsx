@@ -105,7 +105,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           const illustration = await createCatalogIllustration(product.name);
           const url = await uploadArticleImage(illustration);
           if (!url) throw new Error(`Illustration für „${product.name}“ konnte nicht gespeichert werden.`);
-          uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'Illustrationen hochladen'}); product.imageUrl = url;
+          uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'Illustrationen hochladen'}); product.imageUrl = `${url}${url.includes('?') ? '&' : '?'}woodmoIllustration=1`;
         }
       }
       setImportProgress({done:completedSteps,total:totalSteps,stage:'Katalog in Supabase speichern'});
