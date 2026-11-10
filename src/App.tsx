@@ -265,13 +265,13 @@ export default function App() {
                 onClick={() => setHeaderAction('deposit')}
                 icon={<ArrowDownCircle className="h-4 w-4" />}
                 label="Einlage"
-                color="green"
+                color="violet"
               />
               <CashActionButton
                 onClick={() => setHeaderAction('withdrawal')}
                 icon={<ArrowUpCircle className="h-4 w-4" />}
                 label="Ausgabe"
-                color="orange"
+                color="red"
               />
               <CashActionButton
                 onClick={() => setHeaderAction('pfand')}
@@ -661,10 +661,12 @@ function CashActionButton({ onClick, icon, label, color, prominent }: {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
-  color: 'green' | 'orange' | 'teal';
+  color: 'green' | 'orange' | 'teal' | 'violet' | 'red';
   prominent?: boolean;
 }) {
   const colorClasses = {
+    violet: 'bg-violet-600 text-white hover:bg-violet-700',
+    red: 'bg-red-600 text-white hover:bg-red-700',
     green: 'bg-green-600 text-white hover:bg-green-700',
     orange: 'bg-orange-500 text-white hover:bg-orange-600',
     teal: 'bg-teal-600 text-white hover:bg-teal-700',

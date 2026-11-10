@@ -218,7 +218,7 @@ export function POSScreen({
                 {currentStaff.name} · Abmelden
               </button>
               <button onClick={() => setShowCorrection(true)}
-                className="flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50">
+                className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
                 Korrektur
               </button>
               <button onClick={async () => {

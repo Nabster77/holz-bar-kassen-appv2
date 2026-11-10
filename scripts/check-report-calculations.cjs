@@ -9,13 +9,21 @@ function load(name) {
   if (name === 'dailyCloseReceipt') return { formatDailyCloseReceiptNumber: () => 'TA-FN-2026-000001' };
   const exports = cache[name] = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/lib', name + '.ts'), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   new Function('require', 'exports', code)((id) => load(id.replace('@/lib/', '')), exports);
   return exports;
 }
 const { closedSessionReport } = load('dailyReport');
 const { buildJournalHTML } = load('journalPdf');
+const { movementStyle, hasNegativeMoney } = load('movementStyle');
+const movementKinds = ['Pfandausgabe', 'Bareinnahme', 'Karteneinnahme', 'Einlage', 'Ausgabe', 'Korrektur'];
+assert.equal(new Set(movementKinds.map(kind => movementStyle(kind).ink)).size, 6);
+assert.equal(movementStyle('Pfand-Retoure').ink, movementStyle('Pfandausgabe').ink);
+assert.equal(movementStyle('Entnahme zum Tagesabschluss').ink, movementStyle('Ausgabe').ink);
+assert.ok(hasNegativeMoney('100,00 € → 90,00 € (-10,00 €)'));
+assert.ok(!hasNegativeMoney('-0,00 €'));
+assert.ok(!hasNegativeMoney('Pfand-Retoure am 10.11.2026'));
 const stamp = new Date('2026-11-09T12:00:00').getTime();
 const base = { id: 'session', date: '2026-11-09', location: 'Friedrichshafen', openedAt: stamp,
   closedAt: stamp + 60000, closed: true, openingBalance: 190, entries: [], corrections: [], staffLoginIntervals: [] };

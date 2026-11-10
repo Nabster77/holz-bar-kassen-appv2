@@ -24,7 +24,7 @@ export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
       <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-100">
-            <Edit3 className="h-5 w-5 text-amber-600 dark:text-amber-400" /> Anfangsbestand korrigieren
+            <Edit3 className="h-5 w-5 text-orange-600 dark:text-orange-400" /> Anfangsbestand korrigieren
           </h3>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
             <X className="h-5 w-5" />
@@ -45,7 +45,7 @@ export function CashCorrectionDialog({ session, onSave, onClose }: Props) {
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
           <button onClick={handleSave} disabled={!newAmount || !reason.trim()}
-            className="w-full rounded-xl bg-amber-600 py-3 text-base font-semibold text-white shadow-md transition hover:bg-amber-700 active:scale-95 disabled:opacity-50">
+            className="w-full rounded-xl bg-orange-600 py-3 text-base font-semibold text-white shadow-md transition hover:bg-orange-700 active:scale-95 disabled:opacity-50">
             <Check className="mr-1.5 inline h-4 w-4" /> Korrektur speichern
           </button>
         </div>

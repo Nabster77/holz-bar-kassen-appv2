@@ -70,12 +70,12 @@ export function CartSummary({ items, location }: Props) {
             <Recycle className="h-3.5 w-3.5" />
             Pfand-Retoure
           </span>
-          <span className="font-medium">{formatCurrency(pfandRetoure)}</span>
+          <span className={`font-medium ${pfandRetoure < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{formatCurrency(pfandRetoure)}</span>
         </div>
       )}
       <div className="flex items-baseline justify-between border-t-2 border-gray-300 pt-2 dark:border-gray-600">
         <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Gesamt</span>
-        <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(total)}</span>
+        <span className={`text-2xl font-bold ${total < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>{formatCurrency(total)}</span>
       </div>
     </div>
   );
