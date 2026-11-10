@@ -65,6 +65,14 @@ const COLOR_OPTIONS = [
   { label: 'Pink', value: 'from-pink-500 to-rose-600' },
   { label: 'Teal', value: 'from-teal-500 to-cyan-600' },
   { label: 'Indigo', value: 'from-indigo-500 to-blue-700' },
+  { label: 'Gelb', value: 'from-yellow-300 to-amber-500' },
+  { label: 'Limette', value: 'from-lime-400 to-green-600' },
+  { label: 'Türkis', value: 'from-cyan-400 to-teal-600' },
+  { label: 'Hellblau', value: 'from-sky-300 to-blue-500' },
+  { label: 'Dunkelblau', value: 'from-blue-700 to-indigo-900' },
+  { label: 'Braun', value: 'from-amber-700 to-stone-800' },
+  { label: 'Grau', value: 'from-slate-400 to-slate-700' },
+  { label: 'Schwarz', value: 'from-gray-700 to-gray-950' },
 ];
 
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
@@ -251,7 +259,7 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
                 <ChevronDown className="h-4 w-4" />
               </button>
             </div>
-            <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color} text-white`}>
+            <div style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") ? "" : cat.color} text-white`}>
               <DynamicIcon name={cat.icon} className="h-6 w-6" />
             </div>
             <div className="flex-1">
@@ -308,6 +316,10 @@ function CategoryModal({ category, categories, onSave, onClose }: {
   const [name, setName] = useState(category?.name ?? '');
   const [icon, setIcon] = useState(category?.icon ?? 'Package');
   const [color, setColor] = useState(category?.color ?? COLOR_OPTIONS[0].value);
+  const customMatch = color.match(/^linear-gradient\(135deg, (#[0-9a-fA-F]{6}), (#[0-9a-fA-F]{6})\)$/);
+  const [customStart, setCustomStart] = useState(customMatch?.[1] ?? '#0ea5e9');
+  const [customEnd, setCustomEnd] = useState(customMatch?.[2] ?? '#2563eb');
+  const mixedColor = (start: string, end: string) => `linear-gradient(135deg, ${start}, ${end})`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -340,8 +352,16 @@ function CategoryModal({ category, categories, onSave, onClose }: {
             <div className="flex flex-wrap gap-2">
               {COLOR_OPTIONS.map((c) => (
                 <button key={c.value} onClick={() => setColor(c.value)}
-                  className={`h-10 w-10 rounded-xl bg-gradient-to-br ${c.value} transition ${color === c.value ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-gray-800' : ''}`} />
+                  title={c.label} aria-label={`Farbe ${c.label}`} className={`h-10 w-10 rounded-xl bg-gradient-to-br ${c.value} transition ${color === c.value ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-gray-800' : ''}`} />
               ))}
+            </div>
+            <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Eigene Farbe mischen</p>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">Von <input type="color" aria-label="Farbe von" value={customStart} onChange={(e) => { setCustomStart(e.target.value); setColor(mixedColor(e.target.value, customEnd)); }} className="h-10 w-12 cursor-pointer rounded" /></label>
+                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">Bis <input type="color" aria-label="Farbe bis" value={customEnd} onChange={(e) => { setCustomEnd(e.target.value); setColor(mixedColor(customStart, e.target.value)); }} className="h-10 w-12 cursor-pointer rounded" /></label>
+                <button type="button" onClick={() => setColor(mixedColor(customStart, customEnd))} style={{ background: mixedColor(customStart, customEnd) }} className="h-10 flex-1 rounded-lg border border-white/20 text-xs font-bold text-white shadow">Übernehmen</button>
+              </div>
             </div>
           </div>
           <button onClick={() => name.trim() && onSave({ name: name.trim(), icon, color })}
