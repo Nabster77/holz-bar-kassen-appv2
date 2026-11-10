@@ -137,9 +137,10 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         {message && <p role="status" className="rounded-xl border border-blue-400 p-3 whitespace-pre-wrap">{message}</p>}
         {plan && <>
           <p className="font-semibold">{plan.rows.filter(r => r.status === 'neu').length} neu · {plan.rows.filter(r => r.status === 'geändert').length} geändert · {plan.rows.filter(r => r.status === 'unverändert').length} unverändert · {plan.errors.length} Konflikte</p>
+          {autoIllustrations && <p className="rounded-xl border border-emerald-500 p-3 text-sm">Kostenlose Bildautomatik aktiviert: Für Artikel ohne eigenes oder ZIP-Bild wird beim bestätigten Import automatisch eine einfache Illustration erstellt. Es wird kein KI-Dienst aufgerufen. Vorhandene Bilder bleiben erhalten.</p>}
           {plan.errors.length > 0 && <div role="alert" className="rounded-xl border border-red-500 p-3"><strong>Import gesperrt – Konflikte zuerst beheben:</strong><ul className="list-disc pl-5">{plan.errors.map((e,i) => <li key={i}>{e}</li>)}</ul></div>}
           {plan.warnings.length > 0 && <details><summary>{plan.warnings.length} Bildhinweise</summary><ul className="list-disc pl-5">{plan.warnings.map((w,i) => <li key={i}>{w}</li>)}</ul></details>}
-          {plan.rows.filter(r => r.kind === 'Artikel' && r.id && !plan.images[r.id] && !plan.next.products.find(p => p.id === r.id)?.imageUrl).length > 0 && <section className="space-y-2 rounded-xl border border-gray-400 p-3">
+          {!autoIllustrations && plan.rows.filter(r => r.kind === 'Artikel' && r.id && !plan.images[r.id] && !plan.next.products.find(p => p.id === r.id)?.imageUrl).length > 0 && <section className="space-y-2 rounded-xl border border-gray-400 p-3">
             <h3 className="font-semibold">KI-Bilder für Artikel ohne Bild (optional)</h3>
             <p className="text-sm">Erst nach Klick erzeugen (kostenpflichtiger Dienst). Vor dem Import ansehen; nur bestätigte Vorschläge werden beim Import hochgeladen. Ohne KI-Bild wird der Artikel normal angelegt.</p>
             {plan.rows.filter(r => r.kind === 'Artikel' && r.id && !plan.images[r.id] && !plan.next.products.find(p => p.id === r.id)?.imageUrl).map(r => <div key={r.id} className="flex flex-wrap items-center gap-3 border-t border-gray-400 py-2">
