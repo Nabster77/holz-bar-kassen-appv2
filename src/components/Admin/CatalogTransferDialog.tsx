@@ -1,11 +1,52 @@
 import { useState } from 'react';
 import type { LocalCatalog } from '@/lib/catalogSync';
 import type { CatalogImportSession } from '@/lib/catalogEngine';
-import { buildImportPlan, exportWorkbook, exportTemplateWorkbook, readImageZip, readWorkbook, type ImportPlan } from '@/lib/catalogTransfer';
+import { buildImportPlan, exportWorkbook, exportTemplateWorkbook, readImageZip, readWorkbook, type ImageEntry, type ImportPlan } from '@/lib/catalogTransfer';
 import { uploadArticleImage } from '@/lib/imageUpload';
-import { importFileToDataURL } from '@/lib/imageImport';
 import { supabase } from '@/lib/supabaseClient';
 import { createCatalogIllustration } from '@/lib/catalogIllustration';
+
+const MAX_IMAGE_BYTES = 500 * 1024;
+const MAX_IMAGE_SIDE = 800;
+
+/** Normalize each ZIP image before preview/commit; the ZIP size is not the per-image limit. */
+async function prepareZipImage(image: ImageEntry): Promise<ImageEntry> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(new Blob([new Uint8Array(image.bytes)], {type:image.mime}));
+  } catch {
+    throw new Error(`Bild „${image.path}“ konnte nicht geöffnet werden. Bitte eine gültige Bilddatei verwenden.`);
+  }
+  try {
+    if (image.bytes.byteLength <= MAX_IMAGE_BYTES && bitmap.width <= MAX_IMAGE_SIDE && bitmap.height <= MAX_IMAGE_SIDE) return image;
+    const factor = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+    let width = Math.max(1, Math.round(bitmap.width * factor));
+    let height = Math.max(1, Math.round(bitmap.height * factor));
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Bildkonvertierung nicht verfügbar.');
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      // WebP preserves transparent product backgrounds and usually compresses well.
+      const quality = Math.max(0.42, 0.88 - (attempt % 4) * 0.15);
+      let blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/webp', quality));
+      if (!blob || blob.type !== 'image/webp') {
+        blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+      }
+      if (blob && blob.size <= MAX_IMAGE_BYTES) {
+        return {path:image.path, bytes:new Uint8Array(await blob.arrayBuffer()), mime:blob.type};
+      }
+      if (attempt % 4 === 3) {
+        width = Math.max(1, Math.floor(width * 0.8));
+        height = Math.max(1, Math.floor(height * 0.8));
+      }
+    }
+    throw new Error(`Bild „${image.path}“ konnte nicht unter 500 KB komprimiert werden.`);
+  } finally {
+    bitmap.close();
+  }
+}
 
 export interface CatalogTransferProps {
   catalog: LocalCatalog;
@@ -59,13 +100,9 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       if (excel.size > 10 * 1024 * 1024) throw new Error('Excel-Datei ist größer als 10 MB.');
       if (zip && zip.size > 100 * 1024 * 1024) throw new Error('ZIP ist größer als 100 MB.');
       const sheets = await readWorkbook(await excel.arrayBuffer());
-      const images = zip ? readImageZip(new Uint8Array(await zip.arrayBuffer())) : [];
-      for (const image of images) {
-        const bitmap = await createImageBitmap(new Blob([new Uint8Array(image.bytes)], {type:image.mime}));
-        const tooLarge = bitmap.width > 800 || bitmap.height > 800;
-        bitmap.close();
-        if (tooLarge) throw new Error(`Bild „${image.path}“ ist größer als 800 × 800 Pixel. Bitte vor dem ZIP-Erstellen verkleinern.`);
-      }
+      const sourceImages = zip ? readImageZip(new Uint8Array(await zip.arrayBuffer())) : [];
+      const images: ImageEntry[] = [];
+      for (const image of sourceImages) images.push(await prepareZipImage(image));
       const counts = new Map<string, number>();
       for (const image of images) { const folder = image.path.includes('/') ? image.path.split('/')[0] : '(Hauptordner)'; counts.set(folder, (counts.get(folder) ?? 0) + 1); }
       setZipSummary(zip ? `ZIP „${zip.name}“: ${images.length} Bilder erkannt (${Array.from(counts, ([folder, count]) => `${folder}: ${count}`).join(', ') || 'keine Bilddateien'}).` : 'Keine ZIP-Datei ausgewählt.');
@@ -104,20 +141,9 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       const next = structuredClone(plan.next);
       // Validate and decode each image. Unique object names preserve old storage objects.
       for (const [productId, image] of Object.entries(plan.images)) {
+        // Images were already validated and resized individually during preview.
         const file = new File([new Uint8Array(image.bytes)], image.path.split('/').pop()!, {type: image.mime});
-        let converted = file;
-        if (image.mime !== 'image/webp') {
-          const dataUrl = await importFileToDataURL(file);
-          const blob = await (await fetch(dataUrl)).blob();
-          converted = new File([blob], 'image', {type: blob.type});
-        } else {
-          const bitmap = await createImageBitmap(file); bitmap.close();
-        }
-        const bitmapCheck = await createImageBitmap(converted);
-        const tooLarge = bitmapCheck.width > 800 || bitmapCheck.height > 800;
-        bitmapCheck.close();
-        if (tooLarge || converted.size > 500 * 1024) throw new Error(`Bild „${image.path}“ überschreitet 800 × 800 Pixel oder 500 KB.`);
-        const url = await uploadArticleImage(converted);
+        const url = await uploadArticleImage(file);
         if (!url) throw new Error(`Bild „${image.path}“ konnte nicht hochgeladen werden. Katalog wurde nicht importiert. Bereits hochgeladene neue Bilder bleiben unreferenziert; vorhandene Bilder bleiben erhalten.`);
         uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'ZIP-Bilder hochladen'});
         next.products.find(p => p.id === productId)!.imageUrl = url;
@@ -182,7 +208,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert.</p>
         <div className="rounded-xl border-2 border-red-600 p-3 text-sm text-red-700 dark:text-red-300" role="note">
           <strong>WICHTIG – Import richtig vorbereiten:</strong> Lade zuerst die „Excel-Mustervorlage“ herunter. Du darfst Artikel, Preise und Pfandbeträge ändern oder weitere Artikelzeilen ergänzen. Behalte die Pfandzeilen oberhalb der Tabelle und die acht Spaltenüberschriften bei.
-          <p className="mt-2"><strong>Dateien:</strong> Produktbilder in einem ZIP-Archiv (.zip) speichern; Unterordner mit Bildern sind erlaubt. Pro Bild max. 500 KB und 800 × 800 Pixel; erlaubt sind PNG, JPG/JPEG, WebP und BMP.</p>
+          <p className="mt-2"><strong>Dateien:</strong> Produktbilder in einem ZIP-Archiv (.zip) speichern; Unterordner mit Bildern sind erlaubt. Bilder werden bei Bedarf automatisch auf max. 500 KB und 800 × 800 Pixel verkleinert; erlaubt sind PNG, JPG/JPEG, WebP und BMP.</p>
         <div className="mt-3 rounded-lg border border-red-400 px-3 py-3 leading-relaxed">
           <p className="text-base font-bold">WICHTIG: Bilddateiname muss zum Produktnamen passen!</p>
           <p className="mt-2 text-sm">Beispiel: „Gluehwein Rot.png“ zu „Glühwein Rot“. z. B. Ü oder UE ist egal – das System erkennt beides als gleich!</p>
@@ -219,7 +245,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           </div>
           <p><strong>Preis:</strong> „fix“ bedeutet fester Verkaufspreis, „individuell“ erlaubt die Eingabe an der Kasse. <strong>Steuer DE</strong> gilt für Friedrichshafen, <strong>Steuer AT</strong> für Bregenz. <strong>Schuss und Pfand:</strong> „x“ aktiviert das jeweilige Häkchen, eine leere Zelle deaktiviert es. Der Pfandbetrag kommt aus dem oberen Tabellenbereich.</p>
           <h3 className="font-semibold">Eigene Artikelbilder als ZIP hinzufügen (optional)</h3>
-          <p className="font-semibold text-red-700 dark:text-red-300">WICHTIG: Alle Produktbilder in ein ZIP-Archiv (.zip) packen; Unterordner sind erlaubt. Jedes Bild maximal 500 KB, höchstens 800 × 800 Pixel und nur PNG, JPG/JPEG, WebP oder BMP.</p>
+          <p className="font-semibold text-red-700 dark:text-red-300">WICHTIG: Alle Produktbilder in ein ZIP-Archiv (.zip) packen; Unterordner sind erlaubt. Jedes Bild wird bei Bedarf automatisch auf maximal 500 KB und 800 × 800 Pixel verkleinert und nur PNG, JPG/JPEG, WebP oder BMP.</p>
           <div className="mt-3 rounded-lg border border-red-400 px-3 py-3 leading-relaxed">
             <p className="text-base font-bold">Bilddateiname muss zum Produktnamen passen!</p>
             <p className="mt-2 text-sm">Umlaute dürfen als ae/oe/ue geschrieben werden.</p>
