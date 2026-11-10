@@ -33,12 +33,16 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
     }),
   );
 
-  const syncCatalog = useCallback(async () => {
+  const syncCatalog = useCallback(async (background = false) => {
     if (testModeRef.current) return { ok: false, error: 'Im Testmodus ist die Cloud-Synchronisierung deaktiviert.' };
     const startedAt = revision.current;
-    setSyncStatus('syncing');
+    if (!background) setSyncStatus('syncing');
     const result = await engine.sync();
-    if (revision.current === startedAt) setSyncStatus(result.ok ? 'saved' : 'error');
+    if (revision.current === startedAt) {
+      // A successful background check must not flash amber when nothing changed.
+      // A failed check is still reported, even when it ran in the background.
+      setSyncStatus(result.ok ? 'saved' : 'error');
+    }
     return result;
   }, [engine]);
 
@@ -57,7 +61,7 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
   useEffect(() => {
     if (testMode) return;
     // Retry pending uploads after reconnect and periodically when the app stays open.
-    const retry = () => { void syncCatalog(); };
+    const retry = () => { void syncCatalog(true); };
     window.addEventListener('online', retry);
     const interval = window.setInterval(retry, 30_000);
     return () => {
