@@ -25,6 +25,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [session, setSession] = useState<CatalogImportSession | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [importProgress, setImportProgress] = useState<{done:number;total:number;stage:string} | null>(null);
   const [message, setMessage] = useState('');
   const [done, setDone] = useState(false);
   const invalidate = () => {setGenerated({});setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
@@ -66,6 +67,10 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   async function commit() {
     if (!plan || !session || !confirmed || plan.errors.length || stale || testMode || busy || done) return;
     setBusy(true); setMessage('');
+    const imageCount = Object.keys(plan.images).length + Object.keys(generated).length + (autoIllustrations ? plan.next.products.filter(p => !p.imageUrl && !plan.images[p.id] && !generated[p.id] && plan.rows.some(r => r.kind === 'Artikel' && r.id === p.id)).length : 0);
+    const totalSteps = imageCount + 1;
+    let completedSteps = 0;
+    setImportProgress({done:0,total:totalSteps,stage:'Bilder vorbereiten'});
     let uploaded = 0;
     try {
       const next = structuredClone(plan.next);
@@ -82,7 +87,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         }
         const url = await uploadArticleImage(converted);
         if (!url) throw new Error(`Bild „${image.path}“ konnte nicht hochgeladen werden. Katalog wurde nicht importiert. Bereits hochgeladene neue Bilder bleiben unreferenziert; vorhandene Bilder bleiben erhalten.`);
-        uploaded++;
+        uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'ZIP-Bilder hochladen'});
         next.products.find(p => p.id === productId)!.imageUrl = url;
       }
       for (const [productId, generatedImage] of Object.entries(generated)) {
@@ -90,7 +95,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         if (!product || (product.imageUrl && !replace)) continue;
         const url = await uploadArticleImage(new File([new Uint8Array(generatedImage.bytes)], 'ki-bild.png', {type:'image/png'}));
         if (!url) throw new Error('KI-Bild konnte nicht gespeichert werden; Katalog wurde nicht importiert.');
-        uploaded++; product.imageUrl = url;
+        uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'Bilder hochladen'}); product.imageUrl = url;
       }
       if (autoIllustrations) {
         for (const product of next.products) {
@@ -99,10 +104,12 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           const illustration = await createCatalogIllustration(product.name);
           const url = await uploadArticleImage(illustration);
           if (!url) throw new Error(`Illustration für „${product.name}“ konnte nicht gespeichert werden.`);
-          uploaded++; product.imageUrl = url;
+          uploaded++; completedSteps++; setImportProgress({done:completedSteps,total:totalSteps,stage:'Illustrationen hochladen'}); product.imageUrl = url;
         }
       }
+      setImportProgress({done:completedSteps,total:totalSteps,stage:'Katalog in Supabase speichern'});
       await onCommit(session, next);
+      setImportProgress({done:totalSteps,total:totalSteps,stage:'Import abgeschlossen'});
       setDone(true); setConfirmed(false); setMessage('Import vollständig in Supabase gespeichert und lokal übernommen.');
     } catch (e) {
       setMessage(`${(e as Error).message}${uploaded ? ` ${uploaded} neue Bilddateien wurden hochgeladen und können unreferenziert sein. Vor erneutem Import synchronisieren und Vorschau neu erstellen.` : ''}`); setConfirmed(false);
@@ -155,6 +162,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
           <div className="max-h-80 overflow-auto rounded-xl border border-gray-400"><table className="w-full text-left text-sm"><thead className="sticky top-0 bg-gray-100 dark:bg-gray-900"><tr><th className="p-2">Typ</th><th>Name</th><th>Status</th><th>Änderungen / Bild</th></tr></thead><tbody>{plan.rows.map((r,i) => <tr className="border-t border-gray-300 align-top" key={i}><td className="p-2">{r.kind}</td><td className="p-2">{r.name}</td><td className="p-2">{r.status}</td><td className="p-2 break-all"><details><summary>{r.changes.length} Feldänderungen{r.image ? ` · ZIP: ${r.image}${replace ? ' (Bildersatz freigegeben)' : ''}` : ''}</summary>{r.changes.map((c,j) => <p key={j}>{c}</p>)}</details></td></tr>)}</tbody></table></div>
           {stale && !done && <p role="alert">Der lokale Katalog hat sich geändert. Bitte Vorschau neu erstellen.</p>}
           <label className="flex items-center gap-2"><input type="checkbox" disabled={busy || done || !session || !!stale || testMode || !!plan.errors.length} checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Ich habe die Vorschau einschließlich SCHUSS-, Pfand- und Bildänderungen geprüft und bestätige den Import.</label>
+          {importProgress && <div role="status" className="space-y-1 rounded-xl border border-gray-400 p-3"><p className="text-sm font-semibold">Import: {Math.round(importProgress.done / importProgress.total * 100)} % – {importProgress.stage}</p><progress className="w-full" max={importProgress.total} value={importProgress.done} /> <p className="text-xs">Fortschritt der abgeschlossenen Schritte; der aktuelle Upload oder Datenbankvorgang kann länger dauern.</p></div>}
           <button className="rounded-xl bg-blue-700 px-4 py-2 font-bold text-white disabled:opacity-40" disabled={!confirmed || busy || done || !session || !!stale || testMode || !!plan.errors.length} onClick={commit}>Jetzt verbindlich importieren</button>
         </>}
       </div>
