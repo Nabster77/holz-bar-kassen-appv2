@@ -246,8 +246,20 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
   return plan;
 }
 
+function zipSignature(bytes: Uint8Array): boolean {
+  return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b &&
+    ((bytes[2] === 3 && bytes[3] === 4) || (bytes[2] === 5 && bytes[3] === 6) || (bytes[2] === 7 && bytes[3] === 8));
+}
+function validImageSignature(bytes: Uint8Array, mime: string): boolean {
+  if (mime === 'image/png') return bytes.length >= 8 && [137,80,78,71,13,10,26,10].every((v,i) => bytes[i] === v);
+  if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+  if (mime === 'image/webp') return bytes.length >= 12 && String.fromCharCode(...bytes.slice(0,4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8,12)) === 'WEBP';
+  if (mime === 'image/bmp') return bytes.length >= 2 && bytes[0] === 66 && bytes[1] === 77;
+  return false;
+}
 export async function readWorkbook(bytes: ArrayBuffer): Promise<SheetRows> {
   if (bytes.byteLength > 10 * 1024 * 1024) throw new Error('Excel-Datei ist größer als 10 MB.');
+  if (!zipSignature(new Uint8Array(bytes))) throw new Error('Ungültige Excel-Datei. Bitte eine echte .xlsx-Datei auswählen.');
   // Bound decompressed XML before passing the archive to the workbook parser.
   let total = 0; let count = 0; let failed: Error | null = null;
   const check = new Unzip(file => {
@@ -263,7 +275,8 @@ export async function readWorkbook(bytes: ArrayBuffer): Promise<SheetRows> {
   if (failed) throw failed;
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(bytes);
+  try { await workbook.xlsx.load(bytes); }
+  catch { throw new Error('Die ausgewählte Datei ist keine gültige Excel-Arbeitsmappe (.xlsx). Bitte die richtige Datei auswählen.'); }
   const sheets: SheetRows = {};
   for (const sheet of workbook.worksheets) {
     if (sheet.rowCount > 10000 || sheet.columnCount > 80) throw new Error('Excel-Tabelle überschreitet 10.000 Zeilen oder 80 Spalten.');
@@ -363,6 +376,7 @@ function decodeZipPath(path: string): string {
 /** Streaming decompression with limits checked BEFORE accepting each output chunk. */
 export function readImageZip(bytes: Uint8Array): ImageEntry[] {
   if (bytes.length > 100 * 1024 * 1024) throw new Error('ZIP ist größer als 100 MB.');
+  if (!zipSignature(bytes)) throw new Error('Ungültige Bilder-ZIP. Bitte eine echte .zip-Datei mit Produktbildern auswählen.');
   const result: ImageEntry[] = []; let total = 0; let entries = 0; let failure: Error | null = null;
   const unzip = new Unzip(file => {
     const decodedPath = decodeZipPath(file.name);
@@ -377,9 +391,10 @@ export function readImageZip(bytes: Uint8Array): ImageEntry[] {
       size += chunk.length; total += chunk.length;
       if (size > 10 * 1024 * 1024 || total > 200 * 1024 * 1024) { file.terminate(); throw new Error('ZIP entpackt zu groß (10 MB je Bild / 200 MB insgesamt).'); }
       chunks.push(chunk);
-      if (final) { const data = new Uint8Array(size); let offset = 0; for (const c of chunks) {data.set(c,offset); offset += c.length;} result.push({path:decodedPath,bytes:data,mime}); }
+      if (final) { const data = new Uint8Array(size); let offset = 0; for (const c of chunks) {data.set(c,offset); offset += c.length;} if (!validImageSignature(data, mime)) { failure = new Error(`„${decodedPath}“ hat kein gültiges Bildformat (${ext}). Bitte das Bild neu speichern.`); return; } result.push({path:decodedPath,bytes:data,mime}); }
     }; file.start();
   }); unzip.register(UnzipInflate); unzip.push(bytes, true);
   if (failure) throw failure;
+  if (!result.length) throw new Error('Die Bilder-ZIP enthält keine unterstützten Bilder (PNG, JPG, JPEG, WebP oder BMP).');
   return result;
 }
