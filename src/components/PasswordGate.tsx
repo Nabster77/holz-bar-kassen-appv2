@@ -10,6 +10,7 @@ interface Props {
   onSuccess: (administrator?: StaffUser) => void;
   title: string;
   onStaffLogin?: () => void;
+  onCancel?: () => void;
   administrators?: StaffUser[];
   /** Whether the shared Verwaltung/Journal password is accepted in this gate. */
   allowManagerPassword?: boolean;
@@ -19,7 +20,7 @@ interface Props {
 
 type GateError = 'wrong' | 'unavailable' | null;
 
-export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = [], allowManagerPassword = true, accessDenied = false }: Props) {
+export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, administrators = [], allowManagerPassword = true, accessDenied = false }: Props) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
@@ -96,8 +97,10 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, administrators = 
           >
             {checking ? <Loader2 className="mr-1.5 inline h-5 w-5 animate-spin" /> : <Check className="mr-1.5 inline h-5 w-5" />} Entsperren
           </button>
+          {onCancel && <button type="button" onClick={onCancel} disabled={checking} className="w-full rounded-xl border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200 disabled:opacity-60">Abbrechen</button>}
           {onStaffLogin && <button onClick={onStaffLogin} className="w-full rounded-xl border border-blue-300 bg-blue-50 py-2.5 text-sm font-semibold text-blue-700 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300">Als Administrator anmelden</button>}
         </div>}
+        {accessDenied && onCancel && <button type="button" onClick={onCancel} className="mt-4 w-full rounded-xl border border-gray-300 py-2.5 text-sm font-semibold dark:border-gray-600 dark:text-gray-200">Abbrechen</button>}
       </div>
     </div>
   );

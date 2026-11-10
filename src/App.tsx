@@ -579,7 +579,12 @@ export default function App() {
                 setManagementAdministrator(selectedAdministrator ?? administrator ?? null);
                 setAdminUnlocked(true);
               }}
-              onStaffLogin={() => setStaffAdminLoginOpen(true)}
+              onCancel={() => {
+                setOpeningManagementAccess(null);
+                setManagementAdministrator(null);
+                setAdminUnlocked(false);
+                setTab('pos');
+              }}
               staffUsers={staff.users}
               title="Verwaltung"
               access={openingManagementAccess}
@@ -641,12 +646,13 @@ function readableSyncError(cause: unknown): string {
   return String(cause);
 }
 
-function AdminAccessGate({ onManagerSuccess, onStaffLogin, staffUsers, title, access = null }: { onManagerSuccess: (administrator?: StaffUser) => void; onStaffLogin: () => void; staffUsers: StaffUser[]; title: string; access?: OpeningManagementAccess }) {
+function AdminAccessGate({ onManagerSuccess, onStaffLogin, onCancel, staffUsers, title, access = null }: { onManagerSuccess: (administrator?: StaffUser) => void; onStaffLogin: () => void; onCancel?: () => void; staffUsers: StaffUser[]; title: string; access?: OpeningManagementAccess }) {
   const selectedAdministrator = access?.kind === 'selected-administrator' ? access.administrator : null;
   const managerOnly = access?.kind === 'manager-only';
   const employeeDenied = access?.kind === 'employee-denied';
   return <PasswordGate
     onSuccess={onManagerSuccess}
+    onCancel={onCancel}
     onStaffLogin={employeeDenied || managerOnly ? undefined : onStaffLogin}
     administrators={selectedAdministrator ? [selectedAdministrator] : managerOnly || employeeDenied ? [] : staffUsers}
     allowManagerPassword={!employeeDenied}
