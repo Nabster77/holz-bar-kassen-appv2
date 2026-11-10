@@ -24,23 +24,25 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [visibleArea, setVisibleArea] = useState<{ top: number; height: number } | null>(null);
 
-  // Android keyboards can overlay the page instead of resizing its layout.
-  // Adjust only the password panel; authentication and cash logic stay unchanged.
+  // Center the gate in the actual visible viewport when Android opens its keyboard.
+  // A fixed overlay avoids the parent page's overflow:hidden clipping the dialog.
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
-    const update = () => {
-      const coveredHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-      setKeyboardOffset(coveredHeight > 100 ? coveredHeight / 2 : 0);
-    };
+    const update = () => setVisibleArea({
+      top: viewport.offsetTop,
+      height: viewport.height,
+    });
     update();
     viewport.addEventListener('resize', update);
     viewport.addEventListener('scroll', update);
+    window.addEventListener('orientationchange', update);
     return () => {
       viewport.removeEventListener('resize', update);
       viewport.removeEventListener('scroll', update);
+      window.removeEventListener('orientationchange', update);
     };
   }, []);
 
@@ -71,8 +73,11 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   }
 
   return (
-    <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto">
-      <div className="w-full max-w-sm shrink-0 rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800" style={{ transform: keyboardOffset ? `translateY(-${keyboardOffset}px)` : undefined }}>
+    <div
+      className="pointer-events-none fixed inset-x-0 z-40 flex items-center justify-center overflow-y-auto px-3 py-3"
+      style={{ top: visibleArea?.top ?? 0, height: visibleArea?.height ?? '100dvh' }}
+    >
+      <div className="pointer-events-auto my-auto w-full max-w-sm shrink-0 rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800">
         <div className="mb-5 flex flex-col items-center gap-3 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg">
             <Lock className="h-8 w-8" />
