@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LocalCatalog } from '@/lib/catalogSync';
 import type { CatalogImportSession } from '@/lib/catalogEngine';
-import { buildImportPlan, exportWorkbook, readImageZip, readWorkbook, type ImportPlan } from '@/lib/catalogTransfer';
+import { buildImportPlan, exportWorkbook, exportTemplateWorkbook, readImageZip, readWorkbook, type ImportPlan } from '@/lib/catalogTransfer';
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { importFileToDataURL } from '@/lib/imageImport';
 import { supabase } from '@/lib/supabaseClient';
@@ -25,10 +25,11 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [session, setSession] = useState<CatalogImportSession | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [importProgress, setImportProgress] = useState<{done:number;total:number;stage:string} | null>(null);
   const [message, setMessage] = useState('');
   const [done, setDone] = useState(false);
-  const invalidate = () => {setGenerated({});setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setMessage('');};
+  const invalidate = () => {setGenerated({});setZipSummary('');setPlan(null); setSession(null); setConfirmed(false); setDone(false); setImportProgress(null); setMessage('');};
   const stale = session && JSON.stringify(session.base) !== JSON.stringify(catalog);
   async function preview() {
     if (!excel) return;
@@ -117,6 +118,16 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       setSession(null);
     } finally {setBusy(false);}
   }
+  async function downloadTemplate() {
+    setBusy(true); setMessage('');
+    try {
+      const bytes = await exportTemplateWorkbook();
+      const url = URL.createObjectURL(new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'WOODMO-Excel-Mustervorlage.xlsx'; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
+  }
   async function download() {
     setBusy(true); setMessage('');
     try {
@@ -131,8 +142,29 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       <div className="flex items-center justify-between gap-4"><h2 id="catalog-transfer-title" className="text-lg font-bold">Excel-Import / Export</h2><button disabled={busy} onClick={onClose} className={button}>Schließen</button></div>
       <div className="mt-3 overflow-auto space-y-4">
         <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert.</p>
-        <button disabled={busy} onClick={download} className={button}>Vollständigen Katalog als Excel exportieren</button>
-        <p className="text-sm">Die Preisliste 2026 und das Exportformat werden unterstützt. Neue Artikel sind ohne Pfand und ohne SCHUSS-Zuschlag voreingestellt; diese Merkmale können im Export über „Pfandartikel“ und „Schuss erlaubt“ geändert werden.</p>
+        <div className="flex flex-wrap gap-2">
+          <button disabled={busy} onClick={download} className={button}>Vollständigen Katalog als Excel exportieren</button>
+          <button disabled={busy} onClick={downloadTemplate} className={button}>Excel-Mustervorlage herunterladen</button>
+          <button type="button" aria-expanded={helpOpen} onClick={() => setHelpOpen(v => !v)} className={button}>{helpOpen ? 'Excel- & Bilder-Anleitung schließen' : 'Wie muss ich meine Excel-Tabelle und Bilder-ZIP vorbereiten?'}</button>
+        </div>
+        {helpOpen && <section className="space-y-3 rounded-xl border border-gray-400 p-3 text-sm">
+          <h3 className="font-semibold">Excel-Tabelle richtig anlegen</h3>
+          <p>Oberhalb der Kopfzeile stehen die Pfandbeträge: in Spalte A „Friedrichshafen“ und „Bregenz“, in Spalte B jeweils der gewünschte Betrag in Euro. Die Beträge dürfen je Stadt unterschiedlich sein und werden beim Import übernommen.</p>
+          <div className="overflow-x-auto">
+            <table className="min-w-max border-collapse text-left text-xs">
+              <thead><tr>{['Produktname App','VK','Warengruppe','Preis fix / individuell','Steuer DE in %','Steuer AT in %','Schuss','Pfand'].map(h => <th key={h} className="border border-gray-400 p-2">{h}</th>)}</tr></thead>
+              <tbody>
+                <tr>{['Glühwein Rot','4,5','Getränke','fix','19','20','x','x'].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
+                <tr>{['Glühwein Weiß','4,5','Getränke','fix','19','20','x','x'].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
+                <tr>{['Küchenbretter','0','Verkauf','individuell','19','20','',''].map((v,i) => <td key={i} className="border border-gray-400 p-2">{v}</td>)}</tr>
+              </tbody>
+            </table>
+          </div>
+          <p><strong>Preis:</strong> „fix“ bedeutet fester Verkaufspreis, „individuell“ erlaubt die Eingabe an der Kasse. <strong>Steuer DE</strong> gilt für Friedrichshafen, <strong>Steuer AT</strong> für Bregenz. <strong>Schuss und Pfand:</strong> „x“ aktiviert das jeweilige Häkchen, eine leere Zelle deaktiviert es. Der Pfandbetrag kommt aus dem oberen Tabellenbereich.</p>
+          <h3 className="font-semibold">Eigene Artikelbilder als ZIP hinzufügen (optional)</h3>
+          <p>Lege deine Produktbilder in einen Ordner und komprimiere ihn als ZIP-Datei. Benenne jedes Bild genau wie den Artikel in der Spalte „Produktname App“, zum Beispiel „Glühwein Rot.png“ und „Glühwein Weiß.jpg“. Unterstützt werden PNG, JPG/JPEG, WebP und BMP. ZIP-Unterordner sind möglich. Wähle beim Import sowohl die Excel-Datei als auch die ZIP-Datei aus. Ohne ZIP werden die Artikel trotzdem importiert; vorhandene Bilder bleiben erhalten, sofern du den Bildersatz nicht ausdrücklich aktivierst.</p>
+          <p>Ältere Excel-Spaltennamen werden weiterhin unterstützt. Für die neue Tabelle empfehlen wir die herunterladbare Mustervorlage.</p>
+        </section>}
         <label className="block">Excel (.xlsx)<input disabled={busy} className="ml-3" type="file" accept=".xlsx" onChange={e => {invalidate();setExcel(e.target.files?.[0] ?? null);}} /></label>
         <label className="block">Bilder-ZIP (optional)<input disabled={busy} className="ml-3" type="file" accept=".zip" onChange={e => {invalidate();setZip(e.target.files?.[0] ?? null);}} /></label>
         <label className="flex items-center gap-2"><input disabled={busy} type="checkbox" checked={replace} onChange={e => {invalidate();setReplace(e.target.checked);}} />Vorhandene Bildzuordnungen ausdrücklich ersetzen (alte Bilddateien bleiben erhalten)</label>
