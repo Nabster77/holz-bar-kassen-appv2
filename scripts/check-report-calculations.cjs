@@ -31,6 +31,10 @@ const session = { ...base, corrections: [{ id: 'correction', oldAmount: 200, new
     { id: 'out', type: 'withdrawal', amount: 5, timestamp: stamp + 3000, reason: 'Ausgabe' }] };
 const rows = [cash, card, ret, { ...cash, id: 'old', timestamp: stamp - 1000 }];
 const report = closedSessionReport(session, rows, []);
+assert.ok(buildJournalHTML(report).includes('data-pdf-page-header="Tagesabschluss · Friedrichshafen · 9.11.2026 · 12:01 Uhr"'));
+assert.ok(buildJournalHTML(report).includes('data-pdf-page-location="Friedrichshafen"'));
+assert.ok(buildJournalHTML(report).includes('class="audit-totals"'));
+assert.ok(buildJournalHTML(report).includes('class="audit-note"'));
 assert.equal(report.transactions.length, 3);
 assert.equal(report.dailyCloseCash.remainingBalance, 242.7); // 190 + 13.70 - 6 + 50 - 5
 assert.equal(report.dailyCloseCash.openingCorrectionTotal, -10); // already in the 190
@@ -42,6 +46,7 @@ assert.equal(closed.dailyCloseCash.remainingBalance, 0);
 assert.equal(closed.dailyCloseCash.balanceBeforeWithdrawal, 242.7);
 for (const label of ['Tagesjournal', 'Wochenjournal', 'Monatsjournal', 'Jahresjournal', 'Zeitraum']) {
   const html = buildJournalHTML({ ...report, documentTitle: 'Kassenjournal', headerLabel: label });
+  assert.ok(!html.includes('data-pdf-page-header='), 'Continuation labels are limited to daily-close reports');
   assert.ok(html.includes('Wechselgeld') && html.includes('Zaehlung') && html.includes('Ausgabe'), label);
   assert.ok(!html.includes('NaN'), label);
 }

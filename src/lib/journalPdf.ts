@@ -248,8 +248,8 @@ function auditSection(records: CashAuditRecord[]): string {
   const corrections = records.filter((record) => record.kind === 'Korrektur').reduce((sum, record) => sum + (record.newAmount ?? 0) - (record.oldAmount ?? 0), 0);
   return `<section class="report-table-section table-block">
     <table class="audit-table"><thead>${tableTitleRow('Kassenbewegungen und Korrekturen')}<tr><th>Datum</th><th>Uhrzeit</th><th>Mitarbeiter</th><th>Vorgang</th><th style="text-align:right">Betrag / Änderung</th><th>Grund</th></tr></thead><tbody>${auditRows(records)}</tbody></table>
-    <p>Summe Einlagen: + ${formatCurrency(deposits)} · Summe Ausgaben und Abschlussentnahmen: - ${formatCurrency(withdrawals)} · Anfangsbestandskorrekturen: ${corrections > 0 ? '+' : ''}${formatCurrency(corrections)}</p>
-    <p>Kassenbewegungen sind kein Warenumsatz. Anfangsbestandskorrekturen sind bereits im korrigierten Anfangsbestand enthalten und werden nicht nochmals verrechnet.</p>
+    <p class="audit-totals"><span>Summe Einlagen: + ${formatCurrency(deposits)}</span><span>Summe Ausgaben und Abschlussentnahmen: - ${formatCurrency(withdrawals)}</span><span>Anfangsbestandskorrekturen: ${corrections > 0 ? '+' : ''}${formatCurrency(corrections)}</span></p>
+    <p class="audit-note">Kassenbewegungen sind kein Warenumsatz. Anfangsbestandskorrekturen sind bereits im korrigierten Anfangsbestand enthalten und werden nicht nochmals verrechnet.</p>
   </section>`;
 }
 
@@ -510,6 +510,8 @@ export function buildJournalHTML(data: JournalReportData): string {
     table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; }
     th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #334155; color: #334155; font-size: 10px; text-transform: uppercase; }
     td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; }
+    .audit-totals { display: flex; flex-wrap: wrap; gap: 3px 14px; margin: 4px 0 3px; font-size: 11px; line-height: 1.35; color: #334155; }
+    .audit-note { margin: 0 0 10px; font-size: 10px; line-height: 1.35; color: #64748b; }
     .transaction-table th:nth-child(2), .transaction-table td:nth-child(2),
     .audit-table th:first-child, .audit-table td:first-child { white-space: nowrap; }
     .article-table td:first-child { font-size: 12px; font-weight: 600; }
@@ -573,13 +575,15 @@ export function buildJournalHTML(data: JournalReportData): string {
       tr, td, th { break-inside: avoid; page-break-inside: avoid; }
       th { padding: 2mm 2.5mm; }
       td { padding: 1.5mm 2.5mm; }
+      .audit-totals { font-size: 8.5pt; }
+      .audit-note { font-size: 8pt; }
       .article-table td:first-child { font-size: 10.5pt; }
       .loc-pagebreak { break-after: page; page-break-after: always; height: 0; }
     }
   </style></head><body>
   <div class="print-running-header"><strong>${escapeHtml(documentTitle)}</strong><span>${escapeHtml(headerLabel)} · ${escapeHtml(location)}</span></div>
   <div class="print-running-footer"><span>${escapeHtml(documentTitle)} automatisch generiert · ${generatedAt}</span><span class="page-count"></span></div>
-  <div class="header" style="--report-accent:${reportAccent}">
+  <div class="header" style="--report-accent:${reportAccent}"${documentTitle === 'Tagesabschluss' ? ` data-pdf-page-header="${escapeHtml(`${documentTitle} · ${headerLabel}`)}" data-pdf-page-location="${escapeHtml(location)}"` : ''}>
     ${documentStatus ? `<div class="report-employee"><strong>${escapeHtml(documentStatus)}</strong></div>` : ''}
     <h1>${escapeHtml(documentTitle)}</h1>
     <div class="report-period">${escapeHtml(headerLabel)}</div>
