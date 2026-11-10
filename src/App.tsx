@@ -579,7 +579,12 @@ export default function App() {
                 setManagementAdministrator(selectedAdministrator ?? administrator ?? null);
                 setAdminUnlocked(true);
               }}
-              onStaffLogin={() => setStaffAdminLoginOpen(true)}
+              onCancel={() => {
+                setOpeningManagementAccess(null);
+                setManagementAdministrator(null);
+                setAdminUnlocked(false);
+                setTab('pos');
+              }}
               staffUsers={staff.users}
               title="Verwaltung"
               access={openingManagementAccess}
