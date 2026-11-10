@@ -237,6 +237,15 @@ export function useStore() {
   }, []);
 
   const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure = false, staff?: StaffUser) => {
+    if (!Number.isFinite(amount) || amount <= 0 || !reason.trim()) return;
+    const session = cashSessions.find(item => item.id === sessionId && !item.closed && !item.discarded);
+    if (!session) return;
+    const cashTransactions = sessionTransactions(transactions, session)
+      .filter(transaction => transaction.paymentMethod === 'cash')
+      .reduce((total, transaction) => total + transaction.total, 0);
+    const movements = session.entries.reduce((total, entry) => total + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
+    const availableCents = Math.round((session.openingBalance + cashTransactions + movements) * 100);
+    if (type === 'withdrawal' && Math.round(amount * 100) > availableCents) return;
     const entry: CashEntry = {
       id: uid('entry'),
       type,
@@ -250,7 +259,7 @@ export function useStore() {
     setCashSessions((ss) =>
       ss.map((s) => (s.id === sessionId && !s.closed ? { ...s, entries: [...s.entries, entry], activities: staff ? [...(s.activities ?? []), { id: uid('activity'), type, staffId: staff.id, staffName: staff.name, timestamp: entry.timestamp, amount, reason }] : s.activities } : s)),
     );
-  }, []);
+  }, [cashSessions, transactions]);
 
   const closeCashSession = useCallback((
     sessionId: string,
