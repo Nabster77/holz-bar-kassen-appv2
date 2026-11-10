@@ -462,7 +462,7 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
           <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={cat.color.startsWith("#") ? { backgroundColor: cat.color } : cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`whitespace-nowrap rounded-lg bg-gradient-to-r px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 ${cat.color.startsWith("#") || cat.color.startsWith("linear-gradient(") ? "" : cat.color} ${filterCat === cat.id ? "ring-2 ring-blue-400 ring-offset-1 dark:ring-offset-gray-900" : "opacity-85"}`}>{cat.name}</button>
         ))}
       </div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
           Nach Name:
           <select aria-label="Artikel sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'alphabetical' | 'reverse' | 'manual'); setDragEnabled(false); }}
