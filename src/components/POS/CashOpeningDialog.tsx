@@ -42,6 +42,9 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
   const selectedStaff = availableStaff.find((user) => user.id === selectedStaffId) ?? null;
   const carriedBalance = existingSession?.openingBalance ?? openingBalanceSuggestions?.[location];
   const hasCarriedBalance = typeof carriedBalance === 'number' && Number.isFinite(carriedBalance) && carriedBalance > 0;
+  const parsedOpeningBalance = hasCarriedBalance ? carriedBalance : Number(balance.trim().replace(',', '.'));
+  const validOpeningBalance = balance.trim().length > 0 || hasCarriedBalance;
+  const canOpenWithBalance = validOpeningBalance && Number.isFinite(parsedOpeningBalance) && parsedOpeningBalance > 0;
   useEffect(() => {
     setBalance(formatSuggestedBalance(carriedBalance));
   }, [carriedBalance]);
@@ -53,9 +56,8 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
       if (selectedStaff && staffAuthenticated) onClose();
       return;
     }
-    const parsed = hasCarriedBalance ? carriedBalance : parseFloat(balance.replace(',', '.'));
-    if (!Number.isFinite(parsed) || parsed < 0 || !selectedStaff || !staffAuthenticated) return;
-    onSave(location, parsed);
+    if (!canOpenWithBalance || !selectedStaff || !staffAuthenticated) return;
+    onSave(location, parsedOpeningBalance);
   }
 
   function chooseStaff(id: string) {
@@ -114,8 +116,9 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
       <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><MapPin className="h-4 w-4" /> Standort</label><div className="grid grid-cols-2 gap-2">{LOCATIONS.map((entry) => <button key={entry} onClick={() => { setLocation(entry); setBalance(formatSuggestedBalance(openingBalanceSuggestions?.[entry])); }} className={`rounded-xl py-3 text-sm font-bold transition active:scale-95 ${location === entry ? 'bg-blue-600 text-white shadow-md' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>{entry}</button>)}</div></div>
       <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><Euro className="h-4 w-4" /> Kassen-Anfangsbestand (€)</label>{hasCarriedBalance ? <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-lg font-bold text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">{formatSuggestedBalance(carriedBalance)} €<span className="mt-1 block text-xs font-normal">Vorhandener Bestand wird automatisch übernommen.</span></p> : <input value={balance} onChange={(event) => setBalance(event.target.value)} placeholder="z.B. 150,00" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />}</div>
       </fieldset>
+      {!existingSession && !canOpenWithBalance && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-400">Bitte einen Anfangsbestand über 0,00 € eingeben. Ohne positiven Anfangsbestand kann die Kasse nicht eröffnet werden.</p>}
       {existingSession && <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Die Kasse in {existingSession.location} ist bereits geöffnet. Der bestehende Anfangsbestand bleibt erhalten.</p>}
-      <button onClick={handleSave} disabled={(!existingSession && !hasCarriedBalance && !balance) || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> {existingSession ? 'Kasse weiterführen' : 'Kasse eröffnen'}</button>
+      <button onClick={handleSave} disabled={(!existingSession && !canOpenWithBalance) || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> {existingSession ? 'Kasse weiterführen' : 'Kasse eröffnen'}</button>
       {onEnterAdmin && selectedStaff?.role !== 'employee' && <button onClick={() => onEnterAdmin(selectedStaff)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-700"><Settings className="h-4 w-4" /> Verwaltung öffnen</button>}
     </div>
   </div></div>;
