@@ -33,6 +33,7 @@ interface Props {
   onUpdateCategory: (id: string, data: Partial<Omit<Category, 'id'>>) => void;
   onDeleteCategory: (id: string) => void;
   onReorderCategory?: (id: string, direction: 'up' | 'down') => void;
+  onMoveCategoryTo?: (sourceId: string, targetId: string) => void;
   onAddProduct: (data: Omit<Product, 'id'>) => void;
   onUpdateProduct: (id: string, data: Partial<Omit<Product, 'id'>>) => void;
   onDeleteProduct: (id: string) => void;
@@ -227,11 +228,18 @@ function ConfirmDialog({ title, message, onConfirm, onClose }: {
 
 // ---- Category Manager ----
 
-function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onReorderCategory }: Props) {
+function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onMoveCategoryTo }: Props) {
   const [editing, setEditing] = useState<Category | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteCat, setDeleteCat] = useState<Category | null>(null);
-  const sorted = [...categories].filter((category) => category.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder);
+  const [sortMode, setSortMode] = useState<'manual' | 'asc' | 'desc'>('manual');
+  const [dragEnabled, setDragEnabled] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const sorted = [...categories].filter((category) => category.id !== SHOT_CATEGORY_ID).sort(
+    sortMode === 'asc' ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+    : sortMode === 'desc' ? (a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' })
+    : (a, b) => a.sortOrder - b.sortOrder
+  );
 
   return (
     <div>
@@ -241,25 +249,30 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
           <Plus className="h-4 w-4" /> Neue Gruppe
         </button>
       </div>
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
+        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          Nach Name:
+          <select aria-label="Warengruppen sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'manual' | 'asc' | 'desc'); setDragEnabled(false); }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="manual">Eigene Reihenfolge</option>
+            <option value="asc">Aufsteigend (A–Z)</option>
+            <option value="desc">Absteigend (Z–A)</option>
+          </select>
+        </label>
+        <button type="button" aria-pressed={dragEnabled} onClick={() => { if (!dragEnabled) setSortMode('manual'); setDragEnabled(!dragEnabled); }}
+          className={`rounded-lg px-3 py-2 text-sm font-semibold ${dragEnabled ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>
+          {dragEnabled ? '✓ Verschieben aktiv' : 'Kacheln verschieben'}
+        </button>
+      </div>
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {sorted.map((cat, idx) => (
-          <div key={cat.id} className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex flex-col gap-0.5">
-              <button
-                onClick={() => onReorderCategory?.(cat.id, 'up')}
-                disabled={idx === 0 || cat.id === SHOT_CATEGORY_ID}
-                className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => onReorderCategory?.(cat.id, 'down')}
-                disabled={idx === sorted.length - 1 || cat.id === SHOT_CATEGORY_ID}
-                className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-700"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-            </div>
+        {sorted.map((cat) => (
+          <div key={cat.id}
+            draggable={dragEnabled && Boolean(onMoveCategoryTo)}
+            onDragStart={event => { if (!dragEnabled) return; setDraggedId(cat.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', cat.id); }}
+            onDragOver={event => { if (dragEnabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+            onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedId; if (dragEnabled && sourceId && sourceId !== cat.id) onMoveCategoryTo?.(sourceId, cat.id); setDraggedId(null); }}
+            onDragEnd={() => setDraggedId(null)}
+            className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedId === cat.id ? 'opacity-50' : ''}`}>
             <div style={cat.color.startsWith("linear-gradient(") ? { background: cat.color } : cat.color.startsWith("#") ? { backgroundColor: cat.color } : undefined} className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${cat.color.startsWith("linear-gradient(") || cat.color.startsWith("#") ? "" : cat.color} text-white`}>
               <DynamicIcon name={cat.icon} className="h-6 w-6" />
             </div>
