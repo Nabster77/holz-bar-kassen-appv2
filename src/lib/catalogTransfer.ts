@@ -284,7 +284,7 @@ export async function exportTemplateWorkbook(): Promise<ArrayBuffer> {
   sheet.addRow(['Produktname App', 'VK', 'Warengruppe', 'Preis fix / individuell', 'Steuer DE in %', 'Steuer AT in %', 'Schuss', 'Pfand']);
   sheet.addRow(['Glühwein Rot', 4.5, 'Getränke', 'fix', 19, 20, 'x', 'x']);
   sheet.addRow(['Glühwein Weiß', 4.5, 'Getränke', 'fix', 19, 20, 'x', 'x']);
-  sheet.addRow(['Küchenbretter', 0, 'Verkauf', 'individuell', 19, 20, '', '']);
+  sheet.addRow(['Küchenbretter', 0, 'Handwerk', 'individuell', 19, 20, '', '']);
   sheet.getRow(6).font = {bold: true};
   sheet.columns.forEach(column => {column.width = 24;});
   return await workbook.xlsx.writeBuffer() as ArrayBuffer;
