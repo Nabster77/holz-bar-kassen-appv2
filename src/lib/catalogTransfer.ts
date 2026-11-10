@@ -205,7 +205,7 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
           });
         let image: string | undefined;
         if (exactImages.length > 1) throw new Error(`Mehrere identische ZIP-Bildnamen passen zu „${name}“: ${exactImages.map(x => x.path).join(', ')}. ZIP bereinigen.`);
-        if (candidatesImage.length && (!p.imageUrl || replaceImages)) { plan.images[p.id] = candidatesImage[0]; image = candidatesImage[0].path; }
+        if (candidatesImage.length && (!p.imageUrl || replaceImages || /[?&]woodmoIllustration=1(?:&|$)/.test(p.imageUrl))) { plan.images[p.id] = candidatesImage[0]; image = candidatesImage[0].path; }
         else if (candidatesImage.length) plan.warnings.push(`${name}: ZIP-Bild nicht übernommen, vorhandenes Bild bleibt erhalten.`);
         else if (archive.length) {
           const suggestions = archive.map(f => ({path:f.path, score:imageSimilarity(name,f.path)}))
