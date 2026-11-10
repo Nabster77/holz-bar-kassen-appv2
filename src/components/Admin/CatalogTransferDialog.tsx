@@ -5,6 +5,7 @@ import { buildImportPlan, exportWorkbook, readImageZip, readWorkbook, type Impor
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { importFileToDataURL } from '@/lib/imageImport';
 import { supabase } from '@/lib/supabaseClient';
+import { createCatalogIllustration } from '@/lib/catalogIllustration';
 
 export interface CatalogTransferProps {
   catalog: LocalCatalog;
@@ -19,6 +20,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
   const [zipSummary, setZipSummary] = useState('');
   const [generated, setGenerated] = useState<Record<string, {url:string; bytes:Uint8Array}>>({});
   const [replace, setReplace] = useState(false);
+  const [autoIllustrations, setAutoIllustrations] = useState(true);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [session, setSession] = useState<CatalogImportSession | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -90,6 +92,16 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         if (!url) throw new Error('KI-Bild konnte nicht gespeichert werden; Katalog wurde nicht importiert.');
         uploaded++; product.imageUrl = url;
       }
+      if (autoIllustrations) {
+        for (const product of next.products) {
+          if (product.imageUrl || plan.images[product.id] || generated[product.id]) continue;
+          if (!plan.rows.some(r => r.kind === 'Artikel' && r.id === product.id)) continue;
+          const illustration = await createCatalogIllustration(product.name);
+          const url = await uploadArticleImage(illustration);
+          if (!url) throw new Error(`Illustration für „${product.name}“ konnte nicht gespeichert werden.`);
+          uploaded++; product.imageUrl = url;
+        }
+      }
       await onCommit(session, next);
       setDone(true); setConfirmed(false); setMessage('Import vollständig in Supabase gespeichert und lokal übernommen.');
     } catch (e) {
@@ -117,6 +129,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         <label className="block">Excel (.xlsx)<input disabled={busy} className="ml-3" type="file" accept=".xlsx" onChange={e => {invalidate();setExcel(e.target.files?.[0] ?? null);}} /></label>
         <label className="block">Bilder-ZIP (optional)<input disabled={busy} className="ml-3" type="file" accept=".zip" onChange={e => {invalidate();setZip(e.target.files?.[0] ?? null);}} /></label>
         <label className="flex items-center gap-2"><input disabled={busy} type="checkbox" checked={replace} onChange={e => {invalidate();setReplace(e.target.checked);}} />Vorhandene Bildzuordnungen ausdrücklich ersetzen (alte Bilddateien bleiben erhalten)</label>
+        <label className="flex items-center gap-2"><input type="checkbox" disabled={busy} checked={autoIllustrations} onChange={e => {invalidate();setAutoIllustrations(e.target.checked);}} />Fehlende Artikelbilder automatisch kostenlos illustrieren (ohne KI/API; eigene Fotos bleiben erhalten)</label>
         <p className="text-sm">ZIP-Unterordner werden berücksichtigt. Groß-/Kleinschreibung, Umlaute, Leerzeichen und Kopienummern wie „(2)“ werden beim Bildabgleich vereinheitlicht. Bei abweichenden Namen werden unverbindliche Bildvorschläge angezeigt; sie werden nicht automatisch importiert.</p>
         {zipSummary && <p role="status" className="text-sm font-semibold">{zipSummary}</p>}
         {testMode && <p className="rounded-xl bg-amber-100 p-3 text-amber-900">Testmodus: lokale Vorschau und Export möglich. Import und Bild-Uploads sind gesperrt. Für den vollständigen Test einen isolierten Supabase-Testbestand verwenden.</p>}
