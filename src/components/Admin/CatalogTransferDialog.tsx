@@ -115,7 +115,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
     try {
       const bytes = await exportWorkbook(catalog);
       const url = URL.createObjectURL(new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
-      const a = document.createElement('a'); a.href = url; a.download = `WOODMO-Katalog-${new Date().toISOString().slice(0,10)}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const a = document.createElement('a'); a.href = url; a.download = `Sicherung_WOODMO-Katalog-${new Date().toLocaleDateString('en-CA')}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
   }
   const button = 'rounded-xl border border-gray-400 px-4 py-2 disabled:opacity-40';
