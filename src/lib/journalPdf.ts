@@ -233,6 +233,19 @@ function transactionSection(txs: Transaction[], title: string, color?: string): 
   </section>`;
 }
 
+function activityTotals(txs: Transaction[], records: CashAuditRecord[]): string {
+  const cash = txs.filter(tx => tx.paymentMethod === 'cash');
+  const card = txs.filter(tx => tx.paymentMethod === 'card');
+  const kinds: Array<{ label: string; count: number; total: number; kind: string }> = [
+    { label: 'Barbuchungen', count: cash.length, total: cash.reduce((sum, tx) => sum + tx.total, 0), kind: 'Bareinnahme' },
+    { label: 'Kartenzahlungen', count: card.length, total: card.reduce((sum, tx) => sum + tx.total, 0), kind: 'Karteneinnahme' },
+    { label: 'Einlagen', count: records.filter(r => r.kind === 'Einlage').length, total: records.filter(r => r.kind === 'Einlage').reduce((sum, r) => sum + (r.amount ?? 0), 0), kind: 'Einlage' },
+    { label: 'Ausgaben / Entnahmen', count: records.filter(r => r.kind === 'Ausgabe' || r.kind === 'Entnahme zum Tagesabschluss').length, total: records.filter(r => r.kind === 'Ausgabe' || r.kind === 'Entnahme zum Tagesabschluss').reduce((sum, r) => sum + (r.amount ?? 0), 0), kind: 'Ausgabe' },
+    { label: 'Korrekturen', count: records.filter(r => r.kind === 'Korrektur').length, total: records.filter(r => r.kind === 'Korrektur').reduce((sum, r) => sum + (r.newAmount ?? 0) - (r.oldAmount ?? 0), 0), kind: 'Korrektur' },
+  ];
+  return `<section class="report-table-section table-block"><table><thead>${tableTitleRow('Buchungsarten – Anzahl und Summe')}<tr><th>Vorgang</th><th style="text-align:right">Anzahl</th><th style="text-align:right">Summe</th></tr></thead><tbody>${kinds.map(k => `<tr><td>${movementBadgeHTML(k.kind)} ${k.label}</td><td style="text-align:right">${k.count}</td><td style="text-align:right">${formatCurrency(k.total)}</td></tr>`).join('')}</tbody></table><p class="audit-note">Bar- und Kartenzahlungen enthalten gegebenenfalls Pfand. Korrekturen sind Bestandsänderungen, kein Umsatz.</p></section>`;
+}
+
 function auditRows(records: CashAuditRecord[]): string {
   return [...records].sort((a, b) => a.timestamp - b.timestamp).map((record) => {
     const value = record.kind === 'Korrektur'
@@ -389,6 +402,7 @@ function locationSection(loc: Location, txs: Transaction[], categories: Category
       ${tableBlock('Warengruppen', `<table><thead><tr><th>Gruppe</th><th style="text-align:right">Menge</th><th style="text-align:right">Pfand</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${cats}</tbody></table>`, meta.color)}
       ${tableBlock('Einzelartikel', `<table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>`, meta.color)}
       ${tableBlock('Bestseller (Top 10)', `<table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>`, meta.color)}
+      ${activityTotals(txs, auditRecords)}
       ${transactionSection(txs, `Einzel-Bons (${txs.length})`, meta.color)}
       ${auditSection(auditRecords)}
       ${staffTimesSection(staffTimeRecords)}
@@ -429,6 +443,7 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
       ${tableBlock('Warengruppen', `<table><thead><tr><th>Gruppe</th><th style="text-align:right">Menge</th><th style="text-align:right">Pfand</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${cats}</tbody></table>`)}
       ${tableBlock('Einzelartikel', `<table class="article-table"><thead><tr><th>Artikel</th><th style="text-align:right">MwSt</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${arts}</tbody></table>`)}
       ${tableBlock('Bestseller (Top 10)', `<table><thead><tr><th>#</th><th>Artikel</th><th style="text-align:right">Menge</th><th style="text-align:right">Umsatz</th></tr></thead><tbody>${bestRows}</tbody></table>`)}
+      ${activityTotals(transactions, auditRecords)}
       ${transactionSection(transactions, `Einzel-Bons (${transactions.length})`)}
       ${auditSection(auditRecords)}
     </div>
