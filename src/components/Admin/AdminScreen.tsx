@@ -397,15 +397,18 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
   const [creating, setCreating] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [filterCat, setFilterCat] = useState<string>('');
-  const [sortMode, setSortMode] = useState<'alphabetical' | 'manual'>('manual');
+  const [sortMode, setSortMode] = useState<'alphabetical' | 'reverse' | 'manual'>('manual');
   const [draggedProductId, setDraggedProductId] = useState<string | null>(null);
+  const [dragEnabled, setDragEnabled] = useState(false);
   const [pfandF, setPfandF] = useState(String(pfandSettings.Friedrichshafen));
   const [pfandB, setPfandB] = useState(String(pfandSettings.Bregenz));
   const [showPfandSaved, setShowPfandSaved] = useState(false);
 
   const sorted = [...products].sort(sortMode === 'alphabetical'
     ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
-    : (a, b) => a.sortOrder - b.sortOrder);
+    : sortMode === 'reverse'
+      ? (a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' })
+      : (a, b) => a.sortOrder - b.sortOrder);
   const filtered = filterCat ? sorted.filter((p) => p.categoryId === filterCat) : sorted;
 
   function savePfandSettings() {
@@ -439,12 +442,6 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
             return (
               <div key={loc}>
                 <label className="mb-1 block text-xs font-semibold text-teal-700 dark:text-teal-400">{loc}</label>
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-gray-500 dark:text-gray-400">Artikelreihenfolge:</span>
-          <button type="button" onClick={() => setSortMode('alphabetical')} aria-pressed={sortMode === 'alphabetical'} className={`rounded-lg px-3 py-2 text-xs font-semibold ${sortMode === 'alphabetical' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>Alphabetisch (A–Z)</button>
-          <button type="button" onClick={() => setSortMode('manual')} aria-pressed={sortMode === 'manual'} className={`rounded-lg px-3 py-2 text-xs font-semibold ${sortMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>Eigene Reihenfolge · Ziehen</button>
-          {sortMode === 'manual' && <span className="text-xs text-gray-500 dark:text-gray-400">Kachel gedrückt halten und auf eine andere Kachel ziehen. Reihenfolge wird gespeichert.</span>}
-        </div>
       <div className="flex items-center gap-1">
                   <input value={val} onChange={(e) => setVal(e.target.value)} onBlur={savePfandSettings} placeholder="0,00" inputMode="decimal"
                     className="w-24 rounded-lg border border-teal-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-teal-500 focus:outline-none dark:border-teal-700 dark:bg-gray-900 dark:text-gray-100" />
@@ -465,17 +462,32 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
           <button key={cat.id} onClick={() => setFilterCat(cat.id)} style={cat.color.startsWith("#") ? { backgroundColor: cat.color } : cat.color.startsWith("linear-gradient(") ? { background: cat.color } : undefined} className={`whitespace-nowrap rounded-lg bg-gradient-to-r px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 ${cat.color.startsWith("#") || cat.color.startsWith("linear-gradient(") ? "" : cat.color} ${filterCat === cat.id ? "ring-2 ring-blue-400 ring-offset-1 dark:ring-offset-gray-900" : "opacity-85"}`}>{cat.name}</button>
         ))}
       </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          Nach Name:
+          <select aria-label="Artikel sortieren" value={sortMode} onChange={e => { setSortMode(e.target.value as 'alphabetical' | 'reverse' | 'manual'); setDragEnabled(false); }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="manual">Eigene Reihenfolge</option>
+            <option value="alphabetical">Aufsteigend (A–Z)</option>
+            <option value="reverse">Absteigend (Z–A)</option>
+          </select>
+        </label>
+        <button type="button" aria-pressed={dragEnabled} onClick={() => { if (!dragEnabled) setSortMode('manual'); setDragEnabled(!dragEnabled); }}
+          className={`rounded-lg px-3 py-2 text-sm font-semibold ${dragEnabled ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>
+          {dragEnabled ? '✓ Verschieben aktiv' : 'Kacheln verschieben'}
+        </button>
+      </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((product, idx) => {
           const cat = categories.find((c) => c.id === product.categoryId);
           return (
             <div key={product.id}
-              draggable={sortMode === 'manual' && Boolean(onMoveProductTo)}
-              onDragStart={event => { if (sortMode !== 'manual') return; setDraggedProductId(product.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', product.id); }}
-              onDragOver={event => { if (sortMode === 'manual') { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
-              onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedProductId; if (sortMode === 'manual' && sourceId && sourceId !== product.id) onMoveProductTo?.(sourceId, product.id); setDraggedProductId(null); }}
+              draggable={dragEnabled && Boolean(onMoveProductTo)}
+              onDragStart={event => { if (!dragEnabled) return; setDraggedProductId(product.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', product.id); }}
+              onDragOver={event => { if (dragEnabled) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+              onDrop={event => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedProductId; if (dragEnabled && sourceId && sourceId !== product.id) onMoveProductTo?.(sourceId, product.id); setDraggedProductId(null); }}
               onDragEnd={() => setDraggedProductId(null)}
-              className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${sortMode === 'manual' ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedProductId === product.id ? 'opacity-50' : ''}`}>
+              className={`flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${draggedProductId === product.id ? 'opacity-50' : ''}`}>
               <div className="flex flex-col gap-0.5">
                 <button
                   onClick={() => onReorderProduct?.(product.id, 'up')}
