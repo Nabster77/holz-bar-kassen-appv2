@@ -32,6 +32,18 @@ function imageSimilarity(article: string, filePath: string): number {
   };
   return 1 - distance(a,b)/Math.max(a.length,b.length);
 }
+/** Product sizes and copied-file suffixes do not affect the photo identity. */
+function imageIdentity(value: string): string {
+  const withoutSize = value.replace(/\\((?:s|m|l)\\)/gi, ' ').replace(/\\b(?:klein|gross|groß)\\b/gi, ' ');
+  return normalizeName(withoutSize)
+    .replace(/^aromaboxen$/, 'aromabox')
+    .replace(/^duftklotze$/, 'duftklotz')
+    .replace(/^kafee$/, 'kaffee')
+    .replace(/^schnapssbrett/, 'schnapsbrett');
+}
+function imageStem(path: string): string {
+  return path.split('/').pop()!.replace(/\\.[^.]+$/, '');
+}
 const text = (v: unknown) => String(v ?? '').trim();
 const empty = (v: unknown) => v === undefined || v === null || v === '';
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
@@ -164,9 +176,17 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
           if (!p.imageUrl || replaceImages) p.imageUrl = imageUrl;
           else plan.warnings.push(`${name}: vorhandenes Bild bleibt erhalten.`);
         }
-        const candidatesImage = archive.filter(f => normalizeName(f.path.split('/').pop()!.replace(/\.[^.]+$/, '')) === normalizeName(name));
+        const exactImages = archive.filter(f => normalizeName(imageStem(f.path)) === normalizeName(name));
+        const identityImages = archive.filter(f => imageIdentity(imageStem(f.path)) === imageIdentity(name));
+        // Prefer exact filenames, then same-size files, then a stable path order.
+        const candidatesImage = (exactImages.length ? exactImages : identityImages)
+          .sort((a,b) => {
+            const aSame = normalizeName(imageStem(a.path)) === normalizeName(name) ? 1 : 0;
+            const bSame = normalizeName(imageStem(b.path)) === normalizeName(name) ? 1 : 0;
+            return bSame-aSame || a.path.localeCompare(b.path, 'de');
+          });
         let image: string | undefined;
-        if (candidatesImage.length > 1) throw new Error(`Mehrere ZIP-Bilder passen zu „${name}“: ${candidatesImage.map(x => x.path).join(', ')}. ZIP bereinigen.`);
+        if (exactImages.length > 1) throw new Error(`Mehrere identische ZIP-Bildnamen passen zu „${name}“: ${exactImages.map(x => x.path).join(', ')}. ZIP bereinigen.`);
         if (candidatesImage.length && (!p.imageUrl || replaceImages)) { plan.images[p.id] = candidatesImage[0]; image = candidatesImage[0].path; }
         else if (candidatesImage.length) plan.warnings.push(`${name}: ZIP-Bild nicht übernommen, vorhandenes Bild bleibt erhalten.`);
         else if (archive.length) {
