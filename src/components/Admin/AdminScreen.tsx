@@ -842,7 +842,7 @@ function LiveSessionOverview({ transactions, cashSessions, categories, activeSes
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Kassen-Übersicht</h3>
         </div>
