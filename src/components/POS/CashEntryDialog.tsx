@@ -5,19 +5,23 @@ import type { CashSession } from '@/types';
 
 interface Props {
   session: CashSession;
+  currentCashBalance: number;
   type: 'deposit' | 'withdrawal';
   onSave: (amount: number, reason: string) => void;
   onClose: () => void;
 }
 
-export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
+export function CashEntryDialog({ currentCashBalance, type, onSave, onClose }: Props) {
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const isDeposit = type === 'deposit';
 
+  const parsedAmount = Number(amount.trim().replace(',', '.'));
+  const validAmount = amount.trim().length > 0 && Number.isFinite(parsedAmount) && parsedAmount > 0 && (isDeposit || Math.round(parsedAmount * 100) <= Math.round(currentCashBalance * 100));
+
   function handleSave() {
-    const a = parseFloat(amount.replace(',', '.'));
-    if (isNaN(a) || a <= 0 || !reason.trim()) return;
+    const a = parsedAmount;
+    if (!validAmount || !reason.trim()) return;
     onSave(a, reason.trim());
   }
 
@@ -35,7 +39,7 @@ export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
         </div>
         <div className="space-y-4">
           <div className="rounded-xl bg-gray-50 p-3 text-sm text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
-            Aktueller Kassenbestand: <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(session.openingBalance + session.entries.reduce((s, e) => s + (e.type === 'deposit' ? e.amount : -e.amount), 0))}</span>
+            Aktueller Kassenbestand: <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(currentCashBalance)}</span>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Betrag (€)</label>
@@ -47,7 +51,8 @@ export function CashEntryDialog({ session, type, onSave, onClose }: Props) {
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={isDeposit ? 'z.B. Wechselgeld aufgefüllt' : 'z.B. Privatentnahme'}
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
-          <button onClick={handleSave} disabled={!amount || !reason.trim()}
+          {!isDeposit && !validAmount && amount.trim() && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-400">Die Buchung kann nicht durchgeführt werden. Der vorhandene Bargeldbestand reicht nicht aus oder der Betrag ist ungültig. Ein negativer Kassenbestand ist nicht zulässig.</p>}
+          <button onClick={handleSave} disabled={!validAmount || !reason.trim()}
             className={`w-full rounded-xl py-3 text-base font-semibold text-white shadow-md transition active:scale-95 disabled:opacity-50 ${isDeposit ? 'bg-violet-600 hover:bg-violet-700' : 'bg-red-600 hover:bg-red-700'}`}>
             <Check className="mr-1.5 inline h-4 w-4" /> Bestätigen
           </button>
