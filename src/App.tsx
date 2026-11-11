@@ -30,7 +30,7 @@ import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEY
 import { formatDateISO } from '@/lib/format';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import {
-  ShoppingCart, Settings, Receipt, Sun, Moon, Lock,
+  ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle, Recycle, MonitorDot,
   FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, Menu, X, ArrowLeft,
 } from 'lucide-react';
@@ -673,48 +673,6 @@ function AdminAccessGate({ onManagerSuccess, onStaffLogin, onCancel, staffUsers,
     accessDenied={employeeDenied}
     title={title}
   />;
-}
-
-function TabButton({ active, onClick, icon, label, locked }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; locked?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-95 ${
-        active
-          ? 'bg-blue-600 text-white shadow-md'
-          : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-      }`}
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-      {locked && <Lock className="h-3 w-3 opacity-60" />}
-    </button>
-  );
-}
-
-function CashActionButton({ onClick, icon, label, color, prominent }: {
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  color: 'green' | 'orange' | 'teal' | 'violet' | 'red';
-  prominent?: boolean;
-}) {
-  const colorClasses = {
-    violet: 'bg-violet-600 text-white hover:bg-violet-700',
-    red: 'bg-red-600 text-white hover:bg-red-700',
-    green: 'bg-green-600 text-white hover:bg-green-700',
-    orange: 'bg-orange-500 text-white hover:bg-orange-600',
-    teal: 'bg-teal-600 text-white hover:bg-teal-700',
-  };
-  return (
-    <button
-      onClick={onClick}
-      className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-95 ${colorClasses[color]} ${prominent ? 'shadow-md ring-2 ring-teal-300/50' : 'shadow-sm'}`}
-    >
-      {icon}
-      <span className="hidden md:inline">{label}</span>
-    </button>
-  );
 }
 
 function ModeConfirmDialog({ toTestMode, onCancel, onConfirm }: { toTestMode: boolean; onCancel: () => void; onConfirm: () => void }) {
