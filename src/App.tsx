@@ -249,7 +249,7 @@ export default function App() {
         <div className="hidden h-7 w-px bg-gray-200 dark:bg-gray-700 sm:block" />
 
         {/* Tabs + Cash actions */}
-        <nav className="order-3 flex w-full min-w-0 items-center gap-1 overflow-x-auto pb-0.5 md:order-none md:w-auto md:flex-1">
+        <nav className="order-3 flex w-full min-w-0 flex-wrap items-center gap-1 pb-0.5 landscape:flex-nowrap landscape:overflow-x-auto md:order-none md:w-auto md:flex-1">
           <TabButton active={tab === 'pos'} onClick={() => navigateTo('pos')} icon={<ShoppingCart className="h-4 w-4" />} label="Kasse" />
 
           {/* Cash management buttons - only when on POS tab and session is open */}
