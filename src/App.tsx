@@ -32,7 +32,7 @@ import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon, Lock,
   ArrowDownCircle, ArrowUpCircle, Recycle, MonitorDot,
-  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud,
+  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, Menu, X, ArrowLeft,
 } from 'lucide-react';
 
 type Tab = 'pos' | 'admin' | 'journal';
@@ -47,6 +47,8 @@ export default function App() {
   const { theme, toggle } = useTheme();
   const store = useStore();
   const [tab, setTab] = useState<Tab>('pos');
+  const [previousTab, setPreviousTab] = useState<Tab | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
   const [testMode, setTestModeState] = useState<boolean>(isTestMode());
@@ -156,7 +158,29 @@ export default function App() {
   }
 
   function navigateTo(nextTab: Tab) {
-    setTab(nextTab);
+    if (tab !== nextTab) {
+      setPreviousTab(tab);
+      setTab(nextTab);
+    }
+    setMenuOpen(false);
+  }
+
+  function navigateToProtected(nextTab: 'admin' | 'journal') {
+    if (currentStaff?.role === 'administrator') {
+      setManagementAdministrator(currentStaff);
+      setAdminUnlocked(true);
+    }
+    navigateTo(nextTab);
+  }
+
+  function navigateToProtectedOrBack(nextTab: Tab) {
+    if (nextTab === 'pos') navigateTo('pos');
+    else navigateToProtected(nextTab);
+  }
+
+  function chooseCashAction(action: Exclude<HeaderAction, null>) {
+    navigateTo('pos');
+    setHeaderAction(action);
   }
 
   function openManagementFromCashOpening(selectedStaff: StaffUser | null) {
@@ -248,66 +272,21 @@ export default function App() {
 
         <div className="hidden h-7 w-px bg-gray-200 dark:bg-gray-700 sm:block" />
 
-        {/* Tabs + Cash actions */}
-        <nav className="order-3 flex w-full min-w-0 flex-wrap items-center gap-1 pb-0.5 landscape:flex-nowrap landscape:overflow-x-auto md:order-none md:w-auto md:flex-1">
-          <TabButton active={tab === 'pos'} onClick={() => navigateTo('pos')} icon={<ShoppingCart className="h-4 w-4" />} label="Kasse" />
-
-          {/* Cash management buttons - only when on POS tab and session is open */}
-          {tab === 'pos' && store.activeSession && currentStaff && (
-            <>
-              <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
-              <CashActionButton
-                onClick={() => setHeaderAction('deposit')}
-                icon={<ArrowDownCircle className="h-4 w-4" />}
-                label="Einlage"
-                color="violet"
-              />
-              <CashActionButton
-                onClick={() => setHeaderAction('withdrawal')}
-                icon={<ArrowUpCircle className="h-4 w-4" />}
-                label="Ausgabe"
-                color="red"
-              />
-              <CashActionButton
-                onClick={() => setHeaderAction('pfand')}
-                icon={<Recycle className="h-4 w-4" />}
-                label="Pfand-Retoure"
-                color="teal"
-                prominent
-              />
-            </>
-          )}
-
-          {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
-            <>
-              <div className="mx-1 h-7 w-px bg-gray-200 dark:bg-gray-700" />
-              <TabButton
-                active={tab === 'journal'}
-                onClick={() => {
-                  if (currentStaff?.role === 'administrator') {
-                    setManagementAdministrator(currentStaff);
-                    setAdminUnlocked(true);
-                  }
-                  setTab('journal');
-                }}
-                icon={<Receipt className="h-4 w-4" />}
-                label="Journale"
-              />
-              <TabButton
-                active={tab === 'admin'}
-                onClick={() => {
-                  if (currentStaff?.role === 'administrator') {
-                    setManagementAdministrator(currentStaff);
-                    setAdminUnlocked(true);
-                  }
-                  setTab('admin');
-                }}
-                icon={<Settings className="h-4 w-4" />}
-                label="Verwaltung"
-              />
-            </>
-          )}
-        </nav>
+        {/* Compact navigation: operational space stays available for the cart. */}
+        <button
+          type="button"
+          aria-label={menuOpen ? 'Menü schließen' : 'Menü öffnen'}
+          aria-expanded={menuOpen}
+          aria-controls="woodmo-main-menu"
+          onClick={() => setMenuOpen((open) => !open)}
+          className="flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+        >
+          {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <span>Menü</span>
+        </button>
+        <span className="hidden min-w-0 truncate text-sm font-semibold text-gray-600 dark:text-gray-300 sm:inline">
+          {tab === 'pos' ? 'Kasse' : tab === 'admin' ? 'Verwaltung' : 'Journale'}
+        </span>
 
         {/* Test/Active mode badge */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -341,6 +320,41 @@ export default function App() {
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
       </header>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setMenuOpen(false)}>
+          <nav
+            id="woodmo-main-menu"
+            aria-label="WOODMO Hauptmenü"
+            className="absolute left-2 right-2 top-2 max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-2xl bg-white p-3 shadow-2xl dark:bg-gray-800 sm:left-4 sm:right-auto sm:w-[min(24rem,calc(100vw-2rem))]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <strong className="text-base">WOODMO Menü</strong>
+              <button type="button" aria-label="Menü schließen" onClick={() => setMenuOpen(false)} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"><X className="h-5 w-5" /></button>
+            </div>
+            {previousTab && previousTab !== tab && (
+              <button type="button" onClick={() => navigateToProtectedOrBack(previousTab)} className="mb-2 flex min-h-11 w-full items-center gap-2 rounded-xl border border-gray-200 px-3 text-left text-sm font-semibold dark:border-gray-700"><ArrowLeft className="h-4 w-4" /> Zurück zu {previousTab === 'pos' ? 'Kasse' : previousTab === 'admin' ? 'Verwaltung' : 'Journalen'}</button>
+            )}
+            <button type="button" onClick={() => navigateTo('pos')} className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-semibold ${tab === 'pos' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}><ShoppingCart className="h-5 w-5" /> Kasse</button>
+            {store.activeSession && currentStaff && (
+              <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-700">
+                <p className="mb-1 px-3 text-xs font-bold uppercase tracking-wide text-gray-500">Kassenbewegungen</p>
+                <button type="button" onClick={() => chooseCashAction('deposit')} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700"><ArrowDownCircle className="h-5 w-5 text-violet-600" /> Einlage</button>
+                <button type="button" onClick={() => chooseCashAction('withdrawal')} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700"><ArrowUpCircle className="h-5 w-5 text-red-600" /> Ausgabe</button>
+                <button type="button" onClick={() => chooseCashAction('pfand')} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700"><Recycle className="h-5 w-5 text-teal-600" /> Pfand-Retoure</button>
+              </div>
+            )}
+            {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
+              <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-700">
+                <p className="mb-1 px-3 text-xs font-bold uppercase tracking-wide text-gray-500">Administration</p>
+                <button type="button" onClick={() => navigateToProtected('admin')} className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-semibold ${tab === 'admin' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}><Settings className="h-5 w-5" /> Verwaltung</button>
+                <button type="button" onClick={() => navigateToProtected('journal')} className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-semibold ${tab === 'journal' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}><Receipt className="h-5 w-5" /> Journale</button>
+              </div>
+            )}
+          </nav>
+        </div>
+      )}
 
       {/* Test mode banner */}
       {testMode && (
