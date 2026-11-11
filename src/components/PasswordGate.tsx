@@ -25,6 +25,7 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   const [input, setInput] = useState('');
   const [error, setError] = useState<GateError>(null);
   const [checking, setChecking] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const viewport = useVisibleViewport();
 
   async function handleSubmit() {
@@ -56,7 +57,15 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
   return (
     <div
       className="pointer-events-none fixed inset-x-0 z-40 flex items-center justify-center overflow-y-auto px-3 py-3"
-      style={{ top: viewport.top, height: viewport.height }}
+      style={{
+        top: viewport.top,
+        height: viewport.height,
+        // Some Android fullscreen modes overlay the keyboard without resizing visualViewport.
+        // Only nudge the dialog when focus is active and no viewport shrink was reported.
+        transform: passwordFocused && viewport.height >= window.innerHeight - 80
+          ? 'translateY(-min(15vh, 120px))'
+          : undefined,
+      }}
     >
       <div className="pointer-events-auto my-auto w-full max-w-sm shrink-0 rounded-3xl bg-white p-6 shadow-xl dark:bg-gray-800">
         <div className="mb-5 flex flex-col items-center gap-3 text-center">
@@ -75,6 +84,8 @@ export function PasswordGate({ onSuccess, title, onStaffLogin, onCancel, adminis
             name="admin-gate-secret"
             autoComplete="new-password"
             value={input}
+            onFocus={() => setPasswordFocused(true)}
+            onBlur={() => setPasswordFocused(false)}
             onChange={(e) => { setInput(e.target.value); setError(null); }}
             onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
             placeholder="Passwort"
