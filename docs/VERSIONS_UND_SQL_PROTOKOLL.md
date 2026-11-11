@@ -18,8 +18,22 @@
 4. Für künftige Schemaänderungen vorab Ist-Schema, exakte Vorwärtsmigration, geprüfte Rückwärtsmigration, Abhängigkeiten und Datensicherung dokumentieren. Destruktive SQL-Befehle niemals automatisch ausführen.
 5. Ein SQL-Rollback ist keine Garantie für eine 1:1-Wiederherstellung; dafür ist ein überprüfbares Backup nötig.
 
+## Veröffentlichung und Abnahme #13 (11.11.2026)
+
+- Freigabe: Nutzer hat die Veröffentlichung ausdrücklich freigegeben.
+- Pull Request: https://github.com/Nabster77/holz-bar-kassen-appv2/pull/13
+- Vorheriger öffentlicher Stand: `main@10bec80b2c92a333475042ddfaa4c473a26723da`.
+- Veröffentlichter Merge-Commit: `dccc00303763d37a1c87e8ae32a0410ea782cc97`.
+- Änderung: ausschließlich `src/components/PasswordGate.tsx` (12 Zeilen hinzugefügt, 1 entfernt); Verschiebung des Verwaltungspasswort-Dialogs bei Fokus auf das Passwortfeld, falls der sichtbare Viewport trotz Bildschirmtastatur nicht schrumpft.
+- GitHub Actions: Workflow **GitHub Pages #24**, grüner Erfolgshaken im Screenshot des Nutzers, Zweig `main`.
+- Praxistest: Nutzer hat die originale installierte WOODMO-App auf dem Samsung-Tablet im echten Vollbildmodus ohne Chrome-Adressleiste geöffnet. Beim Antippen des Verwaltungspasswort-Felds und Öffnen der Bildschirmtastatur verschob sich das Fenster nach oben und blieb sichtbar. **Vom Nutzer ausdrücklich als erfolgreich bestätigt.**
+- Ergebnis: **Bestanden; Veröffentlichung beibehalten. Kein Rollback erforderlich.**
+- Supabase/SQL: Keine Schemaänderung und keine SQL-Migration für #13. Kein SQL-Rollback nötig. Keine Testbuchungen oder Datenbankänderungen durch diesen Ablauf veranlasst.
+- Aufräumen: Keine neu angelegten Supabase-Testtabellen, Testspalten oder Testdatensätze aus #13 zu bereinigen. Testzweig kann nach Freigabe später entfernt werden; Git-Historie und Protokoll erhalten.
+- Hinweis: Das produktive Supabase-Schema wurde weiterhin nicht separat inventarisiert oder als vollständiger Snapshot gesichert.
+
 ## Änderungsjournal
 
 | Datum | Bereich | Ausgang | Ziel | SQL | Status |
 | --- | --- | --- | --- | --- | --- |
-| 11.11.2026 | Verwaltungspasswort-Dialog im Android-App-Vollbild | `main@10bec80b` | Fokusbedingte Verschiebung aus `woodmo-entwicklung@e8b46485` | keine | Test und Veröffentlichung ausstehend |
+| 11.11.2026 | Verwaltungspasswort-Dialog im Android-App-Vollbild | `main@10bec80b` | `main@dccc003` (PR #13) | keine | Veröffentlicht; GitHub Pages #24 erfolgreich; echter Samsung-PWA-Vollbildtest bestanden |
