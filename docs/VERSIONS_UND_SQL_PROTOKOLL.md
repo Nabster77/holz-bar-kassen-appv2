@@ -37,3 +37,4 @@
 | Datum | Bereich | Ausgang | Ziel | SQL | Status |
 | --- | --- | --- | --- | --- | --- |
 | 11.11.2026 | Verwaltungspasswort-Dialog im Android-App-Vollbild | `main@10bec80b` | `main@dccc003` (PR #13) | keine | Veröffentlicht; GitHub Pages #24 erfolgreich; echter Samsung-PWA-Vollbildtest bestanden |
+| 11.11.2026 | Navigationsmenü und Kassenaktionen (Entwicklung) | `main@dccc003` | `woodmo-entwicklung@5cfb095` | keine | Umsetzung im Entwicklungszweig; Tablet-Test und Veröffentlichung ausstehend |
