@@ -4,9 +4,10 @@ import { buildJournalHTML, type JournalReportData } from '@/lib/journalPdf';
 import { getWeekNumber } from '@/lib/format';
 import type { Location } from '@/types';
 import { colorNegativeMoney } from '@/lib/movementStyle';
-import { archiveSubfolders, batchArchiveLocation, safeArchiveFileName } from '@/lib/archivePaths';
+import { batchArchiveLocation, safeArchiveFileName } from '@/lib/archivePaths';
+import { ensureReportFolder, ensureYearStructure, savePdfInFolder } from '@/lib/archiveFolders';
 import { readDeviceSetup } from '@/lib/deviceSetup';
-import { archiveRootName, backupDirectorySegments } from '@/lib/archiveRoot';
+import { archiveRootName } from '@/lib/archiveRoot';
 import { PdfArchiveSetupRequired, requirePdfArchiveSetup } from '@/lib/pdfArchiveSetup';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -126,19 +127,9 @@ export async function configureJournalExportFolder(): Promise<{ mode: 'folder' |
   try {
     // Call picker directly from the button handler to preserve user activation.
     const selected = await picker({ id: 'holzbar-journal-exports', mode: 'readwrite', startIn: 'desktop' });
-    // Permission was explicitly granted by this click. The user selects only
-    // the parent folder; WOODMO creates Kasse 26 plus its backup folders.
+    // Only create missing components of this year's base structure.
     const configuredAt = Date.now();
-    let archive = selected;
-    for (const segment of backupDirectorySegments(configuredAt, 'Backup1')) {
-      archive = await archive.getDirectoryHandle(segment, { create: true });
-    }
-    archive = selected;
-    for (const segment of backupDirectorySegments(configuredAt, 'Backup2')) {
-      archive = await archive.getDirectoryHandle(segment, { create: true });
-    }
-    const reports = await selected.getDirectoryHandle(archiveRootName(configuredAt), { create: true });
-    await reports.getDirectoryHandle(String(new Date(configuredAt).getFullYear()), { create: true });
+    await ensureYearStructure(selected, configuredAt);
     await rememberExportFolder(selected);
     return { mode: 'folder', folderName: `${selected.name}/${archiveRootName(configuredAt)}` };
   } catch (error) {
@@ -148,30 +139,12 @@ export async function configureJournalExportFolder(): Promise<{ mode: 'folder' |
 }
 
 async function saveIntoJournalFolder(folder: FileSystemDirectoryHandle, data: JournalReportData, blob: Blob): Promise<void> {
-  // Do not use the current clock: a previous-year journal must be archived
-  // under its actual business year, location and report category.
-  // Stable installation root; report years remain nested underneath it.
-  // Changing the user's parent folder never erases previous archives.
-  const rootName = archiveRootName(readDeviceSetup()?.configuredAt ?? Date.now());
-  let target = await folder.getDirectoryHandle(rootName, { create: true });
-  for (const segment of archiveSubfolders(data)) {
-    target = await target.getDirectoryHandle(segment, { create: true });
+  if (data.documentStatus === 'Endgültig abgeschlossen' && data.reportPeriodStart == null) {
+    throw new Error('Für einen endgültigen Tagesabschluss fehlt das originale Berichtsdatum.');
   }
-  const name = safeArchiveFileName(data.fileName);
-  if (data.documentStatus === 'Endgültig abgeschlossen') {
-    try {
-      const previous = await target.getFileHandle(name);
-      const file = await previous.getFile();
-      if (file.size > 0) return; // Already archived: never silently overwrite a finalized receipt.
-      throw new Error('Ein vorhandener Tagesabschluss ist leer. Bitte das Archiv prüfen.');
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error;
-    }
-  }
-  const fileHandle = await target.getFileHandle(name, { create: true });
-  const stream = await fileHandle.createWritable();
-  await stream.write(blob);
-  await stream.close();
+  const target = await ensureReportFolder(folder, data);
+  await savePdfInFolder(target, safeArchiveFileName(data.fileName), blob,
+    data.documentStatus === 'Endgültig abgeschlossen');
 }
 
 function waitForLoad(iframe: HTMLIFrameElement): Promise<void> {
