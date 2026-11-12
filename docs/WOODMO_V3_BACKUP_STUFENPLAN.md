@@ -2,6 +2,8 @@
 
 **Stand 2026-11-12, nur Entwicklungsbranch `woodmo-v3.0`; kein Testserver und keine öffentliche Veröffentlichung freigegeben.**
 
+**Jahresordner-Ergänzung:** Statt eines dauerhaft festen Einrichtungsordners `Kasse 26` wird für Sicherungen das Jahr der Schreibaktion verwendet (`Kasse 26`, `Kasse 27` usw.). Bereits bestehende ältere Sicherungen bleiben unangetastet; historische Backups werden über das Jahr ihres Archivdatums gelesen. Der automatische Backup-Scheduler ist weiterhin nicht aktiviert.
+
 ## Verbindliche Bedeutung
 
 | Ebene | Quelle | Ziel | Zeitpunkt | Mitarbeiter angemeldet? |
@@ -20,11 +22,12 @@ Backup-2-Ruhezeit: Der vorher vereinbarte Wert von zwei Stunden bleibt bestehen.
 
 ```text
 Ausgewählter Ordner/
-└── Kasse 26/
-    ├── 2026/
-    │   ├── Friedrichshafen/
-    │   ├── Bregenz/
-    │   └── Alle-Standorte/
+├── Kasse 26/
+│   ├── Friedrichshafen/
+│   │   └── November/
+│   │       └── Tagesabschluss/
+│   ├── Bregenz/
+│   └── Alle-Standorte/
     └── Sicherung/
         ├── Backup1/
         │   ├── current.json
@@ -34,9 +37,16 @@ Ausgewählter Ordner/
             ├── current.json
             ├── manifest-<sha256>.json
             └── <datenteil>-<sha256>.json
+└── Kasse 27/
+    ├── Friedrichshafen/
+    ├── Bregenz/
+    ├── Alle-Standorte/
+    └── Sicherung/
+        ├── Backup1/
+        └── Backup2/
 ```
 
-Der Ordnername wird aus dem **Einrichtungsjahr** gebildet und bleibt bei späteren Exporten stabil. Geschäftsjahre erscheinen als Unterordner. Die App erstellt nur dort Ordner, wo der Browser zuvor den Zugriff erlaubt hat. Auf Android/Firefox ohne File-System-Access-Unterstützung nur Download-/Teilen-Alternative; **keine Behauptung, dort im Hintergrund beliebig schreiben zu können**.
+Der Ordnername richtet sich nach dem **Jahr des jeweiligen Archivvorgangs**. Für PDF-Berichte ist stattdessen das historische Berichtsjahr maßgeblich. Fehlende Jahres- und Standortordner werden bei der nächsten Benutzung ergänzt, Monate und Berichtsarten bei Bedarf; bereits vorhandene Strukturen bleiben unverändert. Die App erstellt nur dort Ordner, wo der Browser zuvor den Zugriff erlaubt hat. Auf Android/Firefox ohne File-System-Access-Unterstützung nur Download-/Teilen-Alternative; **keine Behauptung, dort im Hintergrund beliebig schreiben zu können**.
 
 **Wichtig:** Backup 1 und Backup 2 im selben physischen Speicher schützen nicht bei Totalausfall dieses Speichermediums. Für echte Redundanz muss Backup 2 später auf einen unabhängigen Speicherort auswählbar sein.
 
