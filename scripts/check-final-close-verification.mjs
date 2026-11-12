@@ -33,6 +33,6 @@ for(const changed of [
   { ...close, dailyCloseSnapshot:{...close.dailyCloseSnapshot,
     transactions:txs.map((tx,i)=>i===900?{...tx,total:4.99}:tx)} },
   { ...close, closed:false },
-]) assert.throws(()=>assertFinalizedCloseMatches(close,changed),/abweicht|andere Belegnummer|nicht endgültig/);
+]) assert.throws(()=>assertFinalizedCloseMatches(close,changed),/weicht|andere Belegnummer|nicht endgültig/);
 assert.throws(()=>assertFinalizedCloseMatches(close,null),/fehlt/);
 console.log('TAGESABSCHLUSS-CLOUD-ABGLEICH: 1007 Bons und sämtliche Beträge vollständig geprüft.');
