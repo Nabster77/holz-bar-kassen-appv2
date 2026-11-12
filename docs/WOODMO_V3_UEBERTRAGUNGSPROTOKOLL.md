@@ -94,3 +94,12 @@ Fingerprint ist ausschließlich ein pragmatischer Änderungsindikator, kein Kryp
 Diese **heutigen Schreibzugriffe** zeigen, dass die Datenbank aktiv benutzt wurde. Das ist **kein Beweis, welche Version** geschrieben hat. Ohne identifizierte Datenbank-URL der tatsächlich veröffentlichten V2 darf dieses Projekt **weder zurückgesetzt noch exklusiv der V3 zugeordnet werden**. Nutzerziel: V3-Stammdaten 1:1, aber unabhängige neue Buchungen; deshalb ist Datenbankisolation eine zwingende Voraussetzung.
 
 **Nächster notwendiger Eingriff durch Benutzer:** In der lokalen V2-Konfiguration ausschließlich die Supabase-Projekt-Referenz (Host aus `VITE_SUPABASE_URL`) ausgeben, **niemals Schlüssel oder Passwörter**. Zusätzlich ggf. veröffentlichten V2-Build auf tatsächlich verwendete Referenz prüfen. Erst nach Nachweis eine V3-Datenbank auswählen. Kein V3-Datenbankwrite durchgeführt.
+
+## Nachtrag 2026-11-12 – API-Zuordnung und wieder erreichbares Projekt (PRE-015)
+
+- Benutzer stellte eine Supabase-REST-URL und einen **Publishable Key** für Projekt `tulndunkpsynkbbebenf` bereit. Die Schlüsselzuordnung wurde über Supabase-Projekt-API bestätigt. **Kein Key wird in diesem öffentlichen GitHub-Repository gespeichert.**
+- Das zuvor nicht erreichbare Projekt `Holz-Bar-Kasse` antwortet jetzt auf schreibgeschützte SQL-Abfragen.
+- **Istbefund `Holz-Bar-Kasse`:** 0 Tabellen im Schema `public`, 0 öffentliche RPC-Funktionen, 0 Storage-Buckets, 0 Storage-Objekte; **2 Supabase-Auth-Benutzer vorhanden**. Das Projekt ist daher nicht völlig leer und darf nicht ohne Prüfung als V3-Ziel neu initialisiert werden.
+- **Istbefund `Test-Holz-Bar-Kasse`:** 53 aktive Produkte, 5 Kategorien, 2 aktive Einstellungen sowie 196 Storage-Objekte; die letzten Katalogänderungen datieren auf 2026-11-10. Das ist die bisher beste belegte Stammdatenquelle.
+- Die GitHub-Pages-V2-Deployment-Pipeline verwendet `vars.VITE_SUPABASE_URL` und `secrets.VITE_SUPABASE_ANON_KEY`; diese Werte sind **nicht** in den lesbaren Quelltexten hinterlegt. Der aktuell verwendete V2-Endpunkt muss vor Projektumwidmung zweifelsfrei identifiziert werden. Zwei Auth-Benutzer im unbenutzten Schema sind ein zusätzlicher Grund zur Vorsicht.
+- **Aktiv keine Buchungen löschen und keine bestehende Datenbank umbenennen, reinitialisieren oder als Ziel beschreiben.** Erst nach Zielbestätigung Schema-/Auth-Einrichtung und gesicherter Katalogimport.
