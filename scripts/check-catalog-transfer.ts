@@ -39,7 +39,7 @@ assert.deepEqual(ambiguousImages.errors,[], 'Artikelimport darf bei doppeltem Bi
 assert(ambiguousImages.warnings.some(w=>w.includes('mehrere gleichwertige ZIP-Bilder')));
 assert.equal(Object.keys(ambiguousImages.images).length,0,'mehrdeutige Bilder duerfen nicht stillschweigend hochgeladen werden');
 const missing = buildImportPlan(make([['Other',1,'G','fix',19,20]]),base,images);
-assert.equal(missing.errors.length,0); assert(missing.warnings.some(w=>w.includes('kein passendes')));
+assert.equal(missing.errors.length,0); assert(missing.warnings.some(w=>w.includes('kein exaktes ZIP-Bild')));
 const existing = [{...images[0],path:'outer/Cola 0,5l.jpg'}];
 assert.equal(Object.keys(buildImportPlan(make([['Cola 0,5l',4,'Getränke','fix',19,20]]),base,existing).images).length,0);
 assert.equal(Object.keys(buildImportPlan(make([['Cola 0,5l',4,'Getränke','fix',19,20]]),base,existing,true).images).length,1);
