@@ -7,9 +7,10 @@ import { readBackupCheckpoint } from '@/lib/backupCheckpoint';
 interface Props {
   onComplete: () => void;
   onCancel?: () => void;
+  warning?: string | null;
 }
 
-export function DeviceSetupDialog({ onComplete, onCancel }: Props) {
+export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previous = readDeviceSetup();
@@ -55,6 +56,7 @@ export function DeviceSetupDialog({ onComplete, onCancel }: Props) {
             <p className="text-sm text-slate-600 dark:text-slate-300">Einmalig für dieses Gerät. Später in der Verwaltung änderbar.</p>
           </div>
         </div>
+        {warning && <p role="alert" className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">{warning}</p>}
         <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
           Wo möchtest du Journale und Tagesabschlüsse lokal speichern?
           Wir legen im gewählten Ort automatisch <strong>Kasse 26</strong> und darunter die Berichte nach Jahr, Standort und Berichtsart sowie die Ordner <strong>Sicherung/Backup1</strong> und <strong>Sicherung/Backup2</strong> an. Auf Tablets ohne Ordnerfreigabe wird der Download- oder Teilen-Dialog verwendet.
@@ -81,7 +83,7 @@ export function DeviceSetupDialog({ onComplete, onCancel }: Props) {
         </div>
         {error && <p role="alert" className="rounded-xl bg-amber-100 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">{error}</p>}
         <p className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400"><ShieldCheck size={15} className="mt-0.5 shrink-0"/>
-          Der Speicherort wird nur in diesem Browser gespeichert. Es werden keine Passwörter oder Kassenbuchungen geändert.
+          PDF-Dateien werden ausschließlich auf diesem Gerät gespeichert, nicht in Supabase. Die Buchungen und abgeschlossenen Kassendaten bleiben für den späteren Neuausdruck auf anderen Geräten in der Cloud verfügbar. Einstellungen und Passwörter bleiben unberührt.
         </p>
       </section>
     </div>
