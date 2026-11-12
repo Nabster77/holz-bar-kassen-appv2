@@ -1,4 +1,8 @@
 import { backupDirectorySegments, type BackupSlot } from './archiveRoot';
+import {
+  backup1Eligibility, backup2Eligibility,
+  type BackupSyncCheckpoint, type BackupSyncConditions,
+} from './backupSyncPolicy';
 
 /**
  * Incremental, verifiable backup files beneath the user-selected Kasse 26
@@ -135,8 +139,13 @@ export async function saveBackup1(
   parent: FileSystemDirectoryHandle,
   configuredAt: number,
   backup: ArchiveBackup,
+  state: BackupSyncCheckpoint,
+  conditions: BackupSyncConditions,
+  manual = false,
 ): Promise<BackupWriteResult> {
   assertBackup(backup);
+  // No writes before Cloud consistency, outbox emptiness and permission are
+  // confirmed. Fail closed, never claim an automatic backup succeeded.
   const target=await directory(parent,configuredAt,'Backup1');
   const existing=await currentManifest(target);
   const sections: Record<string,string>={};
@@ -155,6 +164,10 @@ export async function saveBackup1(
     changedSections.push(name);
   }
   const revision=await digest(JSON.stringify({version:backup.version,sections}));
+  const eligibility=backup1Eligibility(state,conditions,revision,manual);
+  if (!eligibility.allowed && eligibility.reason!=='up-to-date') {
+    throw new Error(`Backup 1 nicht erlaubt: ${eligibility.reason ?? 'unbekannt'}.`);
+  }
   if (existing?.revision!==revision) {
     await commitManifest(target,{schema:1,backupVersion:backup.version,exportedAt:backup.exportedAt,revision,sections});
   }
@@ -170,7 +183,15 @@ export async function saveBackup1(
 export async function mirrorBackup2(
   parent: FileSystemDirectoryHandle,
   configuredAt: number,
+  state: BackupSyncCheckpoint,
+  conditions: BackupSyncConditions,
 ): Promise<BackupWriteResult> {
+  // Enforce the gate here, not only in UI or timer code. Unknown presence
+  // on another tablet denies automatic mirroring.
+  const eligible=backup2Eligibility(state,conditions);
+  if (!eligible.allowed && eligible.reason!=='up-to-date') {
+    throw new Error(`Backup 2 nicht erlaubt: ${eligible.reason ?? 'unbekannt'}.`);
+  }
   const source=await directory(parent,configuredAt,'Backup1');
   const target=await directory(parent,configuredAt,'Backup2');
   const manifest=await currentManifest(source);
@@ -179,16 +200,21 @@ export async function mirrorBackup2(
   const changedSections: string[]=[];
   // Revision unchanged: verify manifest integrity rather than rewriting.
   if (existing?.revision===manifest.revision) {
+    for (const [name,hash] of Object.entries(manifest.sections)) {
+      await readSection(source,name,hash);
+      await readSection(target,name,hash);
+    }
     return {revision:manifest.revision,changedSections,writtenAt:Date.now()};
   }
   for (const [name,hash] of Object.entries(manifest.sections)) {
-    if (existing?.sections[name]===hash) continue;
+    // Even an unchanged shard is checked to detect silent corruption before
+    // the pointer to a verified backup is accepted.
     const sourceText=await readSection(source,name,hash);
     const filename=`${name}-${hash}.json`;
     const prior=await readOrNull(target,filename);
     if (prior!==null && await digest(prior)!==hash) throw new Error('Backup 2 enthält beschädigte Daten.');
     if (prior===null) await writeAndVerify(target,filename,sourceText);
-    changedSections.push(name);
+    if (prior===null || existing?.sections[name]!==hash) changedSections.push(name);
   }
   // If Backup 1 was updated while we copied, the caller can retry from its
   // newer manifest; never falsely mark this older version as current.
