@@ -187,3 +187,21 @@ Die letzten fünf Einzelbons einer **offenen** Kassensitzung sind lediglich eine
 **Noch offen, deshalb nicht als fertig bezeichnen:** atomare Storno-Erfassung in Supabase, zuverlässige persönliche Mitarbeiterauthentifizierung gegenüber dem Cloud-Schreibdienst, Synchronisation von Stornos bis zur endgültigen Buchung, Einbindung von Stornogegenbuchungen in alle Journal- und PDF-Ausgaben, gesicherter finaler Cloud-PDF-Beleg. Das eigenständige Online-Repository und der lokale Praxistestserver sind noch nicht nach Nutzerfreigabe gestartet.
 
 Keine Produktivbuchungen geändert, keine Storno-SQL-Migration auf Supabase angewandt und keine öffentliche Veröffentlichung ausgelöst.
+
+## Fortsetzung V3 – Storno-Cloud-Sicherheit und eindeutige Kassensitzungen (12.11.2026)
+
+**Umgesetzt nur im Entwicklungsbranch `woodmo-v3.0`, keine Veröffentlichung und keine Datenbankänderung:**
+
+1. Neue Bons erhalten ein optionales `cashSessionId`-Feld (für alle künftigen Verkäufe gesetzt in `App.tsx`). In `sessionTransactions`, `DailyCloseDialog` und den Storno-Regeln wird es berücksichtigt; alte Bons bleiben per Standort/Zeitfenster lesbar.
+2. Storno-Passwortprüfer in `supabase/functions/woodmo-v3-storno/passwordProof.ts` für bestehende Mitarbeiter-PBKDF2-Nachweise (210.000 Iterationen). Unverändert gültige Mitarbeiterpasswörter, keine Rücksetzung.
+3. Edge-Funktions-Entwurf `supabase/functions/woodmo-v3-storno/index.ts`: Cloud-Nutzerprüfung, zusätzliches persönliches Mitarbeiterpasswort, Aufruf einer separaten service-role-beschränkten SQL-RPC. Noch **nicht bereitgestellt**.
+4. Online-Storno-Client `src/lib/stornoCloud.ts`, einheitlicher Cloud-Belegdecoder `src/lib/stornoCodec.ts`; keine Offline-Warteschlange für irreversible Stornos. Noch **nicht in der POS-Bedienoberfläche aktiviert**.
+5. `docs/sql/WOODMO_V3_STORNO_SCHEMA_ENTWURF_NICHT_AUSFUEHREN.sql` ist ein **nicht angewendeter** SQL-Entwurf für Append-only-Stornos und atomare Prüfung der fünf aktuellsten Bons, vorhandenen Barbestände, Kassen-Generation und offenen Sitzung. **Keine Storno-SQL-Datei in `supabase/migrations` vorhanden.**
+6. Testskripte für PBKDF2, Cloud-Decoder, Sitzungszuordnung und Schutz vor automatischen Storno-Migrationen zu `npm test` hinzugefügt.
+7. Die vorhandene V3-GitHub-Actions-Prüfung `.github/workflows/woodmo-v3-ci.yml` enthält Typecheck, Regressionstests, Build und Lint; **keine Deployment-Aktion**. Die bestehende öffentliche Deployment-Workflow-Datei reagiert auf `main`, nicht auf diesen Branch.
+
+**Isoliert tatsächlich ausgeführt und bestanden:** Storno-Regeltests, Storno-Zeitraum-Journal, Abschlusssnapshot mit 1001/1007 Buchungen, Zuordnung verschiedener Kassensitzungen, Storno-Cloud-Datenvalidierung und persönlicher PBKDF2-Passwortnachweis. Die separaten TypeScript-Modulprüfungen bestanden. **Der komplette Projekt-Build bzw. ein GitHub-Actions-Erfolg wurde in diesem Lauf nicht abschließend nachgewiesen.**
+
+**Nur lesend geprüft:** Die V3-Supabase-RLS-Policies erlauben dem gemeinsamen Cloud-Admin gegenwärtig direkte Schreibvorgänge auf Mitarbeiter- und Kassen-Tabellen. Für die endgültige Freigabe individueller Mitarbeiterrechte ist eine zusätzliche Absicherung dieser Schreibwege nötig; die reine Storno-Passwortprüfung schützt nicht vollständig vor Manipulation durch den gemeinsamen Cloud-Zugang.
+
+**Vor Aktivierung erforderlich:** unabhängige PostgreSQL- und Parallelzugriffstests der Storno-RPC, Schutz gegen Brute-Force-Mitarbeiteranmeldungen, Datenaufbewahrung beim Buchungs-Reset, integrierter POS-Storno-Dialog, vollständige Journal-/PDF-/Backup-Korrekturen und zentral gespeicherter Tagesabschluss mit Storno-Snapshot. Erst danach lokale Praxisfreigabe und separate Onlinefreigabe durch den Nutzer.
