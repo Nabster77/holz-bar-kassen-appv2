@@ -49,3 +49,9 @@ F. Separater Praxistest nach Nutzerfreigabe.
 Deutschland: AO § 146 Abs. 4 untersagt Änderungen, bei denen ursprüngliche Inhalte nicht mehr feststellbar sind. Österreich: RKSV § 7 Abs. 2 verlangt, dass Stornobuchungen wie Barumsätze im Datenerfassungsprotokoll erfasst werden. Das ist die Begründung für **Gegenbuchung statt spurloser Löschung**.
 
 Diese Prüfung ersetzt **keine** umfassende steuerrechtliche Abnahme des elektronischen Kassensystems.
+
+## Geprüfter Stand der Sicherheitsvoraussetzungen (2026-11-12)
+
+In V3 existieren für Mitarbeiterverwaltung bislang Funktionen zum Anlegen/Ändern und für Sicherheitsfragen, **aber keine RPC zur persönlichen serverseitigen Bestätigung einer Stornierung**. Die gemeinsame Supabase-Cloud-Anmeldung identifiziert daher noch nicht den jeweils stornierenden Mitarbeiter. Eine Server-RPC, die bloß `employee_id` aus einem Browserparameter übernimmt, ist **nicht ausreichend**. Vor Freischaltung ist ein tragfähiger individueller Berechtigungsnachweis erforderlich. Bis dahin bleibt die Storno-Schreibfunktion deaktiviert; keine direkten INSERT-Rechte für normale Browserclients.
+
+Die reine Journalprojektion `salesLedgerMovements` führt `employeeName`, `employeeId` und `reason` auf Storno-Gegenbewegungen mit, damit die Informationen im künftigen Bericht/PDF nicht verloren gehen. Die Ergebnisse werden unter `scripts/check-storno-ledger.mjs` geprüft und über `npm test` ausgeführt.
