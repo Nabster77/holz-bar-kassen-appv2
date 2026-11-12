@@ -39,6 +39,15 @@ const session = { ...base, corrections: [{ id: 'correction', oldAmount: 200, new
     { id: 'out', type: 'withdrawal', amount: 5, timestamp: stamp + 3000, reason: 'Ausgabe' }] };
 const rows = [cash, card, ret, { ...cash, id: 'old', timestamp: stamp - 1000 }];
 const report = closedSessionReport(session, rows, []);
+// Archived close figures must be frozen at the close time, not at the current
+// year-to-date totals. A later transaction must not alter the old PDF values.
+const laterSale = { ...cash, id: 'after-close', timestamp: session.closedAt + 5000,
+  items: [{ ...item, pfand: 90 }] };
+const reportAfterLaterSale = closedSessionReport(session, [...rows, laterSale], []);
+assert.deepEqual(reportAfterLaterSale.transactions, report.transactions);
+assert.deepEqual(reportAfterLaterSale.yearlyPfandOverview, report.yearlyPfandOverview,
+  'Later deposits must not change a finalized historical PDF');
+assert.equal(reportAfterLaterSale.dailyCloseCash.remainingBalance, report.dailyCloseCash.remainingBalance);
 assert.ok(buildJournalHTML(report).includes('data-pdf-page-header="Tagesabschluss · Friedrichshafen · 9.11.2026 · 12:01 Uhr"'));
 assert.ok(buildJournalHTML(report).includes('data-pdf-page-location="Friedrichshafen"'));
 assert.ok(buildJournalHTML(report).includes('class="audit-totals"'));
