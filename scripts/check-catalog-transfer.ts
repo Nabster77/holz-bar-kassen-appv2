@@ -34,7 +34,10 @@ assert.equal(images.length,1); assert.equal(normalizeName('Ätherische Öle(2)')
 const withImage = buildImportPlan(make([product]),base,images);
 assert.equal(Object.keys(withImage.images).length,1);
 const duplicates = [...images,{...images[0],path:'other/neu.jpg'}];
-assert(buildImportPlan(make([product]),base,duplicates).errors.length);
+const ambiguousImages = buildImportPlan(make([product]),base,duplicates);
+assert.deepEqual(ambiguousImages.errors,[], 'Artikelimport darf bei doppeltem Bild nicht abbrechen');
+assert(ambiguousImages.warnings.some(w=>w.includes('mehrere gleichwertige ZIP-Bilder')));
+assert.equal(Object.keys(ambiguousImages.images).length,0,'mehrdeutige Bilder duerfen nicht stillschweigend hochgeladen werden');
 const missing = buildImportPlan(make([['Other',1,'G','fix',19,20]]),base,images);
 assert.equal(missing.errors.length,0); assert(missing.warnings.some(w=>w.includes('kein passendes')));
 const existing = [{...images[0],path:'outer/Cola 0,5l.jpg'}];
