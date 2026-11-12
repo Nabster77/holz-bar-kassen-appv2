@@ -101,10 +101,8 @@ DECLARE
   v_payment text;
   v_topfive_ids text[];
 BEGIN
-  IF current_user <> 'postgres' AND current_user <> 'service_role' THEN
-    RAISE EXCEPTION 'Nur der geschützte Storno-Dienst darf buchen.'
-      USING ERRCODE='42501';
-  END IF;
+  -- Only service_role receives EXECUTE rights. current_user would equal
+  -- the function owner inside SECURITY DEFINER and is not an auth proof.
   IF length(btrim(coalesce(p_original_transaction_id,'')))=0 OR
      length(btrim(coalesce(p_cash_session_id,'')))=0 OR
      length(btrim(coalesce(p_reason,''))) NOT BETWEEN 3 AND 500 THEN
@@ -138,6 +136,7 @@ BEGIN
     RAISE EXCEPTION 'Kasse ist bereits abgeschlossen. Nachträgliche Korrekturen getrennt buchen.';
   END IF;
   v_opened_at:=(v_session.data->>'openedAt')::bigint;
+  v_now_ms:=(extract(epoch from clock_timestamp())*1000)::bigint;
   IF v_opened_at IS NULL THEN RAISE EXCEPTION 'Eröffnungszeit der Kasse fehlt.'; END IF;
 
   SELECT coalesce(max(id),0) INTO v_generation FROM public.pos_booking_resets;
@@ -149,16 +148,18 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Originalbeleg noch nicht synchronisiert.'; END IF;
   IF v_sale.location<>v_session.location OR
      v_sale.booking_generation<>v_generation OR
-     v_sale.timestamp<v_opened_at THEN
+     v_sale.timestamp<v_opened_at OR v_sale.timestamp>v_now_ms OR
+     coalesce(nullif(v_sale.data->>'cashSessionId',''),p_cash_session_id)<>p_cash_session_id THEN
     RAISE EXCEPTION 'Originalbeleg gehört nicht zu dieser offenen Kasse.';
   END IF;
   v_payment:=v_sale.data->>'paymentMethod';
-  IF v_payment NOT IN ('cash','card') OR
+  IF v_payment IS NULL OR v_payment NOT IN ('cash','card') OR
      jsonb_typeof(v_sale.data->'items')<>'array' OR
      jsonb_typeof(v_sale.data->'taxByRate')<>'object' THEN
     RAISE EXCEPTION 'Originalbeleg unvollständig oder Zahlungsart unbekannt.';
   END IF;
   v_total_cents:=round(((v_sale.data->>'total')::numeric)*100)::bigint;
+  IF v_total_cents IS NULL THEN RAISE EXCEPTION 'Originalbeleg ohne Gesamtbetrag.'; END IF;
 
   -- The five newest ORIGINAL receipts: a previously voided receipt still
   -- occupies its place; no older sale may move back into the selection.
@@ -166,7 +167,8 @@ BEGIN
   INTO v_topfive_ids FROM (
     SELECT id,timestamp FROM public.pos_transactions
     WHERE location=v_session.location AND booking_generation=v_generation
-      AND timestamp>=v_opened_at
+      AND timestamp>=v_opened_at AND timestamp<=v_now_ms
+      AND coalesce(nullif(data->>'cashSessionId',''),p_cash_session_id)=p_cash_session_id
     ORDER BY timestamp DESC,id DESC LIMIT 5
   ) AS t;
   IF NOT p_original_transaction_id=ANY(coalesce(v_topfive_ids,ARRAY[]::text[])) THEN
@@ -192,7 +194,8 @@ BEGIN
   FROM public.pos_transactions t
   WHERE t.location=v_session.location AND
         t.booking_generation=v_generation AND
-        t.timestamp>=v_opened_at AND
+        t.timestamp>=v_opened_at AND t.timestamp<=v_now_ms AND
+        coalesce(nullif(t.data->>'cashSessionId',''),p_cash_session_id)=p_cash_session_id AND
         t.data->>'paymentMethod'='cash';
 
   SELECT coalesce(sum(
@@ -213,7 +216,6 @@ BEGIN
     RAISE EXCEPTION 'Storno würde negativen Bargeldbestand erzeugen.';
   END IF;
 
-  v_now_ms:=(extract(epoch from clock_timestamp())*1000)::bigint;
   INSERT INTO public.pos_stornos(
     id,original_transaction_id,cash_session_id,booking_generation,
     location,recorded_at,employee_id,employee_name,reason,payment_method,
