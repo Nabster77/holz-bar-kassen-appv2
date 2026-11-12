@@ -203,7 +203,7 @@ BEGIN
       THEN round(((entry->>'amount')::numeric)*100)::bigint
       ELSE -round(((entry->>'amount')::numeric)*100)::bigint END
   ),0) INTO v_entries_cents
-  FROM jsonb_array_elements(coalesce(v_session.data->'entries','[]'::jsonb)) AS entry;
+  FROM jsonb_array_elements(coalesce(v_session.data->'entries','[]'::jsonb)) AS cash_item(entry);
 
   SELECT coalesce(sum(cash_effect_cents),0)
     INTO v_existing_storno_cents
