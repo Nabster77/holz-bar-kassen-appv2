@@ -22,7 +22,7 @@
     "test:session-linkage": "node --experimental-strip-types scripts/check-session-linkage.mjs",
     "test:storno-sql-staging": "node scripts/check-storno-sql-staging.mjs",
     "test:backup-sync-policy": "node --experimental-strip-types scripts/check-backup-sync-policy.mjs",
-    "test:backup-archive": "node --experimental-strip-types scripts/check-backup-archive.mjs"
+    "test:backup-archive": "node --import tsx scripts/check-backup-archive.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
