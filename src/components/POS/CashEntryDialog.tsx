@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { X, ArrowDownCircle, ArrowUpCircle, Check } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { CashSession } from '@/types';
@@ -19,10 +19,19 @@ export function CashEntryDialog({ currentCashBalance, type, onSave, onClose }: P
   const parsedAmount = Number(amount.trim().replace(',', '.'));
   const validAmount = amount.trim().length > 0 && Number.isFinite(parsedAmount) && parsedAmount > 0 && (isDeposit || Math.round(parsedAmount * 100) <= Math.round(currentCashBalance * 100));
 
+  const submitted = useRef(false);
+
   function handleSave() {
+    if (submitted.current) return;
     const a = parsedAmount;
     if (!validAmount || !reason.trim()) return;
-    onSave(a, reason.trim());
+    submitted.current = true;
+    try {
+      onSave(a, reason.trim());
+    } catch (error) {
+      submitted.current = false;
+      throw error;
+    }
   }
 
   return (
@@ -37,7 +46,7 @@ export function CashEntryDialog({ currentCashBalance, type, onSave, onClose }: P
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="space-y-4">
+        <form onSubmit={(event) => { event.preventDefault(); handleSave(); }} className="space-y-4">
           <div className="rounded-xl bg-gray-50 p-3 text-sm text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
             Aktueller Kassenbestand: <span className="font-bold text-gray-900 dark:text-gray-100">{formatCurrency(currentCashBalance)}</span>
           </div>
@@ -52,11 +61,11 @@ export function CashEntryDialog({ currentCashBalance, type, onSave, onClose }: P
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
           </div>
           {!isDeposit && !validAmount && amount.trim() && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-400">Die Buchung kann nicht durchgeführt werden. Der vorhandene Bargeldbestand reicht nicht aus oder der Betrag ist ungültig. Ein negativer Kassenbestand ist nicht zulässig.</p>}
-          <button onClick={handleSave} disabled={!validAmount || !reason.trim()}
+          <button type="submit" disabled={!validAmount || !reason.trim()}
             className={`w-full rounded-xl py-3 text-base font-semibold text-white shadow-md transition active:scale-95 disabled:opacity-50 ${isDeposit ? 'bg-violet-600 hover:bg-violet-700' : 'bg-red-600 hover:bg-red-700'}`}>
             <Check className="mr-1.5 inline h-4 w-4" /> Bestätigen
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
