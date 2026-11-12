@@ -16,7 +16,7 @@ export function WoodmoBrand({ status, size = 'small', children }: Props) {
     <div className="flex min-w-0 items-center gap-2.5">
       <div className={`relative shrink-0 overflow-visible rounded-[24%] ${glow}`}>
         <img
-          src={`${import.meta.env.BASE_URL}woodmo-v3-logo.png`}
+          src={`${import.meta.env?.BASE_URL ?? '/'}woodmo-v3-logo.png`}
           alt="WOODMO Version 3.0"
           className={`rounded-[24%] object-cover ${size === 'large' ? 'h-24 w-24 sm:h-28 sm:w-28' : 'h-10 w-10 sm:h-11 sm:w-11'}`}
         />
