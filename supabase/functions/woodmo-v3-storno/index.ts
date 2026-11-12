@@ -59,7 +59,13 @@ Deno.serve(async (request) => {
     if (Number(request.headers.get('content-length') ?? '0') > 4096) {
       return reply(413, { error: 'Stornoantrag zu groß.' });
     }
-    input = await request.json() as StornoRequest;
+    const raw = await request.text();
+    if (raw.length > 4096) return reply(413, { error: 'Stornoantrag zu groß.' });
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return reply(400, { error: 'Ungültiger Stornoantrag.' });
+    }
+    input = parsed as StornoRequest;
   } catch {
     return reply(400, { error: 'Ungültiger Stornoantrag.' });
   }
