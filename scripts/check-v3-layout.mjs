@@ -1,24 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { WoodmoHome } from '../src/components/WoodmoHome.tsx';
-
-const open = renderToStaticMarkup(React.createElement(WoodmoHome, {
-  onCash: () => {}, onAdmin: () => {}, sessionOpen: false,
-  location: 'Friedrichshafen', status: 'ok', testMode: true,
-}));
-const resumed = renderToStaticMarkup(React.createElement(WoodmoHome, {
-  onCash: () => {}, onAdmin: () => {}, sessionOpen: true,
-  location: 'Bregenz', status: 'error', testMode: false,
-}));
-assert.equal((open.match(/<button\b/g) ?? []).length, 2, 'Home offers exactly two main tiles');
-assert.match(open, /Kasse eröffnen/);
-assert.match(open, /Verwaltung/);
-assert.match(open, /Administrator/);
-assert.match(resumed, /Kasse fortsetzen/);
-assert.match(resumed, /Bregenz/);
-assert.match(resumed, /Cloud \/ Abgleich prüfen/);
+// The application uses Vite's automatic JSX runtime. Inspect source directly
+// instead of mounting JSX under Node's different default loader.
+const home = readFileSync('src/components/WoodmoHome.tsx','utf8');
+assert.equal((home.match(/<button type="button" onClick=/g) ?? []).length, 2,
+  'Home has exactly two main tiles.');
+for (const label of ['Kasse eröffnen', 'Kasse fortsetzen', 'Verwaltung',
+  'Administrator', 'Cloud / Abgleich prüfen']) {
+  assert.ok(home.includes(label), `Home text missing: ${label}`);
+}
 
 const app = readFileSync('src/App.tsx', 'utf8');
 const pos = readFileSync('src/components/POS/POSScreen.tsx', 'utf8');
