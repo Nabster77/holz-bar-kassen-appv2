@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartItem, Category, CashSession, Product, Transaction, ShotOption, Location, PfandSettings, StaffSecurityQuestion, StaffUser } from '@/types';
 import { ProductTile } from './ProductTile';
 import { CartItemRow } from './CartItemRow';
@@ -18,7 +18,7 @@ import {
   ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro,
 } from 'lucide-react';
 
-type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
+type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | 'correction' | 'close' | null;
 
 interface Props {
   shotOptions: ShotOption[];
@@ -31,7 +31,6 @@ interface Props {
   onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure?: boolean) => void;
   onCloseCash: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
   transactions: Transaction[];
-  onEnterAdmin?: (selectedStaff: StaffUser | null) => void;
   onMoveProduct?: (sourceId: string, targetId: string) => void;
   headerAction?: HeaderAction;
   onHeaderActionConsumed?: () => void;
@@ -45,7 +44,6 @@ interface Props {
   onConfigureStaffSecurity: (id: string, question: StaffSecurityQuestion | null, answer: string) => Promise<StaffUser>;
   onResetStaffPassword: (id: string, answer: string, password: string) => Promise<StaffUser>;
   lastStaffId: string | null;
-  onStaffLogout: () => void;
   onDiscardEmptySession: () => Promise<void>;
   openingBalanceSuggestions?: Record<Location, number | null>;
 }
@@ -65,8 +63,8 @@ const PFAND_RETOURE_PRODUCT: Product = {
 
 export function POSScreen({
   categories, products, shotOptions, activeSession, onCheckout,
-  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onEnterAdmin, onMoveProduct,
-  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onStaffLogout, onDiscardEmptySession, openingBalanceSuggestions,
+  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onMoveProduct,
+  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -89,6 +87,24 @@ export function POSScreen({
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
+  const requestDailyClose = useCallback(async () => {
+    if (!activeSession) return;
+    const unused = !activeSession.entries.length && !activeSession.corrections.length &&
+      !transactions.some((tx) => tx.location === activeSession.location && tx.timestamp >= activeSession.openedAt);
+    // Preserve the original rule: no official close for an empty, unfunded till.
+    if (!unused || activeSession.openingBalance !== 0) {
+      setShowCloseDialog(true);
+      return;
+    }
+    alert(`Sie haben in dieser Kassensitzung keine Buchungen oder Kassenbewegungen getätigt. Ihr Anfangsbestand beträgt ${activeSession.openingBalance.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}. Es wird kein Tagesabschluss erstellt.`);
+    try {
+      await onDiscardEmptySession();
+      setShowOpenDialog(true);
+    } catch (error) {
+      alert((error as { message?: string }).message ?? 'Die unbenutzte Kasse konnte nicht in der Cloud verworfen werden. Bitte Verbindung prüfen.');
+    }
+  }, [activeSession, transactions, onDiscardEmptySession]);
+
   useEffect(() => {
     // Der Öffnungsdialog wird ausschließlich nach einem wirklich bestätigten
     // Tagesabschluss erneut angezeigt. Änderungen der Sitzung durch Import
@@ -106,9 +122,13 @@ export function POSScreen({
       setCashEntryType(headerAction);
     } else if (headerAction === 'pfand') {
       setShowPfandRetoure(true);
+    } else if (headerAction === 'correction') {
+      if (currentCashBalance > 0) setShowCorrection(true);
+    } else if (headerAction === 'close') {
+      void requestDailyClose();
     }
     onHeaderActionConsumed?.();
-  }, [headerAction, activeSession, currentStaff, onHeaderActionConsumed]);
+  }, [headerAction, activeSession, currentStaff, onHeaderActionConsumed, currentCashBalance, requestDailyClose]);
 
   const currentLocation: Location = activeSession?.location ?? (selectedLocation ?? 'Friedrichshafen');
 
@@ -214,69 +234,61 @@ export function POSScreen({
 
   return (
     <div className="flex h-full flex-col gap-2 sm:gap-3">
-      {/* Cash info bar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      {/* Small operational strip; secondary cash actions live in the icon menu. */}
+      <div className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:px-3">
         {activeSession ? (
           <>
-            <div className="flex items-center gap-1.5 text-sm">
-              <MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              <span className="font-semibold text-gray-900 dark:text-gray-100">{activeSession.location}</span>
-            </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              {formatDateLong(activeSession.openedAt)}
-            </div>
-            <div className="ml-auto flex items-center gap-1.5">
-              {currentStaff ? <>
-              <button onClick={() => { setShowOpenDialog(true); onStaffLogout(); }}
-                className="min-h-10 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 active:scale-95 dark:border-green-700 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/50">
-                {currentStaff.name} · Abmelden
-              </button>
-              <button onClick={() => setShowCorrection(true)} disabled={currentCashBalance <= 0} title={currentCashBalance <= 0 ? "Korrektur erst bei positivem Kassenbestand möglich" : "Anfangsbestand korrigieren"}
-                className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50">
-                Korrektur
-              </button>
-              <button onClick={async () => {
-                const unused = !activeSession.entries.length && !activeSession.corrections.length &&
-                  !transactions.some((t) => t.location === activeSession.location && t.timestamp >= activeSession.openedAt);
-                // A funded till needs a regular close, even without sales.
-                if (!unused || activeSession.openingBalance !== 0) { setShowCloseDialog(true); return; }
-                alert(`Sie haben in dieser Kassensitzung keine Buchungen oder Kassenbewegungen getätigt. Ihr Anfangsbestand beträgt ${activeSession.openingBalance.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}. Es wird kein Tagesabschluss erstellt.`);
-                try { await onDiscardEmptySession(); setShowOpenDialog(true); }
-                catch (error) { alert((error as { message?: string }).message ?? 'Die unbenutzte Kasse konnte nicht in der Cloud verworfen werden. Bitte Verbindung prüfen.'); }
-              }}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700">
-                <Lock className="h-3.5 w-3.5" /> Tagesabschluss
-              </button>
-              </> : <button onClick={() => setShowOpenDialog(true)} className="min-h-10 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2 text-sm font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Mitarbeiter anmelden</button>}
-            </div>
+            <span className="flex min-w-0 items-center gap-1 text-xs font-bold sm:text-sm">
+              <MapPin className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span className="truncate">{activeSession.location}</span>
+            </span>
+            <span className="hidden truncate text-xs text-slate-500 lg:inline dark:text-slate-400">{formatDateLong(activeSession.openedAt)}</span>
+            {currentStaff ? (
+              <>
+                <span className="ml-auto hidden truncate text-xs font-medium text-slate-500 min-[850px]:block dark:text-slate-300">{currentStaff.name}</span>
+                <button type="button" onClick={() => void requestDailyClose()}
+                  className="ml-auto flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 min-[850px]:ml-0">
+                  <Lock className="h-3.5 w-3.5" /> Tagesabschluss
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setShowOpenDialog(true)}
+                className="ml-auto min-h-9 rounded-lg bg-amber-100 px-3 text-xs font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Mitarbeiter anmelden</button>
+            )}
           </>
         ) : (
           <>
-            <div className="text-sm text-gray-500 dark:text-gray-400">Kasse noch nicht eröffnet</div>
-            <button onClick={() => setShowOpenDialog(true)}
-              className="ml-auto flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700">
-              <Lock className="h-3.5 w-3.5" /> Kasse eröffnen
+            <span className="text-xs text-slate-500 dark:text-slate-300">Kasse noch nicht eröffnet</span>
+            <button type="button" onClick={() => setShowOpenDialog(true)}
+              className="ml-auto min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800">
+              Kasse eröffnen
             </button>
           </>
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto xl:flex-row xl:overflow-hidden">
+      {/* Portrait tablet: roughly 65% product area / 35% persistent cart.
+          Small phones stack because a 200px-wide cart would be unusable. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-[minmax(0,1.85fr)_minmax(220px,1fr)] sm:overflow-hidden lg:grid-cols-[minmax(0,2.15fr)_minmax(250px,1fr)] lg:gap-3">
         {/* Left: products area */}
-        <div className="flex flex-1 flex-col xl:overflow-hidden">
-          {/* Category tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+        <div className="flex min-h-0 min-w-0 flex-col sm:overflow-hidden">
+          {/* Categories always visible as readable labeled touch targets. */}
+          <div className="mb-1 flex shrink-0 items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Warengruppen</h2>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">Tippen zum Wechseln</span>
+          </div>
+          <div className="mb-2 grid max-h-[min(27dvh,13.5rem)] shrink-0 grid-cols-2 gap-1.5 overflow-y-auto overscroll-contain pr-1 lg:grid-cols-3 2xl:grid-cols-4">
             {[...categories].filter((c) => c.id !== SHOT_CATEGORY_ID).sort((a, b) => a.sortOrder - b.sortOrder).map((cat) => (
               <button
                 key={cat.id}
+                type="button"
+                aria-pressed={activeCat === cat.id && !search}
                 onClick={() => { setActiveCat(cat.id); setSearch(''); }}
                 style={cat.color.startsWith('linear-gradient(') ? { background: cat.color } : cat.color.startsWith('#') ? { backgroundColor: cat.color } : undefined}
-                className={`flex min-h-11 items-center gap-2 whitespace-nowrap rounded-xl border px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:brightness-110 active:scale-95 bg-gradient-to-r ${cat.color.startsWith('linear-gradient(') || cat.color.startsWith('#') ? '' : cat.color} ${
-                  activeCat === cat.id && !search ? 'border-white ring-2 ring-blue-400 shadow-md' : 'border-transparent opacity-85'
-                }`}
+                className={`flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-bold leading-tight text-white shadow-sm transition hover:brightness-110 active:scale-[0.98] sm:text-sm bg-gradient-to-r ${cat.color.startsWith('linear-gradient(') || cat.color.startsWith('#') ? '' : cat.color} ${activeCat === cat.id && !search ? 'border-emerald-300 ring-2 ring-emerald-400/70' : 'border-transparent opacity-90'}`}
               >
-                <DynamicIcon name={cat.icon} className="h-4 w-4" />
-                {cat.name}
+                <DynamicIcon name={cat.icon} className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words text-center">{cat.name}</span>
               </button>
             ))}
           </div>
@@ -336,13 +348,13 @@ export function POSScreen({
           </div>
 
           {/* Product grid */}
-          <div className="relative xl:flex-1 xl:overflow-y-auto">
+          <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {visibleProducts.length === 0 ? (
               <div className="flex h-full items-center justify-center text-gray-400 dark:text-gray-500">
                 <p className="text-sm">Keine Artikel gefunden</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">
+              <div className="grid grid-cols-2 gap-2 min-[1040px]:grid-cols-3 min-[1420px]:grid-cols-4 min-[1740px]:grid-cols-5">
                 {visibleProducts.map((product) => (
                   <ProductTile
                     key={product.id}
@@ -378,7 +390,7 @@ export function POSScreen({
         </div>
 
         {/* Right: cart */}
-        <div className="flex w-full shrink-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 xl:w-96">
+        <div className="flex min-h-56 min-w-0 flex-col rounded-2xl border border-emerald-700/20 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:h-full sm:min-h-0">
           <div className="flex items-center justify-between border-b border-gray-200 p-3 dark:border-gray-700">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -392,21 +404,24 @@ export function POSScreen({
             )}
           </div>
 
-          <div className="px-3 xl:flex-1 xl:overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1 sm:px-3">
+            {cart.length === 0 && (
+              <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">Noch keine Artikel im Warenkorb</p>
+            )}
             {cart.map((item, index) => (
               <CartItemRow key={index} item={item} location={currentLocation} onInc={() => inc(index)} onDec={() => dec(index)} onRemove={() => removeItem(index)} onEditShot={item.product.isPfandArticle || item.product.hasShot ? () => { setShotCartIndex(index); setShotProduct(item.product); } : undefined} />
             ))}
           </div>
 
-          <div className="border-t border-gray-200 p-3 dark:border-gray-700">
-            <CartSummary items={cart} location={currentLocation} />
+          <div className="shrink-0 border-t border-gray-200 p-2 dark:border-gray-700 sm:p-3">
+            {cart.length > 0 && <div className="max-h-[min(25dvh,11rem)] overflow-y-auto"><CartSummary items={cart} location={currentLocation} /></div>}
             {cart.length > 0 && (
               <button
                 onClick={() => activeSession && currentStaff && setShowCheckout(true)}
                 disabled={!activeSession || !currentStaff}
-                className={`mt-3 w-full rounded-xl py-4 text-lg font-bold text-white shadow-lg transition active:scale-95 ${activeSession && currentStaff ? 'bg-green-600 hover:bg-green-700' : 'cursor-not-allowed bg-gray-400 dark:bg-gray-600'}`}
+                className={`mt-2 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm font-bold text-white shadow-lg transition active:scale-95 ${activeSession && currentStaff ? 'bg-green-600 hover:bg-green-700' : 'cursor-not-allowed bg-gray-400 dark:bg-gray-600'}`}
               >
-                {activeSession && currentStaff ? 'Bezahlen / Kassiervorgang abschließen' : 'Mitarbeiter anmelden'}
+                {activeSession && currentStaff ? 'Bezahlen' : 'Mitarbeiter anmelden'}
               </button>
             )}
           </div>
@@ -415,7 +430,7 @@ export function POSScreen({
 
       {/* Dialogs */}
       {(showOpenDialog || !activeSession) && (
-        <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} onEnterAdmin={onEnterAdmin} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
+        <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
         <CashCorrectionDialog session={activeSession} currentCashBalance={currentCashBalance} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
