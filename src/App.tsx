@@ -18,6 +18,8 @@ import { changeManagerPassword, loadManagerCredential, restoreManagerCredential,
 import { supabase } from '@/lib/supabaseClient';
 import type { Location, StaffUser } from '@/types';
 import { POSScreen } from '@/components/POS/POSScreen';
+import { WoodmoHome } from '@/components/WoodmoHome';
+import { WoodmoBrand } from '@/components/WoodmoBrand';
 import { AdminScreen } from '@/components/Admin/AdminScreen';
 import { JournalScreen } from '@/components/Journal/JournalScreen';
 import { PasswordGate } from '@/components/PasswordGate';
@@ -38,11 +40,11 @@ import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle, Recycle,
-  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, Menu, X, ArrowLeft,
+  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, LayoutGrid, X, Home, LogOut,
 } from 'lucide-react';
 
 type Tab = 'pos' | 'admin' | 'journal';
-type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | null;
+type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | 'correction' | 'close' | null;
 type OpeningManagementAccess =
   | { kind: 'manager-only' }
   | { kind: 'selected-administrator'; administrator: StaffUser }
@@ -53,7 +55,10 @@ export default function App() {
   const { theme, toggle } = useTheme();
   const store = useStore();
   const [tab, setTab] = useState<Tab>('pos');
-  const [previousTab, setPreviousTab] = useState<Tab | null>(null);
+  // A cash register remains mounted when navigating Home/Admin/Journal: the
+  // active unsaved cart must not disappear merely because its view is hidden.
+  const [homeVisible, setHomeVisible] = useState(true);
+  const [posVisited, setPosVisited] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deviceSetupOpen, setDeviceSetupOpen] = useState(() => readDeviceSetup() === null);
   const [pdfArchiveWarning, setPdfArchiveWarning] = useState<string | null>(null);
@@ -162,11 +167,15 @@ export default function App() {
   }
 
   function navigateTo(nextTab: Tab) {
-    if (tab !== nextTab) {
-      setPreviousTab(tab);
-      setTab(nextTab);
-    }
+    setTab(nextTab);
+    setHomeVisible(false);
+    if (nextTab === 'pos') setPosVisited(true);
     setMenuOpen(false);
+  }
+
+  function goHome() {
+    setMenuOpen(false);
+    setHomeVisible(true);
   }
 
   function navigateToProtected(nextTab: 'admin' | 'journal') {
@@ -177,17 +186,14 @@ export default function App() {
     navigateTo(nextTab);
   }
 
-  function navigateToProtectedOrBack(nextTab: Tab) {
-    if (nextTab === 'pos') navigateTo('pos');
-    else navigateToProtected(nextTab);
-  }
-
   function chooseCashAction(action: Exclude<HeaderAction, null>) {
     navigateTo('pos');
     setHeaderAction(action);
   }
 
   function openManagementFromCashOpening(selectedStaff: StaffUser | null) {
+    setHomeVisible(false);
+    setMenuOpen(false);
     if (selectedStaff?.role === 'employee') return;
     if (selectedStaff?.role === 'administrator' && currentStaff?.id === selectedStaff.id && currentStaff.role === 'administrator') {
       setManagementAdministrator(currentStaff);
@@ -261,107 +267,87 @@ export default function App() {
 
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
-      {/* Header */}
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:px-4 sm:py-2.5">
-        {/* Logo */}
-        <div className="flex items-center gap-2" title={online ? 'Online' : 'Offline'}>
-          <div className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 bg-white transition-all duration-300 dark:bg-gray-900 ${online ? 'border-green-500 text-green-600 shadow-[0_0_14px_rgba(34,197,94,0.55)] dark:text-green-400' : 'border-red-500 text-red-600 shadow-[0_0_14px_rgba(239,68,68,0.55)] dark:text-red-400'}`}>
-            <ShoppingCart className="h-5 w-5" />
-          </div>
-          <div className="hidden sm:block">
-            <h1 className={`text-base font-bold leading-tight transition-colors duration-300 ${online ? 'text-green-700 [text-shadow:0_0_10px_rgba(34,197,94,0.5)] dark:text-green-400' : 'text-red-600 [text-shadow:0_0_10px_rgba(239,68,68,0.5)] dark:text-red-400'}`}>Tablet-Kasse</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Holzbar</p>
-          </div>
-        </div>
-
-        <div className="hidden h-7 w-px bg-gray-200 dark:bg-gray-700 sm:block" />
-
-        {/* Compact navigation: operational space stays available for the cart. */}
-        <button
-          type="button"
-          aria-label={menuOpen ? 'Menü schließen' : 'Menü öffnen'}
-          aria-expanded={menuOpen}
-          aria-controls="woodmo-main-menu"
-          onClick={() => setMenuOpen((open) => !open)}
-          className="flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-        >
-          {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          <span>Menü</span>
-        </button>
-        <span className="hidden min-w-0 truncate text-sm font-semibold text-gray-600 dark:text-gray-300 sm:inline">
-          {tab === 'pos' ? 'Kasse' : tab === 'admin' ? 'Verwaltung' : 'Journale'}
-        </span>
-
-        {/* Test/Active mode badge */}
-        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={() => setSyncOpen(true)}
-            className="flex min-h-10 items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Synchronisieren</span>
-          </button>
-          {!testMode && (
-            <span role="status" aria-live="polite" title="Status der Artikel-, Schuss- und Preis-Synchronisierung"
-              className={`hidden max-w-40 text-xs font-semibold sm:inline ${catalog.syncStatus === 'saved' ? 'text-green-600 dark:text-green-400' : catalog.syncStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
-              {catalog.syncStatus === 'saved' ? 'Artikel: Cloud gespeichert'
-                : catalog.syncStatus === 'syncing' ? 'Artikel: Cloud-Abgleich …'
-                : catalog.syncStatus === 'error' ? 'Artikel: Abgleich fehlgeschlagen'
-                : 'Artikel: Speichern ausstehend'}
-            </span>
-          )}
-          <div role="status" title={online ? 'Cloud erreichbar' : 'Keine Verbindung zur Cloud'} className={`flex h-10 flex-col items-center justify-center rounded-xl border px-3 ${online ? 'border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300' : 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'}`}>
-            <span className="flex items-center gap-1 text-xs font-bold leading-4"><Cloud className="h-3.5 w-3.5" /> Cloud</span>
-            <span className="text-[9px] font-semibold leading-3 tracking-wide">{testMode ? 'TEST' : 'AKTIV'}</span>
-          </div>
-        </div>
-
-        {/* Theme toggle */}
-        <button
-          onClick={toggle}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-      </header>
-
-      {menuOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setMenuOpen(false)}>
-          <nav
-            id="woodmo-main-menu"
-            aria-label="WOODMO Hauptmenü"
-            className="absolute left-2 right-2 top-2 max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain rounded-2xl bg-white p-3 shadow-2xl dark:bg-gray-800 sm:left-4 sm:right-auto sm:w-[min(24rem,calc(100vw-2rem))]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <strong className="text-base">WOODMO Menü</strong>
-              <button type="button" aria-label="Menü schließen" onClick={() => setMenuOpen(false)} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700"><X className="h-5 w-5" /></button>
+      {/* Compact toolbar: Home never closes the register or clears its cart. */}
+      {!homeVisible && (
+        <>
+          <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:border-emerald-900/70 dark:bg-slate-900 sm:px-3">
+            <button type="button" aria-label="Zur Startseite" title="Startseite" onClick={goHome}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
+              <Home className="h-5 w-5" />
+            </button>
+            <WoodmoBrand status={!online || catalog.syncStatus === 'error' ? 'error' : !testMode && catalog.syncStatus !== 'saved' ? 'pending' : 'ok'} />
+            <h1 className="min-w-0 truncate text-base font-bold text-slate-900 dark:text-slate-100 sm:text-lg">
+              {tab === 'pos' ? 'Kasse' : tab === 'admin' ? 'Verwaltung' : 'Journal'}
+            </h1>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <button type="button" aria-label="Kassenmenü öffnen" title="Kassenmenü"
+                onClick={() => setMenuOpen((wasOpen) => !wasOpen)}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 px-2 text-slate-700 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
+                <LayoutGrid className="h-5 w-5" />
+                <span className="hidden min-[980px]:inline text-xs font-semibold">Menü</span>
+              </button>
+              <button type="button" aria-label="Cloud synchronisieren" title="Cloud synchronisieren"
+                onClick={() => setSyncOpen(true)}
+                className="flex h-10 items-center gap-1 rounded-xl border border-emerald-700/40 px-2 text-emerald-700 dark:text-emerald-400">
+                <RefreshCw className="h-4 w-4" />
+                <span className="hidden min-[1080px]:inline text-xs font-semibold">Sync Cloud</span>
+              </button>
+              <span role="status" title={!online ? 'Cloud nicht erreichbar' : catalog.syncStatus === 'error' ? 'Artikel-Abgleich fehlgeschlagen' : 'Cloud verbunden'}
+                className={`flex h-10 items-center gap-1 rounded-xl border px-2 text-xs font-bold ${!online || catalog.syncStatus === 'error' ? 'border-red-700/50 text-red-600 dark:text-red-400' : 'border-emerald-700/40 text-emerald-700 dark:text-emerald-400'}`}>
+                <Cloud className="h-4 w-4" />
+                <span className="hidden min-[1100px]:inline">{!online ? 'Offline' : 'Cloud'}</span>
+                <span className="text-[10px]">{testMode ? 'TEST' : 'AKTIV'}</span>
+              </span>
+              {tab === 'pos' && currentStaff && (
+                <button type="button" aria-label="Mitarbeiter abmelden" title={`${currentStaff.name} abmelden`}
+                  onClick={() => void handleStaffLogout()}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-600/40 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">
+                  <LogOut className="h-5 w-5" />
+                </button>
+              )}
+              <button type="button" aria-label="Darstellung wechseln" title="Hell/Dunkel" onClick={toggle}
+                className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-200 min-[780px]:flex">
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
             </div>
-            {previousTab && previousTab !== tab && (
-              <button type="button" onClick={() => navigateToProtectedOrBack(previousTab)} className="mb-2 flex min-h-11 w-full items-center gap-2 rounded-xl border border-gray-200 px-3 text-left text-sm font-semibold dark:border-gray-700"><ArrowLeft className="h-4 w-4" /> Zurück zu {previousTab === 'pos' ? 'Kasse' : previousTab === 'admin' ? 'Verwaltung' : 'Journalen'}</button>
-            )}
-            <button type="button" onClick={() => navigateTo('pos')} className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-semibold ${tab === 'pos' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}><ShoppingCart className="h-5 w-5" /> Kasse</button>
-            {store.activeSession && currentStaff && (
-              <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-700">
-                <p className="mb-1 px-3 text-xs font-bold uppercase tracking-wide text-gray-500">Kassenbewegungen</p>
-                <button type="button" onClick={() => chooseCashAction('deposit')} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700"><ArrowDownCircle className="h-5 w-5 text-violet-600" /> Einlage</button>
-                <button type="button" onClick={() => chooseCashAction('withdrawal')} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700"><ArrowUpCircle className="h-5 w-5 text-red-600" /> Ausgabe</button>
-                <button type="button" onClick={() => chooseCashAction('pfand')} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700"><Recycle className="h-5 w-5 text-teal-600" /> Pfand-Retoure</button>
-              </div>
-            )}
-            {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
-              <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-700">
-                <p className="mb-1 px-3 text-xs font-bold uppercase tracking-wide text-gray-500">Administration</p>
-                <button type="button" onClick={() => navigateToProtected('admin')} className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-semibold ${tab === 'admin' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}><Settings className="h-5 w-5" /> Verwaltung</button>
-                <button type="button" onClick={() => navigateToProtected('journal')} className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left font-semibold ${tab === 'journal' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}><Receipt className="h-5 w-5" /> Journale</button>
-              </div>
-            )}
-          </nav>
-        </div>
+          </header>
+          {menuOpen && (
+            <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/55 px-3 pt-16" onClick={() => setMenuOpen(false)}>
+              <nav role="dialog" aria-modal="true" aria-label="Kassenmenü"
+                className="w-full max-w-xl rounded-2xl border border-emerald-700/30 bg-white p-3 shadow-2xl dark:bg-slate-900"
+                onClick={(event) => event.stopPropagation()}>
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-bold text-slate-900 dark:text-white">Kassenmenü</h2>
+                  <button type="button" aria-label="Menü schließen" onClick={() => setMenuOpen(false)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-5 w-5" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <button type="button" onClick={() => navigateTo('pos')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><ShoppingCart className="h-5 w-5" />Kasse</button>
+                  {store.activeSession && currentStaff && (
+                    <>
+                      <button type="button" onClick={() => chooseCashAction('deposit')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-emerald-50 p-2 text-sm font-bold text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200"><ArrowDownCircle className="h-5 w-5" />Einlage</button>
+                      <button type="button" onClick={() => chooseCashAction('withdrawal')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><ArrowUpCircle className="h-5 w-5" />Ausgabe</button>
+                      <button type="button" onClick={() => chooseCashAction('pfand')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Recycle className="h-5 w-5" />Pfand-Retoure</button>
+                      <button type="button" onClick={() => chooseCashAction('correction')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Settings className="h-5 w-5" />Anfangsbestand</button>
+                      <button type="button" onClick={() => chooseCashAction('close')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Receipt className="h-5 w-5" />Tagesabschluss</button>
+                    </>
+                  )}
+                  {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
+                    <>
+                      <button type="button" onClick={() => navigateToProtected('admin')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Settings className="h-5 w-5" />Verwaltung</button>
+                      <button type="button" onClick={() => navigateToProtected('journal')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Receipt className="h-5 w-5" />Journal</button>
+                    </>
+                  )}
+                  <button type="button" onClick={goHome} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Home className="h-5 w-5" />Startseite</button>
+                </div>
+              </nav>
+            </div>
+          )}
+        </>
       )}
 
       {/* Test mode banner */}
-      {testMode && (
+      {!homeVisible && testMode && (
         <div className="flex items-center justify-center gap-2 bg-amber-50 px-4 py-1.5 text-center text-xs font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
           <AlertTriangle className="h-3.5 w-3.5" />
           Testmodus aktiv — Artikel, Warengruppen und Bilder werden gespeichert und in den aktiven Modus übernommen. Nur Verkäufe und Kassenabschlüsse werden nicht gespeichert.
@@ -370,7 +356,18 @@ export default function App() {
 
       {/* Content */}
       <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
-        {tab === 'pos' && (
+        {homeVisible && (
+          <WoodmoHome
+            onCash={() => navigateTo('pos')}
+            onAdmin={() => openManagementFromCashOpening(currentStaff?.role === 'administrator' ? currentStaff : null)}
+            sessionOpen={Boolean(store.activeSession)}
+            location={store.activeSession?.location ?? store.selectedLocation}
+            status={!online || catalog.syncStatus === 'error' ? 'error' : !testMode && catalog.syncStatus !== 'saved' ? 'pending' : 'ok'}
+            testMode={testMode}
+          />
+        )}
+        {posVisited && (
+          <div className={homeVisible || tab !== 'pos' ? 'hidden' : 'h-full min-h-0'}>
           <POSScreen
             shotOptions={store.shotOptions}
             categories={store.categories}
@@ -454,8 +451,9 @@ export default function App() {
             onDiscardEmptySession={discardUnusedSession}
             openingBalanceSuggestions={openingBalanceSuggestions}
           />
+          </div>
         )}
-        {tab === 'admin' && (
+        {!homeVisible && tab === 'admin' && (
           adminUnlocked ? (
             <AdminScreen
               onPrepareCatalogImport={catalog.prepareImport}
@@ -597,7 +595,7 @@ export default function App() {
                 setOpeningManagementAccess(null);
                 setManagementAdministrator(null);
                 setAdminUnlocked(false);
-                setTab('pos');
+                goHome();
               }}
               staffUsers={staff.users}
               title="Verwaltung"
@@ -612,7 +610,7 @@ export default function App() {
             onConfirm={applyModeChange}
           />
         )}
-        {tab === 'journal' && (
+        {!homeVisible && tab === 'journal' && (
           adminUnlocked ? (
             <JournalScreen
               transactions={store.transactions}
