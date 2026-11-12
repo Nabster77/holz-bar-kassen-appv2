@@ -7,6 +7,7 @@ import { colorNegativeMoney } from '@/lib/movementStyle';
 import { archiveSubfolders, batchArchiveLocation, safeArchiveFileName } from '@/lib/archivePaths';
 import { readDeviceSetup } from '@/lib/deviceSetup';
 import { archiveRootName, backupDirectorySegments } from '@/lib/archiveRoot';
+import { PdfArchiveSetupRequired, requirePdfArchiveSetup } from '@/lib/pdfArchiveSetup';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const ALL_LABEL = 'Alle-Standorte';
@@ -112,25 +113,6 @@ async function canWrite(folder: WritableDirectoryHandle): Promise<boolean> {
     return (await folder.requestPermission?.({ mode: 'readwrite' })) === 'granted';
   } catch {
     return false;
-  }
-}
-
-async function chooseExportFolder(): Promise<FileSystemDirectoryHandle | null | undefined> {
-  const picker = (window as Window & { showDirectoryPicker?: DirectoryPicker }).showDirectoryPicker;
-  if (!picker) return undefined;
-
-  const stored = await loadExportFolder();
-  if (stored && await canWrite(stored as WritableDirectoryHandle)) return stored;
-
-  try {
-    // Browsers always require this explicit user choice. The picker opens at
-    // the Desktop on first use; all journal folders are created beneath it.
-    const selected = await picker({ id: 'holzbar-journal-exports', mode: 'readwrite', startIn: 'desktop' });
-    await rememberExportFolder(selected);
-    return selected;
-  } catch (err) {
-    if (isAbortError(err)) return null;
-    return undefined;
   }
 }
 
@@ -486,34 +468,64 @@ async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promi
 }
 
 /**
- * Manual journal export: the person exporting chooses the destination. No
- * location folder is created and no app-managed automatic save is attempted.
+ * Manual PDFs are created from the available transaction/session data, never
+ * uploaded as files to Supabase. On a configured folder device they must use
+ * that device's folder; losing access is NOT a silent redirect to Downloads.
  */
-async function saveManualPdfToConfiguredArchive(data: JournalReportData, blob: Blob): Promise<void> {
-  const selected = readDeviceSetup()?.archiveMode === 'folder' ? await loadExportFolder() : null;
-  if (selected && await canWrite(selected as WritableDirectoryHandle)) {
-    try {
-      await saveIntoJournalFolder(selected, data, blob);
-      return;
-    } catch (error) {
-      console.warn('Der festgelegte PDF-Archivordner ist nicht verfügbar.', error);
-    }
+async function localArchiveFolder(): Promise<FileSystemDirectoryHandle> {
+  const stored = await loadExportFolder();
+  if (!stored || !(await canWrite(stored as WritableDirectoryHandle))) {
+    return requirePdfArchiveSetup(
+      'Der eingestellte PDF-Speicherordner ist auf diesem Gerät nicht mehr verfügbar. Bitte im Geräte-Setup den Ordner erneut auswählen.',
+    );
   }
-  await savePdfWithUserChoice(data, blob);
+  return stored;
+}
+
+async function saveManualPdfToConfiguredArchive(data: JournalReportData, blob: Blob): Promise<void> {
+  const setup = readDeviceSetup();
+  if (!setup) {
+    return requirePdfArchiveSetup('Für den PDF-Export muss zuerst auf diesem Gerät ein Speicherort im Setup eingerichtet werden.');
+  }
+  if (setup.archiveMode === 'downloads') {
+    const started = await savePdfWithUserChoice(data, blob);
+    if (!started) throw new Error('PDF-Speicherung wurde abgebrochen.');
+    return;
+  }
+  const selected = await localArchiveFolder();
+  try {
+    await saveIntoJournalFolder(selected, data, blob);
+  } catch (error) {
+    console.warn('Der eingestellte PDF-Ordner kann nicht beschrieben werden.', error);
+    return requirePdfArchiveSetup('Der PDF-Speicherordner oder ein benötigter Unterordner ist nicht beschreibbar. Bitte den Speicherort im Geräte-Setup überprüfen.');
+  }
+}
+
+function showPdfExportError(error: unknown): void {
+  if (error instanceof PdfArchiveSetupRequired) return; // Setup dialog contains the warning.
+  console.error('PDF konnte auf diesem Gerät nicht gespeichert werden.', error);
+  alert(error instanceof Error ? error.message : 'Der lokale PDF-Export ist fehlgeschlagen.');
 }
 
 export async function exportJournalPdf(data: JournalReportData): Promise<void> {
-  const blob = await renderJournalPdf(data);
-  await saveManualPdfToConfiguredArchive(data, blob);
+  try {
+    const blob = await renderJournalPdf(data);
+    await saveManualPdfToConfiguredArchive(data, blob);
+  } catch (error) {
+    showPdfExportError(error);
+  }
 }
 
 export async function exportJournalPdfBatch(reports: JournalReportData[], fileName: string): Promise<void> {
   if (reports.length === 0) return;
-  const blob = await renderPdfHtml(buildJournalBatchHTML(reports));
-  // The location filter and every report determine the actual target folder.
-  const location = batchArchiveLocation(reports.map((report) => report.location), fileName);
-  const archiveData = { ...reports[0], location, fileName };
-  await saveManualPdfToConfiguredArchive(archiveData, blob);
+  try {
+    const blob = await renderPdfHtml(buildJournalBatchHTML(reports));
+    const location = batchArchiveLocation(reports.map((report) => report.location), fileName);
+    const archiveData = { ...reports[0], location, fileName };
+    await saveManualPdfToConfiguredArchive(archiveData, blob);
+  } catch (error) {
+    showPdfExportError(error);
+  }
 }
 
 // Browsers intentionally control printer selection and the "Save as PDF"
@@ -550,30 +562,24 @@ function openPrintHtml(html: string): void {
   window.setTimeout(print, 250);
 }
 
-// The daily-close flow is the sole automatic export. It stores the report in
-// the selected year/date/location folder; when a browser cannot provide that
-// capability, it falls back to the normal system save flow.
+// Daily-close PDFs are kept on this device only. Cloud stores the underlying
+// receipts and finalized cash sessions, not a copy of the generated PDF.
 export async function saveJournalPdf(data: JournalReportData): Promise<void> {
-  if (readDeviceSetup()?.archiveMode === 'downloads') {
-    const blob = await renderJournalPdf(data);
+  const setup = readDeviceSetup();
+  if (!setup) return requirePdfArchiveSetup('Bitte zuerst den PDF-Speicherort im Geräte-Setup festlegen.');
+
+  const blob = await renderJournalPdf(data);
+  if (setup.archiveMode === 'downloads') {
     const saved = await savePdfWithUserChoice(data, blob);
-    if (!saved) throw new Error('PDF-Speicherung vom Benutzer abgebrochen. Tagesabschluss bleibt unverändert.');
+    if (!saved) throw new Error('PDF-Speicherung abgebrochen. Der Tagesabschluss bleibt unverändert.');
     return;
   }
-  const exportFolder = await chooseExportFolder();
-  if (exportFolder === null) throw new Error('PDF-Speicherung abgebrochen: Kein Archivordner freigegeben.');
-  const blob = await renderJournalPdf(data);
 
-  if (exportFolder) {
-    try {
-      await saveIntoJournalFolder(exportFolder, data, blob);
-      return;
-    } catch {
-      // The stored folder may no longer be available. Preserve the PDF by
-      // offering the user's normal browser/system save choice instead.
-    }
+  const folder = await localArchiveFolder();
+  try {
+    await saveIntoJournalFolder(folder, data, blob);
+  } catch (error) {
+    console.warn('Tagesabschluss-PDF konnte nicht lokal archiviert werden.', error);
+    return requirePdfArchiveSetup('Der Tagesabschluss ist als Buchung erfasst, aber das PDF konnte nicht im gewählten lokalen Ordner gespeichert werden. Bitte den Speicherort im Setup reparieren und das PDF aus dem Journal erneut erzeugen.');
   }
-
-  const saved = await savePdfWithUserChoice(data, blob);
-  if (!saved) throw new Error('PDF-Speicherung vom Benutzer abgebrochen. Tagesabschluss bleibt unverändert.');
 }
