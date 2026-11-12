@@ -110,6 +110,8 @@ export type PaymentMethod = 'cash' | 'card';
 
 export interface Transaction {
   id: string;
+  /** Assigned at checkout; optional only for legacy receipts without a link. */
+  cashSessionId?: string;
   timestamp: number;
   items: TransactionItem[];
   subtotal: number; // sum of gross (excl pfand)
