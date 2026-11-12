@@ -1,11 +1,12 @@
 import { backupDirectorySegments, type BackupSlot } from './archiveRoot';
+import { ensureYearStructure } from './archiveFolders';
 import {
   backup1Eligibility, backup2Eligibility,
   type BackupSyncCheckpoint, type BackupSyncConditions,
 } from './backupSyncPolicy';
 
 /**
- * Incremental, verifiable backup files beneath the user-selected Kasse 26
+ * Incremental, verifiable backup files beneath the current year's Kasse YY
  * directory. Only changed JSON sections are written; existing content shards
  * are never replaced. The commit pointer is updated LAST.
  *
@@ -48,10 +49,17 @@ async function digest(contents: string): Promise<string> {
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2,'0')).join('');
 }
 
-async function directory(base: FileSystemDirectoryHandle, configuredAt: number, slot: BackupSlot): Promise<FileSystemDirectoryHandle> {
-  let target=base;
-  for (const name of backupDirectorySegments(configuredAt, slot)) {
-    target=await target.getDirectoryHandle(name,{create:true});
+async function directory(
+  base: FileSystemDirectoryHandle,
+  at: number,
+  slot: BackupSlot,
+  create = true,
+): Promise<FileSystemDirectoryHandle> {
+  // Read-only restore must never create a missing year or backup directory.
+  if (create) await ensureYearStructure(base, at);
+  let target = base;
+  for (const name of backupDirectorySegments(at, slot)) {
+    target = await target.getDirectoryHandle(name, { create });
   }
   return target;
 }
@@ -137,7 +145,7 @@ function assertBackup(backup: ArchiveBackup): void {
 /** Stage 1: complete, verified data snapshot, but only changed sections write. */
 export async function saveBackup1(
   parent: FileSystemDirectoryHandle,
-  configuredAt: number,
+  _configuredAt: number,
   backup: ArchiveBackup,
   state: BackupSyncCheckpoint,
   conditions: BackupSyncConditions,
@@ -146,27 +154,33 @@ export async function saveBackup1(
   assertBackup(backup);
   // No writes before Cloud consistency, outbox emptiness and permission are
   // confirmed. Fail closed, never claim an automatic backup succeeded.
-  const target=await directory(parent,configuredAt,'Backup1');
-  const existing=await currentManifest(target);
-  const sections: Record<string,string>={};
-  const changedSections: string[]=[];
+  // Compute and validate eligibility WITHOUT creating directories or files.
+  // In particular, an offline/unauthorized backup is strictly read-only.
+  const sections: Record<string,string> = {};
+  const payloads = new Map<string,string>();
   for (const name of Object.keys(backup.data).sort()) {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(name)) throw new Error('Ungültiger Sicherungsbereich.');
-    const payload=JSON.stringify(backup.data[name]);
-    if (typeof payload!=='string') throw new Error(`Sicherungsdaten ${name} unvollständig.`);
-    const hash=await digest(payload);
-    sections[name]=hash;
-    if (existing?.sections[name]===hash) continue;
-    const filename=`${name}-${hash}.json`;
-    const old=await readOrNull(target,filename);
-    if (old !== null && await digest(old)!==hash) throw new Error('Bestehende Sicherung beschädigt.');
-    if (old===null) await writeAndVerify(target,filename,payload);
-    changedSections.push(name);
+    const payload = JSON.stringify(backup.data[name]);
+    if (typeof payload !== 'string') throw new Error(`Sicherungsdaten ${name} unvollständig.`);
+    sections[name] = await digest(payload);
+    payloads.set(name, payload);
   }
-  const revision=await digest(JSON.stringify({version:backup.version,sections}));
-  const eligibility=backup1Eligibility(state,conditions,revision,manual);
-  if (!eligibility.allowed && eligibility.reason!=='up-to-date') {
+  const revision = await digest(JSON.stringify({version:backup.version,sections}));
+  const eligibility = backup1Eligibility(state,conditions,revision,manual);
+  if (!eligibility.allowed && eligibility.reason !== 'up-to-date') {
     throw new Error(`Backup 1 nicht erlaubt: ${eligibility.reason ?? 'unbekannt'}.`);
+  }
+  const target = await directory(parent, conditions.now, 'Backup1');
+  const existing = await currentManifest(target);
+  const changedSections: string[] = [];
+  for (const [name, payload] of payloads) {
+    const hash = sections[name];
+    if (existing?.sections[name] === hash) continue;
+    const filename = `${name}-${hash}.json`;
+    const old = await readOrNull(target,filename);
+    if (old !== null && await digest(old) !== hash) throw new Error('Bestehende Sicherung beschädigt.');
+    if (old === null) await writeAndVerify(target,filename,payload);
+    changedSections.push(name);
   }
   if (existing?.revision!==revision) {
     await commitManifest(target,{schema:1,backupVersion:backup.version,exportedAt:backup.exportedAt,revision,sections});
@@ -182,7 +196,7 @@ export async function saveBackup1(
  */
 export async function mirrorBackup2(
   parent: FileSystemDirectoryHandle,
-  configuredAt: number,
+  _configuredAt: number,
   state: BackupSyncCheckpoint,
   conditions: BackupSyncConditions,
 ): Promise<BackupWriteResult> {
@@ -192,8 +206,8 @@ export async function mirrorBackup2(
   if (!eligible.allowed && eligible.reason!=='up-to-date') {
     throw new Error(`Backup 2 nicht erlaubt: ${eligible.reason ?? 'unbekannt'}.`);
   }
-  const source=await directory(parent,configuredAt,'Backup1');
-  const target=await directory(parent,configuredAt,'Backup2');
+  const source=await directory(parent,conditions.now,'Backup1');
+  const target=await directory(parent,conditions.now,'Backup2');
   const manifest=await currentManifest(source);
   if (!manifest) throw new Error('Backup 1 wurde noch nicht abgeschlossen.');
   const existing=await currentManifest(target);
@@ -230,7 +244,7 @@ export async function loadArchivedBackup(
   configuredAt: number,
   slot: BackupSlot,
 ): Promise<ArchiveBackup> {
-  const target=await directory(parent,configuredAt,slot);
+  const target=await directory(parent,configuredAt,slot,false);
   const manifest=await currentManifest(target);
   if (!manifest) throw new Error('Keine vollständige Sicherung vorhanden.');
   const data: Record<string,unknown>={};
