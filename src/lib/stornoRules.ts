@@ -58,6 +58,7 @@ export interface StornoProposalInput {
   receipt: Transaction;
   session: CashSession;
   previousStornos: readonly StornoRecord[];
+  allTransactions: readonly Transaction[];
   reason: string;
   employeeId: string;
   employeeName: string;
@@ -70,6 +71,9 @@ export interface StornoProposalInput {
 export function prepareStorno(input: StornoProposalInput): StornoRecord {
   const { receipt, session, previousStornos, now } = input;
   assertSessionIsOpen(session, receipt);
+  if (!lastFiveStornoCandidates(input.allTransactions, previousStornos, session).some((item) => item.id === receipt.id)) {
+    throw new StornoRuleError('Nur die letzten fünf noch nicht stornierten Einzelbelege können ausgewählt werden.');
+  }
   if (!Number.isFinite(now) || now < receipt.timestamp || now < session.openedAt) {
     throw new StornoRuleError('Ungültiger Stornozeitpunkt.');
   }
