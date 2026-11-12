@@ -13,7 +13,7 @@ export type BackupStage = 'cloud' | 'backup1' | 'backup2';
 export type BackupSkipReason =
   | 'offline' | 'test-mode' | 'cloud-pending' | 'backup1-pending'
   | 'employee-signed-in' | 'not-idle' | 'busy' | 'up-to-date'
-  | 'no-folder-permission';
+  | 'no-folder-permission' | 'presence-unverified';
 
 export interface BackupSyncCheckpoint {
   /** Unix milliseconds after verified Cloud/Tablet consistency. */
@@ -31,7 +31,13 @@ export interface BackupSyncConditions {
   now: number;
   cloudOnline: boolean;
   testMode: boolean;
+  /** True if this device has a currently signed-in staff member. */
   staffSignedIn: boolean;
+  /**
+   * Confirmed centrally that no other device has a signed-in employee.
+   * Unknown is NOT authorization to write Backup 2.
+   */
+  allStaffSignedOutVerified: boolean;
   /** A cloud synchronization or a file write is already in progress. */
   busy: boolean;
   /** Unsynced outbox, in-flight checkout or unresolved restore conflict. */
@@ -73,6 +79,7 @@ export function backup2Eligibility(
 ): { allowed: boolean; reason?: BackupSkipReason } {
   if (conditions.testMode) return { allowed: false, reason: 'test-mode' };
   if (conditions.staffSignedIn) return { allowed: false, reason: 'employee-signed-in' };
+  if (!conditions.allStaffSignedOutVerified) return { allowed: false, reason: 'presence-unverified' };
   if (conditions.busy) return { allowed: false, reason: 'busy' };
   if (conditions.hasPendingBookings) return { allowed: false, reason: 'cloud-pending' };
   if (!conditions.folderWritable) return { allowed: false, reason: 'no-folder-permission' };
