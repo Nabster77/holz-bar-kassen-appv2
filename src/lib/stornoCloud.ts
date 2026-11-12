@@ -33,16 +33,17 @@ export async function submitStornoOnline(input: SubmitStorno): Promise<StornoRec
   // or other cloud rows. The server decides the reversal and business rules.
   const { data, error } = await supabase.functions.invoke('woodmo-v3-storno', { body: input });
   if (error) throw new Error(`Storno nicht bestätigt: ${error.message}`);
-  if (!data || typeof data !== 'object') throw new Error('Storno nicht bestätigt: Cloud-Antwort fehlt.');
-  const storno = data as Partial<StornoRecord>;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Storno nicht bestätigt: Cloud-Antwort fehlt.');
+  }
+  // Same decoder for a newly created storno and later journal retrieval:
+  // cash/card effects, original snapshot, reason and amounts must all agree.
+  const storno = decodeStornoRow(data as CloudStornoRow);
   if (storno.id !== input.stornoId ||
       storno.originalTransactionId !== input.originalTransactionId ||
       storno.cashSessionId !== input.cashSessionId ||
-      storno.employeeId !== input.employeeId ||
-      !storno.originalSnapshot ||
-      storno.originalSnapshot.id !== input.originalTransactionId ||
-      typeof storno.reason !== 'string') {
+      storno.employeeId !== input.employeeId) {
     throw new Error('Storno nicht bestätigt: widersprüchliche Cloud-Antwort. Bitte Journal prüfen.');
   }
-  return storno as StornoRecord;
+  return storno;
 }
