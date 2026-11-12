@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { lastFiveCashReceipts, lastFiveStornoCandidates, prepareStorno, effectiveSales } from '../src/lib/stornoRules.ts';
+import { lastFiveCashReceipts, lastFiveStornoCandidates, prepareStorno, prepareFinalCloseStornoSnapshot, effectiveSales } from '../src/lib/stornoRules.ts';
 
 const start = Date.parse('2026-11-12T08:00:00Z');
 const session = { id:'s-1', location:'Friedrichshafen', openedAt:start, closed:false };
@@ -42,4 +42,28 @@ assert.throws(()=>prepareStorno(args(receipts[5],{currentCashBalance:12})),/nega
 assert.throws(()=>prepareStorno(args(receipts[5],{session:{...session,closed:true}})),/geschlossen/);
 assert.throws(()=>prepareStorno(args(receipts[5],{session:{...session,location:'Bregenz'}})),/nicht zusammen/);
 assert.throws(()=>prepareStorno(args(receipts[5],{now:start-1})),/Stornozeitpunkt/);
-console.log('STORNO-REGELTESTS BESTANDEN.');
+// The five-bon selection is temporary; all original sales + storno records
+// must survive the final daily-close snapshot even after hundreds of sales.
+const many=[...receipts,...Array.from({length:1000},(_,i)=>({
+  ...receipts[2],id:`many-${i}`,timestamp:start+2000+i,
+  items:receipts[2].items.map(item=>({...item})),taxByRate:{...receipts[2].taxByRate},
+}))];
+assert.equal(many.length,1007);
+assert.deepEqual(lastFiveCashReceipts(many,session).map(x=>x.id),
+  ['many-999','many-998','many-997','many-996','many-995']);
+const closing=prepareFinalCloseStornoSnapshot(many,[cash],session,start+1000000);
+assert.equal(closing.transactions.length,1007,'Abschluss muss ALLE Belege enthalten, nicht nur die letzten fünf');
+assert.equal(closing.stornos.length,1,'Stornobegründung und Originaldaten müssen mit in den Abschluss');
+assert.equal(closing.stornos[0].reason,cash.reason);
+assert.equal(closing.stornos[0].originalSnapshot.id,cash.originalTransactionId);
+assert.notStrictEqual(closing.transactions[0],many[0],'Abschlusssnapshot darf keine live-Objektreferenz behalten');
+const beforeCloseName=closing.transactions[0].items[0].productId;
+many[0].items[0].productId='nachtraeglich-veraendert';
+assert.equal(closing.transactions[0].items[0].productId,beforeCloseName);
+assert.equal(many.length,1007,'Storno darf die Originalbelege nie entfernen');
+assert.equal(lastFiveCashReceipts(many,{...session,closed:true}).length,0);
+assert.throws(()=>prepareFinalCloseStornoSnapshot(many,[cash],{...session,closed:true},start+1000000),/bereits abgeschlossener/);
+assert.throws(()=>prepareFinalCloseStornoSnapshot(many,[cash,{...cash,id:'storno-doppelt'}],session,start+1000000),/doppelter Stornonachweis/);
+assert.throws(()=>prepareFinalCloseStornoSnapshot(many,[{...cash,originalTransactionId:'fremd'}],session,start+1000000),/Unvollständiger/);
+assert.throws(()=>prepareFinalCloseStornoSnapshot(many,[{...cash,cashSessionId:session.id,timestamp:start+2000000}],session,start+1000000),/Unvollständiger/);
+console.log('STORNO-REGEL- UND ABSCHLUSSSNAPSHOT-TESTS BESTANDEN.');
