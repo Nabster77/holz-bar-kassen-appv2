@@ -8,18 +8,18 @@ assert.deepEqual(archiveSubfolders({
   fileName: 'Friedrichshafen_Tagesjournal_31-12-2025.pdf',
   location: 'Friedrichshafen',
   reportPeriodStart: priorYear,
-}), ['2025', 'Friedrichshafen', 'Tagesjournal']);
+}), ['Friedrichshafen', 'Dezember', 'Tagesjournal']);
 assert.deepEqual(archiveSubfolders({
   fileName: 'Bregenz_Tagesabschluss_2026-11-12_TA-BR-2026-000001.pdf',
   location: 'Bregenz',
   documentTitle: 'Tagesabschluss',
   reportPeriodStart: currentYear,
-}), ['2026', 'Bregenz', 'Tagesabschluss']);
+}), ['Bregenz', 'November', 'Tagesabschluss']);
 assert.deepEqual(archiveSubfolders({
   fileName: 'Alle-Standorte_Wochenjournal_KW46.pdf',
   location: 'Alle Standorte',
   reportPeriodStart: currentYear,
-}), ['2026', 'Alle-Standorte', 'Wochenjournal']);
+}), ['Alle-Standorte', 'November', 'Wochenjournal']);
 assert.throws(() => archiveSubfolders({
   fileName: 'Journal.pdf',
   location: 'unbekannter Ort',
@@ -33,4 +33,14 @@ assert.equal(batchArchiveLocation(['Friedrichshafen'], 'Tagesabschluesse_Alle-St
 assert.equal(batchArchiveLocation(['Bregenz'], 'Tagesabschluesse_Bregenz_2026.pdf'), 'Bregenz');
 assert.throws(() => batchArchiveLocation([], 'Tagesabschluesse.pdf'), /Leerer PDF-Sammelbericht/);
 
-console.log('PDF-Archivpfade bestanden: Zeitbezug, Standorte, Berichtsarten, Dateinamen.');
+assert.deepEqual(archiveSubfolders({
+  fileName:'Bregenz_Tagesabschluss_2027-01-01.pdf',
+  location:'Bregenz',
+  reportPeriodStart:Date.parse('2026-12-31T23:30:00Z'),
+}), ['Bregenz','Januar','Tagesabschluss'], 'Berlin/Bregenz bereits im neuen Jahr');
+assert.deepEqual(archiveSubfolders({
+  fileName:'Bregenz_Tagesjournal_2026-12-31.pdf',
+  location:'Bregenz',
+  reportPeriodStart:Date.parse('2026-12-31T22:30:00Z'),
+}), ['Bregenz','Dezember','Tagesjournal'], 'Historischer Dezember bleibt im alten Jahr');
+console.log('PDF-Archivpfade bestanden: Zeitbezug, Standorte, Berichtsarten, Monats- und Jahreswechsel.');
