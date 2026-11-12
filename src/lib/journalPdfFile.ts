@@ -137,6 +137,24 @@ async function chooseExportFolder(): Promise<FileSystemDirectoryHandle | null | 
   }
 }
 
+/** Called directly from a user click in the first-run/administration Setup.
+ * Directory handles are persisted in IndexedDB (not embedded in an URL).
+ * Android browsers may not support selecting a persistent local folder.
+ */
+export async function configureJournalExportFolder(): Promise<{ mode: 'folder' | 'downloads' | 'cancelled'; folderName?: string }> {
+  const picker = (window as Window & { showDirectoryPicker?: DirectoryPicker }).showDirectoryPicker;
+  if (!picker) return { mode: 'downloads' };
+  try {
+    // Call picker directly from the button handler to preserve user activation.
+    const selected = await picker({ id: 'holzbar-journal-exports', mode: 'readwrite', startIn: 'desktop' });
+    await rememberExportFolder(selected);
+    return { mode: 'folder', folderName: selected.name };
+  } catch (error) {
+    if (isAbortError(error)) return { mode: 'cancelled' };
+    throw error;
+  }
+}
+
 async function saveIntoJournalFolder(folder: FileSystemDirectoryHandle, data: JournalReportData, blob: Blob): Promise<void> {
   // Do not use the current clock: a previous-year journal must be archived
   // under its actual business year, location and report category.
