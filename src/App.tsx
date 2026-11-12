@@ -1,4 +1,5 @@
 import { canDiscardCashSession, openingBalanceForLocation } from '@/lib/cashBalanceCarry';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useStore } from '@/hooks/useStore';
@@ -361,8 +362,8 @@ export default function App() {
             activeSession={store.activeSession}
             transactions={store.transactions}
             onCheckout={(tx) => {
-              if (!currentStaff) return;
-              store.addTransaction({ ...tx, employeeId: currentStaff.id, employeeName: currentStaff.name });
+              if (!currentStaff || !store.activeSession) return;
+              store.addTransaction({ ...tx, cashSessionId: store.activeSession.id, employeeId: currentStaff.id, employeeName: currentStaff.name });
               if (store.activeSession) store.recordStaffActivity(store.activeSession.id, { id: `activity-${Date.now().toString(36)}`, type: 'sale', staffId: currentStaff.id, staffName: currentStaff.name, timestamp: tx.timestamp, amount: tx.total });
             }}
             onOpenCash={(location, balance) => currentStaff && store.openCashSession(location, balance, currentStaff)}
@@ -405,7 +406,7 @@ export default function App() {
                   dailyCloseReceiptNumber: receipt.number, dailyCloseReceiptLocation: receipt.location, dailyCloseReceiptYear: receipt.year,
                   dailyCloseFinalizedAt: finalizedAt, dailyCloseFinalizedById: currentStaff.id, dailyCloseFinalizedByName: currentStaff.name,
                 };
-                const frozenTransactions = store.transactions.filter((transaction) => transaction.location === session.location && transaction.timestamp >= session.openedAt && transaction.timestamp <= finalizedAt);
+                const frozenTransactions = sessionTransactions(store.transactions, session, finalizedAt);
                 const snapshot = { transactions: frozenTransactions, finalizedAt, finalizedById: currentStaff.id, finalizedByName: currentStaff.name, staffLoginIntervals: finalizedIntervals };
                 store.closeCashSession(session.id, bal, currentStaff, closingWithdrawalAmount, {
                   closedAt: finalizedAt,
