@@ -15,7 +15,7 @@ assert.equal(readBackupCheckpoint().backup1SyncedAt,null,'Cloud is not a proof o
 const b1=markBackupVerified('backup1',a,time+10);
 assert.equal(b1.backup1Revision,a);
 assert.equal(b1.backup2SyncedAt,null,'Backup1 is not a proof of Backup2');
-assert.throws(()=>markBackupVerified('backup2',b,time+20),/abweicht/);
+assert.throws(()=>markBackupVerified('backup2',b,time+20),/weicht.*ab/);
 const b2=markBackupVerified('backup2',a,time+30);
 assert.equal(b2.backup2Revision,a);
 assert.equal(readBackupCheckpoint().backup2SyncedAt,time+30);
