@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useVisibleViewport } from '@/hooks/useVisibleViewport';
-import { MapPin, Euro, Check, Store, Settings, KeyRound, Loader2, WifiOff } from 'lucide-react';
+import { MapPin, Euro, Check, Store, Settings, KeyRound, Loader2, WifiOff, House } from 'lucide-react';
 import type { CashSession, Location, StaffSecurityQuestion, StaffUser } from '@/types';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
 import { formatSecurityQuestion, SECURITY_QUESTIONS } from '@/lib/staffSecurity';
@@ -25,7 +25,6 @@ interface Props {
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
 export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdmin, defaultLocation, staffUsers, currentStaff, online, lastStaffId, onStaffAuthenticated, onSetInitialCredentials, onConfigureSecurity, onResetStaffPassword, openingBalanceSuggestions }: Props) {
-  void onClose;
   const viewport = useVisibleViewport();
   const [location, setLocation] = useState<Location>(defaultLocation ?? 'Friedrichshafen');
   const formatSuggestedBalance = (value: number | null | undefined) => value == null ? '' : value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -122,6 +121,10 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
       {existingSession && <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Die Kasse in {existingSession.location} ist bereits geöffnet. Der bestehende Anfangsbestand bleibt erhalten.</p>}
       <button onClick={handleSave} disabled={(!existingSession && !canOpenWithBalance) || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 landscape:py-2 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> {existingSession ? 'Kasse weiterführen' : 'Kasse eröffnen'}</button>
       {onEnterAdmin && selectedStaff?.role !== 'employee' && <button onClick={() => onEnterAdmin(selectedStaff)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-2.5 landscape:py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-700"><Settings className="h-4 w-4" /> Verwaltung öffnen</button>}
+      <button type="button" onClick={onClose}
+        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+        <House className="h-4 w-4" /> Zur Startseite
+      </button>
     </div>
   </div></div>;
 }
