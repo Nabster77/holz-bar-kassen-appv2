@@ -5,6 +5,7 @@ import { getWeekNumber } from '@/lib/format';
 import type { Location } from '@/types';
 import { colorNegativeMoney } from '@/lib/movementStyle';
 import { archiveSubfolders, safeArchiveFileName } from '@/lib/archivePaths';
+import { readDeviceSetup } from '@/lib/deviceSetup';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const ALL_LABEL = 'Alle-Standorte';
@@ -95,17 +96,12 @@ async function loadExportFolder(): Promise<FileSystemDirectoryHandle | null> {
 }
 
 async function rememberExportFolder(folder: FileSystemDirectoryHandle): Promise<void> {
-  try {
-    const db = await openExportFolderDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const request = db.transaction(EXPORT_FOLDER_STORE, 'readwrite').objectStore(EXPORT_FOLDER_STORE).put(folder, EXPORT_FOLDER_KEY);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch {
-    // Saving the folder reference is a convenience only. The export itself
-    // still works when a browser does not allow it to be remembered.
-  }
+  const db = await openExportFolderDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(EXPORT_FOLDER_STORE, 'readwrite').objectStore(EXPORT_FOLDER_STORE).put(folder, EXPORT_FOLDER_KEY);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
 async function canWrite(folder: WritableDirectoryHandle): Promise<boolean> {
@@ -477,7 +473,7 @@ async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promi
  */
 export async function exportJournalPdf(data: JournalReportData): Promise<void> {
   const blob = await renderJournalPdf(data);
-  const selected = await loadExportFolder();
+  const selected = readDeviceSetup()?.archiveMode === 'folder' ? await loadExportFolder() : null;
   if (selected && await canWrite(selected as WritableDirectoryHandle)) {
     try {
       await saveIntoJournalFolder(selected, data, blob);
@@ -533,6 +529,11 @@ function openPrintHtml(html: string): void {
 // the selected year/date/location folder; when a browser cannot provide that
 // capability, it falls back to the normal system save flow.
 export async function saveJournalPdf(data: JournalReportData): Promise<void> {
+  if (readDeviceSetup()?.archiveMode === 'downloads') {
+    const blob = await renderJournalPdf(data);
+    await savePdfWithUserChoice(data, blob);
+    return;
+  }
   const exportFolder = await chooseExportFolder();
   if (exportFolder === null) throw new Error('PDF-Speicherung abgebrochen: Kein Archivordner freigegeben.');
   const blob = await renderJournalPdf(data);
