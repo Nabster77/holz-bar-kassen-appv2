@@ -3,6 +3,7 @@ import type { CashSession, Transaction } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
 import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, type OutboxEntry } from '@/lib/outbox';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
+import { markCloudSyncVerified } from '@/lib/backupCheckpoint';
 import { fetchCloudData, type CloudData } from '@/lib/cloudPull';
 import { fetchLatestBookingReset, knownBookingReset, rememberBookingReset } from '@/lib/bookingReset';
 import type { CatalogSyncResult } from '@/lib/catalogEngine';
@@ -152,6 +153,15 @@ export function useCloudSync(
       if (!bookingResult.ok) return bookingResult;
       if (!catalogResult.ok) {
         return { ok: false, error: `Artikel-Synchronisierung: ${catalogResult.error ?? 'Unbekannter Fehler.'}` };
+      }
+      if (!testMode) {
+        try {
+          markCloudSyncVerified(Date.now());
+        } catch (checkpointError) {
+          // A full/confirmed cloud sync is not undone by unavailable browser
+          // storage. Never claim a local Backup 1/2 succeeded here.
+          console.warn('Cloud synchronisiert; Zeitstempel konnte nicht gespeichert werden.', checkpointError);
+        }
       }
       return bookingResult;
     })().finally(() => {
