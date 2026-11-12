@@ -139,7 +139,6 @@ export function POSScreen({
     const basePrice = customPrice !== undefined ? customPrice : product.prices[currentLocation];
     const unitPrice = basePrice + (shot?.price ?? 0);
     const unitPfand = product.pfand[currentLocation];
-    const cartKey = shot ? `${product.id}-${shot.id}` : product.id;
 
     setCart((prev) => {
       const existingIdx = prev.findIndex((c) =>
