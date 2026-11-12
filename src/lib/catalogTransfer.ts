@@ -216,8 +216,19 @@ export function buildImportPlan(sheets: SheetRows, base: LocalCatalog, archive: 
         const candidatesImage = (exactImages.length ? exactImages : identityImages)
           .sort((a,b) => imageSizeRank(a.path) - imageSizeRank(b.path) || a.path.localeCompare(b.path, 'de'));
         let image: string | undefined;
-        if (candidatesImage.length && (!p.imageUrl || replaceImages || /[?&]woodmoIllustration=1(?:&|$)/.test(p.imageUrl))) { plan.images[p.id] = candidatesImage[0]; image = candidatesImage[0].path; }
-        else if (candidatesImage.length) plan.warnings.push(`${name}: ZIP-Bild nicht übernommen, vorhandenes Bild bleibt erhalten.`);
+        // If two equally ranked images match the same article, choosing one
+        // would be an unreviewed overwrite. Import the article, but skip its
+        // image and surface the conflict in the preview.
+        const ambiguousImage = candidatesImage.length > 1 &&
+          imageSizeRank(candidatesImage[0].path) === imageSizeRank(candidatesImage[1].path);
+        if (ambiguousImage) {
+          plan.warnings.push(`${name}: mehrere gleichwertige ZIP-Bilder gefunden (${candidatesImage.map(f => f.path).join(', ')}). Keine automatische Bildzuordnung; bitte Bildnamen eindeutig machen.`);
+        } else if (candidatesImage.length && (!p.imageUrl || replaceImages || /[?&]woodmoIllustration=1(?:&|$)/.test(p.imageUrl))) {
+          plan.images[p.id] = candidatesImage[0];
+          image = candidatesImage[0].path;
+        } else if (candidatesImage.length) {
+          plan.warnings.push(`${name}: ZIP-Bild nicht übernommen, vorhandenes Bild bleibt erhalten.`);
+        }
         else if (archive.length) {
           const suggestions = archive.map(f => ({path:f.path, score:imageSimilarity(name,f.path)}))
             .filter(f => f.score >= 0.75 && f.score < 1)
