@@ -43,17 +43,33 @@ function assertSessionIsOpen(session: CashSession, receipt: Transaction): void {
   }
 }
 
+/**
+ * The five newest receipts of an open cash session, INCLUDING already voided
+ * receipts. This selection is temporary; receipts themselves are persisted
+ * from their creation and remain available for immutable daily close records.
+ * A voided receipt still occupies its chronological slot, so no older one
+ * becomes eligible again when a newer receipt is cancelled.
+ */
+export function lastFiveCashReceipts(
+  transactions: readonly Transaction[],
+  session: CashSession,
+): Transaction[] {
+  if (session.closed || session.discarded || session.closedAt != null ||
+      session.dailyCloseFinalizedAt != null || session.dailyCloseSnapshot != null) return [];
+  return transactions
+    .filter((t) => t.location === session.location && t.timestamp >= session.openedAt)
+    .sort((a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id))
+    .slice(0, 5);
+}
+
 export function lastFiveStornoCandidates(
   transactions: readonly Transaction[],
   previousStornos: readonly StornoRecord[],
   session: CashSession,
 ): Transaction[] {
-  if (session.closed || session.closedAt != null || session.dailyCloseFinalizedAt != null || session.dailyCloseSnapshot != null) return [];
   const voided = new Set(previousStornos.map((entry) => entry.originalTransactionId));
-  return transactions
-    .filter((t) => t.location === session.location && t.timestamp >= session.openedAt && !voided.has(t.id))
-    .sort((a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id))
-    .slice(0, 5);
+  return lastFiveCashReceipts(transactions, session)
+    .filter((receipt) => !voided.has(receipt.id));
 }
 
 export interface StornoProposalInput {
@@ -73,14 +89,14 @@ export interface StornoProposalInput {
 export function prepareStorno(input: StornoProposalInput): StornoRecord {
   const { receipt, session, previousStornos, now } = input;
   assertSessionIsOpen(session, receipt);
+  if (previousStornos.some((s) => s.originalTransactionId === receipt.id)) {
+    throw new StornoRuleError('Dieser Beleg wurde bereits storniert.');
+  }
   if (!lastFiveStornoCandidates(input.allTransactions, previousStornos, session).some((item) => item.id === receipt.id)) {
-    throw new StornoRuleError('Nur die letzten fünf noch nicht stornierten Einzelbelege können ausgewählt werden.');
+    throw new StornoRuleError('Nur die letzten fünf Einzelbelege der offenen Kasse können storniert werden.');
   }
   if (!Number.isFinite(now) || now < receipt.timestamp || now < session.openedAt) {
     throw new StornoRuleError('Ungültiger Stornozeitpunkt.');
-  }
-  if (previousStornos.some((s) => s.originalTransactionId === receipt.id)) {
-    throw new StornoRuleError('Dieser Beleg wurde bereits storniert.');
   }
   const reason = input.reason.trim();
   if (reason.length < 3) throw new StornoRuleError('Bitte eine nachvollziehbare Stornobegründung eingeben.');
