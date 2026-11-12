@@ -87,6 +87,15 @@ export function POSScreen({
   const [dragSource, setDragSource] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
+  const currentCashBalance = useMemo(() => {
+    if (!activeSession) return 0;
+    const cashSales = sessionTransactions(transactions, activeSession)
+      .filter(tx => tx.paymentMethod === 'cash')
+      .reduce((sum, tx) => sum + tx.total, 0);
+    const entries = activeSession.entries.reduce((sum, entry) => sum + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
+    return Math.round((activeSession.openingBalance + cashSales + entries) * 100) / 100;
+  }, [activeSession, transactions]);
+
   const requestDailyClose = useCallback(async () => {
     if (!activeSession) return;
     const unused = !activeSession.entries.length && !activeSession.corrections.length &&
@@ -131,15 +140,6 @@ export function POSScreen({
   }, [headerAction, activeSession, currentStaff, onHeaderActionConsumed, currentCashBalance, requestDailyClose]);
 
   const currentLocation: Location = activeSession?.location ?? (selectedLocation ?? 'Friedrichshafen');
-
-  const currentCashBalance = useMemo(() => {
-    if (!activeSession) return 0;
-    const cashSales = sessionTransactions(transactions, activeSession)
-      .filter(tx => tx.paymentMethod === 'cash')
-      .reduce((sum, tx) => sum + tx.total, 0);
-    const entries = activeSession.entries.reduce((sum, entry) => sum + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
-    return Math.round((activeSession.openingBalance + cashSales + entries) * 100) / 100;
-  }, [activeSession, transactions]);
 
   const visibleProducts = useMemo(() => {
     let list = products.filter((p) => p.available);
