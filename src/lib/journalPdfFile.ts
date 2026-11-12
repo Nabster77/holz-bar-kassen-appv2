@@ -472,8 +472,7 @@ async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promi
  * Manual journal export: the person exporting chooses the destination. No
  * location folder is created and no app-managed automatic save is attempted.
  */
-export async function exportJournalPdf(data: JournalReportData): Promise<void> {
-  const blob = await renderJournalPdf(data);
+async function saveManualPdfToConfiguredArchive(data: JournalReportData, blob: Blob): Promise<void> {
   const selected = readDeviceSetup()?.archiveMode === 'folder' ? await loadExportFolder() : null;
   if (selected && await canWrite(selected as WritableDirectoryHandle)) {
     try {
@@ -486,10 +485,21 @@ export async function exportJournalPdf(data: JournalReportData): Promise<void> {
   await savePdfWithUserChoice(data, blob);
 }
 
+export async function exportJournalPdf(data: JournalReportData): Promise<void> {
+  const blob = await renderJournalPdf(data);
+  await saveManualPdfToConfiguredArchive(data, blob);
+}
+
 export async function exportJournalPdfBatch(reports: JournalReportData[], fileName: string): Promise<void> {
   if (reports.length === 0) return;
   const blob = await renderPdfHtml(buildJournalBatchHTML(reports));
-  await savePdfWithUserChoice({ ...reports[0], fileName }, blob);
+  const locations = new Set(reports.map((report) => report.location));
+  // A selected "all sites" batch belongs under Alle-Standorte, even when it
+  // happens to contain only one site. Never file it under the first report.
+  const location = fileName.includes('Alle-Standorte') || locations.size > 1
+    ? 'Alle Standorte' : reports[0].location;
+  const archiveData = { ...reports[0], location, fileName };
+  await saveManualPdfToConfiguredArchive(archiveData, blob);
 }
 
 // Browsers intentionally control printer selection and the "Save as PDF"
