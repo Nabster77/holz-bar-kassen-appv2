@@ -19,6 +19,10 @@ export interface SalesLedgerMovement {
   pfandCents: number;
   taxCentsByRate: Record<string, number>;
   articleQuantities: Record<string, number>;
+  /** Immutable audit context shown beside reversal in the journal. */
+  employeeId?: string;
+  employeeName?: string;
+  reason?: string;
 }
 
 export interface LedgerTotals {
@@ -99,7 +103,12 @@ export function salesLedgerMovements(
     }
     if (cancellation.timestamp < original.timestamp) throw new Error('Stornozeitpunkt liegt vor der Originalbuchung.');
     if (cancellation.timestamp >= from && cancellation.timestamp < to) {
-      result.push(movement(original, 'storno', cancellation.timestamp, cancellation.id));
+      result.push({
+        ...movement(original, 'storno', cancellation.timestamp, cancellation.id),
+        employeeId: cancellation.employeeId,
+        employeeName: cancellation.employeeName,
+        reason: cancellation.reason,
+      });
     }
   }
   return result.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
