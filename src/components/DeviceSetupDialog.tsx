@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { Download, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { configureJournalExportFolder } from '@/lib/journalPdfFile';
 import { readDeviceSetup, saveDeviceSetup } from '@/lib/deviceSetup';
-import { readBackupCheckpoint } from '@/lib/backupCheckpoint';
-import { archiveRootName } from '@/lib/archiveRoot';
 
 interface Props {
   onComplete: () => void;
@@ -15,8 +13,6 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previous = readDeviceSetup();
-  const last = readBackupCheckpoint();
-  const when = (time: number | null) => time ? new Date(time).toLocaleString('de-DE') : 'Noch nicht bestätigt';
 
   async function chooseFolder() {
     if (busy) return;
@@ -30,7 +26,7 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
         onComplete();
       } else {
         // The filesystem picker is unavailable on this browser (notably Android).
-        setError('Dieser Browser bietet keinen dauerhaft freigegebenen Ordner. Verwende Downloads oder den Teilen-Dialog.');
+        setError('Dieser Browser unterstützt keine automatische Ordnerverwaltung. Bitte manuell speichern.');
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Ordner konnte nicht ausgewählt werden.');
@@ -58,34 +54,30 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
           </div>
         </div>
         {warning && <p role="alert" className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">{warning}</p>}
-        <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
-          Wo möchtest du Journale und Tagesabschlüsse lokal speichern?
-          Wir legen im gewählten Ort automatisch <strong>{archiveRootName(Date.now())}</strong> mit den Standort- und Sicherungsordnern an. Bei jedem Jahreswechsel entsteht beim nächsten Zugriff ein neuer Jahresordner. Berichte liegen unter Standort / Monat / Berichtsart. Vorhandene Ordner und Dateien bleiben erhalten. Auf Tablets ohne Ordnerfreigabe wird der Download- oder Teilen-Dialog verwendet.
-          Bereits angelegte Dokumentenordner bleiben auch nach einem Buchungs-Reset bestehen.
-        </p>
-        {previous?.folderLabel && <p className="rounded-lg bg-slate-100 p-2 text-sm dark:bg-slate-800">
-          Bisheriger Ordner: <strong>{previous.folderLabel}</strong>
-        </p>}
-        <div className="rounded-xl border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-300">
-          <p className="mb-1 font-semibold">Letzte bestätigte Abgleiche auf diesem Gerät</p>
-          <p>Tablet ↔ Cloud: <strong>{when(last.cloudSyncedAt)}</strong></p>
-          <p>Backup 1: <strong>{when(last.backup1SyncedAt)}</strong></p>
-          <p>Backup 2: <strong>{when(last.backup2SyncedAt)}</strong></p>
+        <div className="space-y-2 text-sm text-slate-700 dark:text-slate-200">
+          <p>Wähle nur den <strong>Speicherort</strong>. WOODMO verwaltet alle Unterordner automatisch.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Beispiel: Kasse 26 / Friedrichshafen / November / Tagesabschluss
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Alternativ kannst du Dateien selbst speichern. Die Auswahl ist später in der Verwaltung änderbar.
+          </p>
         </div>
+        {previous?.folderLabel && <p className="rounded-lg bg-slate-100 p-2 text-xs dark:bg-slate-800">
+          Aktueller Speicherort: <strong>{previous.folderLabel}</strong>
+        </p>}
         <div className="space-y-2">
           <button type="button" onClick={() => void chooseFolder()} disabled={busy}
             className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-            <FolderOpen size={19} /> {busy ? 'Ordner wird geprüft …' : 'Berichtsordner auswählen'}
+            <FolderOpen size={19} /> {busy ? 'Ordner wird geprüft …' : 'Speicherort auswählen – automatisch'}
           </button>
           <button type="button" onClick={chooseDownloads} disabled={busy}
             className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800">
-            <Download size={19} /> Downloads / Teilen verwenden
+            <Download size={19} /> Selbst verwalten (Downloads / Teilen)
           </button>
         </div>
         {error && <p role="alert" className="rounded-xl bg-amber-100 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">{error}</p>}
-        <p className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400"><ShieldCheck size={15} className="mt-0.5 shrink-0"/>
-          PDF-Dateien werden ausschließlich auf diesem Gerät gespeichert, nicht in Supabase. Die Buchungen und abgeschlossenen Kassendaten bleiben für den späteren Neuausdruck auf anderen Geräten in der Cloud verfügbar. Einstellungen und Passwörter bleiben unberührt.
-        </p>
+        <p className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400"><ShieldCheck size={15} className="mt-0.5 shrink-0"/>PDFs bleiben lokal auf diesem Gerät.</p>
       </section>
     </div>
   );
