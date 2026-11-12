@@ -54,7 +54,7 @@ async function main() {
   catalogCloud:{fetchCatalogRows:async()=>rows(base),pushCatalogRows:async r=>{written.push(...r);}},
   bookingReset:{fetchLatestBookingReset:async()=>null,rememberBookingReset:()=>{}},
   cloudPull:{fetchCloudData:async()=>({transactions:[],cashSessions:[]})},
-  outbox:{clearOutbox:async()=>{},enqueueEntries:async()=>{},flushOutbox:async()=>false},
+  outbox:{discardEntriesBeforeGeneration:async()=>{},enqueueEntries:async()=>{},flushOutbox:async()=>0},
   staffDirectory:{fetchAllStaffRows:async()=>[],pushStaffUser:async()=>{}}
  });
  const restore=restoreLoader('backupRecovery').restoreBackupSafely;
