@@ -10,6 +10,7 @@ import { useStaffDirectory } from '@/hooks/useStaffDirectory';
 import { StaffLoginDialog } from '@/components/StaffLoginDialog';
 import { DeviceSetupDialog } from '@/components/DeviceSetupDialog';
 import { readDeviceSetup } from '@/lib/deviceSetup';
+import { PDF_ARCHIVE_SETUP_EVENT } from '@/lib/pdfArchiveSetup';
 import { RootPasswordWarning } from '@/components/RootPasswordWarning';
 import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
 import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
@@ -53,6 +54,7 @@ export default function App() {
   const [previousTab, setPreviousTab] = useState<Tab | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deviceSetupOpen, setDeviceSetupOpen] = useState(() => readDeviceSetup() === null);
+  const [pdfArchiveWarning, setPdfArchiveWarning] = useState<string | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
   const [testMode] = useState<boolean>(isTestMode());
@@ -87,6 +89,18 @@ export default function App() {
     catalog.syncCatalog,
     store.applyCloudBookingReset,
   );
+
+  // Any PDF export on this device can request reconfiguration. This includes
+  // journal exports from another computer restoring a cloud booking history.
+  useEffect(() => {
+    const showSetup = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      setPdfArchiveWarning(detail?.message || 'Der lokale PDF-Speicherordner muss erneut eingerichtet werden.');
+      setDeviceSetupOpen(true);
+    };
+    window.addEventListener(PDF_ARCHIVE_SETUP_EVENT, showSetup);
+    return () => window.removeEventListener(PDF_ARCHIVE_SETUP_EVENT, showSetup);
+  }, []);
 
   // The last finalized balance per location is a suggestion only. It is not
   // copied until the user actually opens the next cash session.
@@ -632,7 +646,7 @@ export default function App() {
           onCancel={() => setStaffAdminLoginOpen(false)}
         />
       )}
-      {deviceSetupOpen && <DeviceSetupDialog onComplete={() => setDeviceSetupOpen(false)} onCancel={readDeviceSetup() ? () => setDeviceSetupOpen(false) : undefined} />}
+      {deviceSetupOpen && <DeviceSetupDialog warning={pdfArchiveWarning} onComplete={() => { setPdfArchiveWarning(null); setDeviceSetupOpen(false); }} onCancel={readDeviceSetup() ? () => { setPdfArchiveWarning(null); setDeviceSetupOpen(false); } : undefined} />}
       <InstallPrompt />
       <RootPasswordWarning visible={signedInUser === 'admin' && rootWarningOpen} onClose={() => { saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); setRootWarningOpen(false); }} />
     </div>
