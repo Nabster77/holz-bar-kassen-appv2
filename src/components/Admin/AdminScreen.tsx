@@ -4,7 +4,7 @@ import type { LocalCatalog } from '@/lib/catalogSync';
 import { useEffect, useRef, useState, useMemo, type ReactNode } from 'react';
 import type { Category, Product, TaxClass, Location, Transaction, CashSession, PfandSettings, StaffRole, StaffSecurityQuestion, StaffUser, ShotOption } from '@/types';
 import { formatCurrency, formatDateGermanFromISO, formatDateISO, formatTime, parseGermanDate } from '@/lib/format';
-import { taxRateForClass, mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
+import { mergeTaxByRate, sortedRateKeys, isReducedRate } from '@/lib/tax';
 import { buildDailyReport } from '@/lib/dailyReport';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import { exportJournalPdf, openJournalPrintDialog } from '@/lib/journalPdfFile';
@@ -12,7 +12,7 @@ import { DynamicIcon, availableIconNames } from '@/components/DynamicIcon';
 import { importFileToDataURL, isSupported, ACCEPTED_TYPES } from '@/lib/imageImport';
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
-import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, ChevronUp, ChevronDown, Wine, Recycle, MonitorDot, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, ArrowRightLeft, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
+import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, Wine, Recycle, MonitorDot, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
@@ -321,7 +321,7 @@ function CategoryManager({ categories, products, onAddCategory, onUpdateCategory
   );
 }
 
-function CategoryModal({ category, categories, onSave, onClose }: {
+function CategoryModal({ category, onSave, onClose }: {
   category: Category | null;
   categories: Category[];
   onSave: (data: { name: string; icon: string; color: string }) => void;
@@ -405,7 +405,7 @@ function CategoryModal({ category, categories, onSave, onClose }: {
 
 // ---- Product Manager ----
 
-function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onReorderProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings, getProductPfand }: Props) {
+function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings }: Props) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
@@ -491,7 +491,7 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
         </button>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((product, idx) => {
+        {filtered.map((product) => {
           const cat = categories.find((c) => c.id === product.categoryId);
           return (
             <div key={product.id}
