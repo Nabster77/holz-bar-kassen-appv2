@@ -27,7 +27,9 @@ const at13 = buildImportPlan(make([['AT',4,'G','fix',7,13]]),base);
 assert.deepEqual(at13.errors,[]); assert.equal(taxRateForProduct(at13.next.products.at(-1)!,'Bregenz'),13);
 const ambiguous = structuredClone(base); ambiguous.products.push({...ambiguous.products[0],id:'duplicate'});
 assert(buildImportPlan(make([['Cola 0,5l',4,'Getränke','fix',19,20]]),ambiguous).errors.length);
-const images = readImageZip(zipSync({'outer/nested/Neu(2).jpg':new Uint8Array([1,2,3]),'ignored.txt':new Uint8Array([1])}));
+// Use a genuine 1x1 PNG. Fake JPG bytes must be rejected by the importer.
+const validPng = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP48OEDAAWkAtFabOJuAAAAAElFTkSuQmCC','base64'));
+const images = readImageZip(zipSync({'outer/nested/Neu(2).png':validPng,'ignored.txt':new Uint8Array([1])}));
 assert.equal(images.length,1); assert.equal(normalizeName('Ätherische Öle(2)'),normalizeName('Ätherische Öle'));
 const withImage = buildImportPlan(make([product]),base,images);
 assert.equal(Object.keys(withImage.images).length,1);
