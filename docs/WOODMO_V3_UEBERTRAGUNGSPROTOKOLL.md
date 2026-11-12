@@ -138,3 +138,21 @@ Eine zwischenzeitlich ausstehende URL-Migration wurde über Supabase vor einem e
 Unabhängige Read-only-SQL-Prüfung im V3-Ziel: **53 aktive Produkte, 53 eindeutige Bildreferenzen, 53/53 dazu passende Storage-Objekte, 53 Storage-Dateien insgesamt; 5 aktive Kategorien, 2 aktive Einstellungen, 3 aktive Mitarbeiter, 0 Transaktionen, 0 Kassensitzungen**. Bereits früher: vollständiger Katalog und Mitarbeiter-Sicherheitstabellen übertragen. Der Benutzer hat die Berechtigung für die vereinbarten V3-Arbeiten nochmals ausdrücklich bestätigt. Plattformseitige Sicherheits- und Bestätigungsschritte bleiben einzuhalten.
 
 **Noch offen**: V3-GitHub-Anwendungscode final bereitstellen, V3-Seite eigenständig veröffentlichen, Funktionstests der App auf PC und Tablet, Prüfung Verwaltungspasswort/Benutzerzugang und Export/Import-Endabnahme.
+
+
+## Nachtrag 2026-11-12 – Beginn Entwicklung nach Nutzerfreigabe (DEV-001)
+
+Der Nutzer hat die Umsetzung der vereinbarten V3-Anforderungen schrittweise autorisiert. Die zuvor festgelegten Phasen-Grenzen gelten weiter: **kein lokaler Praxistestserver, keine eigenständige öffentliche Veröffentlichung und kein Live-Datenbankexperiment ohne separate Freigabe**.
+
+**Umgesetzt im Branch `woodmo-v3.0`:**
+- `src/lib/stornoRules.ts`: reine Stornoregeln (letzte fünf, offene Sitzung, Standort, Pflichtbegründung, Bargeldschutz, Bar-/Kartenwirkung, unveränderte Ursprungsbelege).
+- `scripts/check-storno-rules.mjs`: Regressionstests für Storno-Regeln; ebenfalls `package.json` integriert.
+- Isoliert ausgeführt: strenge TypeScript-Prüfung des Regelmoduls und Storno-Regressionstests → bestanden. Vollständiger Projekt-Build noch nicht nachgewiesen.
+- `docs/WOODMO_V3_STORNO_ARCHITEKTUR.md`: atomare Speicherung, Rechte, Audit- und Aufbewahrungsanforderungen.
+- `supabase/migrations/20261112213500_create_v3_storno_audit_draft.sql`: SQL-Schema für unveränderliche Stornobelege als **Entwurf im Code, nicht in der Datenbank angewandt**. Eine geschützte Schreib-RPC und Ende-zu-Ende-Integration sind **noch offen**.
+- `.github/workflows/woodmo-v3-ci.yml`: Branch-spezifische Code-Prüfung mit `npm ci`, Typecheck, Tests, Build und Lint; **ohne Deployment**. GitHub-Actions-Ausführung/Erfolg wurde hier noch nicht verbindlich bestätigt.
+- `docs/WOODMO_V3_ENTWICKLUNG_EINTRITTSPRUEFUNG_2026-11-12.md`: detaillierter Prüfeinstieg.
+
+**Bereits im Code enthalten, derzeit nicht dupliziert:** manuelle PDF-Archivordnerwahl und IndexDB-Speicherung, Jahres-/Standort-/Berichtsordner, Backup-Konfliktfilter. Die Erststart-Setup-Oberfläche, Storno-UI, automatische Cloud-PDF-Archivierung und sichere Ordner-/BAT-Routinen sind weiterhin offen.
+
+**Nächster Entwicklungsschritt:** isolierte Prüfung des append-only Storno-Schemas, atomarer Storno-RPC, anschließend Integration der Storno-Gegenbewegungen in alle Report- und Tagesabschlussrechner sowie PDF. Erst danach Geräte-Setup und gestaltende Feinschliffe.
