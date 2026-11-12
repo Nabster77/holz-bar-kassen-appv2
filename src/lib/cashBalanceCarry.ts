@@ -28,12 +28,19 @@ export function openingBalanceForLocation(sessions: CashSession[], transactions:
       carry = Math.round(session.closingBalance! * 100) / 100;
       continue;
     }
-    if (session.discarded || !financial) {
-      // Discarded periods never transfer money. For a finalized empty period,
-      // the counted closing balance (if available) is authoritative.
-      if (!session.discarded && session.dailyCloseReceiptNumber && Number.isFinite(session.closingBalance)) {
-        carry = Math.round(session.closingBalance! * 100) / 100;
-      }
+    if (session.discarded) continue;
+    if (!financial) {
+      // An unused close has no documented cash movement. A default zero
+      // closingBalance must NOT erase cash carried from a prior close. If
+      // this period has a positive recorded amount, preserve that instead.
+      // A real zero requires an explicit withdrawal/correction and takes
+      // the financially active branch below.
+      const candidate = Number.isFinite(session.closingBalance) && (session.closingBalance ?? 0) > 0
+        ? session.closingBalance
+        : Number.isFinite(session.openingBalance) && session.openingBalance > 0
+          ? session.openingBalance
+          : null;
+      if (typeof candidate === 'number') carry = Math.round(candidate * 100) / 100;
       continue;
     }
     let remainder: number | undefined;
