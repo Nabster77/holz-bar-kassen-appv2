@@ -10,7 +10,7 @@ import { StaffLoginDialog } from '@/components/StaffLoginDialog';
 import { RootPasswordWarning } from '@/components/RootPasswordWarning';
 import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
 import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
-import { changeManagerPassword, loadManagerCredential, resetManagerPassword, restoreManagerCredential, type ManagerCredential } from '@/lib/managerAuth';
+import { changeManagerPassword, loadManagerCredential, restoreManagerCredential, type ManagerCredential } from '@/lib/managerAuth';
 import { supabase } from '@/lib/supabaseClient';
 import type { Location, StaffUser } from '@/types';
 import { POSScreen } from '@/components/POS/POSScreen';
@@ -128,33 +128,17 @@ export default function App() {
   }
 
   async function resetBookings() {
-    // This is the explicit, administrator-triggered complete operating reset.
-    // Product/catalog data is intentionally not touched here.
-    if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
-    const { error: passwordError } = await supabase.auth.updateUser({ password: '123456' });
-    // Supabase rejects a no-op password change. For the reset that simply
-    // means the required default password is already in place.
-    if (passwordError && !/different from the old password/i.test(passwordError.message)) throw passwordError;
+    // Reset only booking/cash-session data. Credentials, staff identities,
+    // device preferences, local document archives and catalog remain unchanged.
+    // In test mode the reset is local only, exactly like test bookings.
     if (!testMode) {
       const reset = await resetCloudBookings();
-      // Do not leave pre-reset offline uploads behind on the device that
-      // initiated the reset.
+      // Prevent queued entries from a previous booking generation being
+      // re-uploaded by a device that was offline during the reset.
       await discardEntriesBeforeGeneration(reset.generation);
       rememberBookingReset(reset);
     }
-    // Personnel and personal credentials survive the booking/year reset.
     store.resetAllData();
-    resetManagerPassword();
-    saveJSON(STORAGE_KEYS.rootPasswordChanged, false);
-    saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, false);
-    setCurrentStaff(null);
-    setLastStaffId(null);
-    saveJSON(STORAGE_KEYS.lastStaffId, null);
-    setAdminUnlocked(false);
-    // End the current cloud session so the restored Admin / 123456 access is
-    // actually required on the next app start.
-    const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
-    if (signOutError) throw signOutError;
   }
 
   function navigateTo(nextTab: Tab) {
