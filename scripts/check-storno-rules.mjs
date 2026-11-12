@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { lastFiveStornoCandidates, prepareStorno, effectiveSales } from '../src/lib/stornoRules.ts';
+import { lastFiveCashReceipts, lastFiveStornoCandidates, prepareStorno, effectiveSales } from '../src/lib/stornoRules.ts';
 
 const start = Date.parse('2026-11-12T08:00:00Z');
 const session = { id:'s-1', location:'Friedrichshafen', openedAt:start, closed:false };
@@ -14,7 +14,16 @@ function args(receipt=receipts[5],override={}) {
     now:start+50000,stornoId:'v-1',...override};
 }
 assert.deepEqual(lastFiveStornoCandidates(receipts,[],session).map(x=>x.id),['r-6','r-5','r-4','r-3','r-2']);
-assert.deepEqual(lastFiveStornoCandidates(receipts,[{originalTransactionId:'r-6'}],session).map(x=>x.id),['r-5','r-4','r-3','r-2','r-1']);
+assert.deepEqual(lastFiveCashReceipts(receipts,session).map(x=>x.id),['r-6','r-5','r-4','r-3','r-2']);
+assert.deepEqual(lastFiveStornoCandidates(receipts,[{originalTransactionId:'r-6'}],session).map(x=>x.id),
+  ['r-5','r-4','r-3','r-2'], 'Ein stornierter Bon belegt weiterhin seinen Platz in der letzten Fünfergruppe');
+assert.equal(lastFiveStornoCandidates(receipts,[{originalTransactionId:'r-6'}],session).some(x=>x.id==='r-1'),false,
+  'Ein älterer Bon rückt nach Storno NICHT nach');
+const newcomer={...receipts[6],id:'r-7',timestamp:start+99999};
+assert.deepEqual(lastFiveCashReceipts([...receipts,newcomer],session).map(x=>x.id),
+  ['r-7','r-6','r-5','r-4','r-3'], 'Neue Buchungen verdrängen den bisher fünftältesten Bon');
+assert.equal(lastFiveCashReceipts([...receipts,newcomer],session).length,5,
+  'Die Auswahl ist auf fünf begrenzt; die Buchungsliste bleibt vollständig');
 assert.deepEqual(lastFiveStornoCandidates(receipts,[],{...session,closed:true}),[]);
 const cash=prepareStorno(args());assert.equal(cash.cashEffect,-15);assert.equal(cash.cardEffect,0);
 const card=prepareStorno(args(receipts[6]));assert.equal(card.cashEffect,0);assert.equal(card.cardEffect,-16);
