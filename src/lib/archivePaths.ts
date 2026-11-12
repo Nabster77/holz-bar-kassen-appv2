@@ -10,10 +10,14 @@ export interface ArchiveReport {
   reportPeriodStart?: number;
 }
 
+const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+
 export function archiveSubfolders(report: ArchiveReport): string[] {
   const date = new Date(report.reportPeriodStart ?? Date.now());
   if (!Number.isFinite(date.getTime())) throw new Error('Ungültiger Berichtszeitraum.');
-  const year = String(date.getFullYear());
+  // Both cash locations use Central European civil dates, including DST.
+  const month = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', month: 'numeric' }).format(date));
+  if (month < 1 || month > 12) throw new Error('Ungültiger Berichtsmonat.');
   const scope = report.location.trim().toLocaleLowerCase('de-DE');
   const location = scope.includes('alle') || scope.includes('beide')
     ? 'Alle-Standorte'
@@ -30,7 +34,7 @@ export function archiveSubfolders(report: ArchiveReport): string[] {
     : /Kassen(?:uebersicht|übersicht)/i.test(name) ? 'Kassenuebersicht'
     : /Storno/i.test(name) ? 'Storno'
     : 'Weitere-Berichte';
-  return [year, location, kind];
+  return [location, MONTH_NAMES[month - 1], kind];
 }
 
 export function safeArchiveFileName(name: string): string {
