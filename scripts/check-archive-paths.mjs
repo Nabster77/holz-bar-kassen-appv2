@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { archiveSubfolders, safeArchiveFileName } from '../src/lib/archivePaths.ts';
+import { archiveSubfolders, batchArchiveLocation, safeArchiveFileName } from '../src/lib/archivePaths.ts';
 
 const priorYear = new Date(2025, 11, 31, 10).getTime();
 const currentYear = new Date(2026, 10, 12, 9).getTime();
@@ -27,4 +27,10 @@ assert.throws(() => archiveSubfolders({
 }), /Unbekannter Standort/);
 assert.equal(safeArchiveFileName('Friedrichshafen_12:30/Beleg?'), 'Friedrichshafen_12_30_Beleg_.pdf');
 assert.throws(() => safeArchiveFileName(''), /Ungültiger Dateiname/);
+
+assert.equal(batchArchiveLocation(['Friedrichshafen', 'Bregenz'], 'Tagesabschluesse_2026.pdf'), 'Alle Standorte');
+assert.equal(batchArchiveLocation(['Friedrichshafen'], 'Tagesabschluesse_Alle-Standorte_2026.pdf'), 'Alle Standorte');
+assert.equal(batchArchiveLocation(['Bregenz'], 'Tagesabschluesse_Bregenz_2026.pdf'), 'Bregenz');
+assert.throws(() => batchArchiveLocation([], 'Tagesabschluesse.pdf'), /Leerer PDF-Sammelbericht/);
+
 console.log('PDF-Archivpfade bestanden: Zeitbezug, Standorte, Berichtsarten, Dateinamen.');
