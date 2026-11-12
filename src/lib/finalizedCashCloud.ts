@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { knownBookingReset } from '@/lib/bookingReset';
 import type { CashSession } from '@/types';
+import { assertFinalizedCloseMatches } from '@/lib/finalCloseVerification';
 
 /**
  * Finalization only succeeds when Supabase accepts and RETURNS the complete
@@ -20,15 +21,5 @@ export async function persistFinalizedCashSession(session: CashSession): Promise
     .select('id, booking_generation, data').eq('id', session.id)
     .eq('booking_generation', generation).maybeSingle();
   if (readError || !data) throw new Error('Tagesabschluss wurde von der Cloud nicht bestätigt.');
-  const stored = data.data as Partial<CashSession> | null;
-  if (!stored || !stored.closed || stored.id !== session.id ||
-      stored.dailyCloseReceiptNumber !== session.dailyCloseReceiptNumber ||
-      stored.dailyCloseFinalizedAt !== session.dailyCloseFinalizedAt ||
-      stored.closingBalance !== session.closingBalance ||
-      stored.dailyCloseSnapshot?.transactions.length !== session.dailyCloseSnapshot.transactions.length ||
-      stored.dailyCloseSnapshot?.finalizedAt !== session.dailyCloseSnapshot.finalizedAt ||
-      stored.dailyCloseSnapshot?.transactions.some((tx, i) =>
-        tx.id !== session.dailyCloseSnapshot!.transactions[i]?.id)) {
-    throw new Error('Die in Supabase gespeicherten Tagesabschlussdaten stimmen nicht überein.');
-  }
+  assertFinalizedCloseMatches(session, data.data);
 }
