@@ -45,6 +45,7 @@ interface Props {
   onResetStaffPassword: (id: string, answer: string, password: string) => Promise<StaffUser>;
   lastStaffId: string | null;
   onDiscardEmptySession: () => Promise<void>;
+  onHome?: () => void;
   openingBalanceSuggestions?: Record<Location, number | null>;
 }
 
@@ -64,7 +65,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 export function POSScreen({
   categories, products, shotOptions, activeSession, onCheckout,
   onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onMoveProduct,
-  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, openingBalanceSuggestions,
+  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, onHome, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -430,7 +431,7 @@ export function POSScreen({
 
       {/* Dialogs */}
       {(showOpenDialog || !activeSession) && (
-        <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => setShowOpenDialog(false)} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
+        <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => { setShowOpenDialog(false); onHome?.(); }} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
         <CashCorrectionDialog session={activeSession} currentCashBalance={currentCashBalance} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
