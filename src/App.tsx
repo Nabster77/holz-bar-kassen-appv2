@@ -30,6 +30,8 @@ import { discardEntriesBeforeGeneration } from '@/lib/outbox';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
 import { issueDailyCloseReceipt } from '@/lib/dailyCloseReceipt';
+import { buildFinalizedCashSession } from '@/lib/finalizedCashSession';
+import { persistFinalizedCashSession } from '@/lib/finalizedCashCloud';
 import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { formatDateISO } from '@/lib/format';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
@@ -401,37 +403,26 @@ export default function App() {
                 // A final close without the cloud-wide, immutable receipt
                 // number is not allowed. The RPC is idempotent per session.
                 const receipt = await issueDailyCloseReceipt(session.id, currentStaff.name, session.location, finalizedAt);
-                const closingWithdrawal = closingWithdrawalAmount > 0 ? {
-                  id: `daily-close-withdrawal-${session.id}`,
-                  type: 'withdrawal' as const,
-                  amount: closingWithdrawalAmount,
-                  reason: 'Entnahme zum Tagesabschluss',
-                  timestamp: finalizedAt,
-                  isClosingWithdrawal: true,
-                  employeeId: currentStaff.id,
-                  employeeName: currentStaff.name,
-                } : null;
-                const finalized = {
-                  ...session, closed: true, closedAt: finalizedAt, closedById: currentStaff.id, closedByName: currentStaff.name,
-                  entries: closingWithdrawal ? [...session.entries, closingWithdrawal] : session.entries,
-                  closingWithdrawalAmount,
-                  closingBalance: bal,
-                  staffLoginIntervals: finalizedIntervals,
-                  dailyCloseReceiptNumber: receipt.number, dailyCloseReceiptLocation: receipt.location, dailyCloseReceiptYear: receipt.year,
-                  dailyCloseFinalizedAt: finalizedAt, dailyCloseFinalizedById: currentStaff.id, dailyCloseFinalizedByName: currentStaff.name,
-                };
                 const frozenTransactions = sessionTransactions(store.transactions, session, finalizedAt);
-                const snapshot = { transactions: frozenTransactions, finalizedAt, finalizedById: currentStaff.id, finalizedByName: currentStaff.name, staffLoginIntervals: finalizedIntervals };
-                store.closeCashSession(session.id, bal, currentStaff, closingWithdrawalAmount, {
-                  closedAt: finalizedAt,
-                  receipt,
-                  snapshot,
-                });
+                const snapshot = {
+                  transactions: frozenTransactions.map((tx) => structuredClone(tx)),
+                  finalizedAt, finalizedById: currentStaff.id, finalizedByName: currentStaff.name,
+                  staffLoginIntervals: finalizedIntervals,
+                };
+                const closed = buildFinalizedCashSession(
+                  session, store.transactions, bal, currentStaff, closingWithdrawalAmount,
+                  { closedAt: finalizedAt, receipt, snapshot },
+                );
+                // An issued receipt number alone does NOT mean the close is saved.
+                // First store and read back the closed snapshot in Supabase;
+                // only then reflect the irreversible result in the local UI.
+                await persistFinalizedCashSession(closed);
+                store.commitFinalizedSession(closed);
                 try {
-                  await saveJournalPdf(closedSessionReport({ ...finalized, dailyCloseSnapshot: snapshot }, store.transactions, store.categories, currentStaff.name));
+                  await saveJournalPdf(closedSessionReport(closed, store.transactions, store.categories, currentStaff.name));
                 } catch (pdfError) {
                   console.warn('Kasse abgeschlossen; PDF-Export fehlgeschlagen.', pdfError);
-                  alert('Der Tagesabschluss wurde gespeichert. Nur der PDF-Export ist fehlgeschlagen. Bitte den Bericht in der Verwaltung erneut exportieren. Die Kasse nicht nochmals abschließen.');
+                  alert('Der Tagesabschluss wurde in Supabase bestätigt. Das PDF konnte auf diesem Gerät nicht gespeichert werden. Bitte im Geräte-Setup den Speicherordner prüfen und das PDF im Journal erneut erzeugen. Die Kasse nicht erneut abschließen.');
                 }
                 return { ok: true };
               } catch (error) {
