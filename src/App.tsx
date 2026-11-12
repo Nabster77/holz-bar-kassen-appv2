@@ -433,7 +433,6 @@ export default function App() {
                 return { ok: false, error: `Tagesabschluss konnte nicht sicher bestätigt werden: ${readableSyncError(error)} Bitte vor weiteren Buchungen den Cloud-Status prüfen und erneut synchronisieren; keine zweite Abschlussbuchung erzwingen.` };
               }
             }}
-            onEnterAdmin={openManagementFromCashOpening}
             onMoveProduct={(sourceId, targetId) => store.moveProductTo(sourceId, targetId)}
             headerAction={headerAction}
             onHeaderActionConsumed={() => setHeaderAction(null)}
@@ -447,7 +446,6 @@ export default function App() {
             onConfigureStaffSecurity={staff.configureSecurity}
             onResetStaffPassword={staff.resetPassword}
             lastStaffId={lastStaffId}
-            onStaffLogout={handleStaffLogout}
             onDiscardEmptySession={discardUnusedSession}
             openingBalanceSuggestions={openingBalanceSuggestions}
           />
