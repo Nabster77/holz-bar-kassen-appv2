@@ -435,7 +435,7 @@ export function buildJournalBatchHTML(reports: JournalReportData[]): string {
 }
 
 /** Opens the browser/system save flow. This never uses the automatic journal folder. */
-async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promise<void> {
+async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promise<boolean> {
   const file = new File([blob], data.fileName, { type: 'application/pdf' });
   const showSaveFilePicker = (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
 
@@ -449,22 +449,23 @@ async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promi
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
-      return;
+      return true;
     } catch (err) {
-      if (isAbortError(err)) return;
+      if (isAbortError(err)) return false;
     }
   }
 
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: data.fileName });
-      return;
+      return true;
     } catch (err) {
-      if (isAbortError(err)) return;
+      if (isAbortError(err)) return false;
     }
   }
 
   downloadBlob(blob, data.fileName);
+  return true; // Browser download initiated; completion is controlled by the browser.
 }
 
 /**
@@ -531,7 +532,8 @@ function openPrintHtml(html: string): void {
 export async function saveJournalPdf(data: JournalReportData): Promise<void> {
   if (readDeviceSetup()?.archiveMode === 'downloads') {
     const blob = await renderJournalPdf(data);
-    await savePdfWithUserChoice(data, blob);
+    const saved = await savePdfWithUserChoice(data, blob);
+    if (!saved) throw new Error('PDF-Speicherung vom Benutzer abgebrochen. Tagesabschluss bleibt unverändert.');
     return;
   }
   const exportFolder = await chooseExportFolder();
@@ -548,5 +550,6 @@ export async function saveJournalPdf(data: JournalReportData): Promise<void> {
     }
   }
 
-  await savePdfWithUserChoice(data, blob);
+  const saved = await savePdfWithUserChoice(data, blob);
+  if (!saved) throw new Error('PDF-Speicherung vom Benutzer abgebrochen. Tagesabschluss bleibt unverändert.');
 }
