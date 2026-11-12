@@ -169,3 +169,21 @@ Der Nutzer hat die Umsetzung der vereinbarten V3-Anforderungen schrittweise auto
 **Wichtige Grenze:** Diese geprüften Hilfsfunktionen sind *noch nicht* als vollständiger Storno-Bedienablauf aktiviert oder mit einer geschützten, atomaren Server-RPC verbunden. Der bestehende Live-Tagesabschluss speichert bereits sämtliche Originalsätze, jedoch noch keine Stornos, da derzeit kein produktiver Storno-Speicher angebunden ist. Eine Freigabe wird erst nach Einbindung in Cloud, Tagesabschluss, Bericht/PDF und Backup mit Ende-zu-Ende-Tests erfolgen.
 
 **Freigabestatus unverändert:** Kein Start des lokalen Praxistestservers, keine produktive Veröffentlichung, keine destruktive Datenbankänderung.
+
+
+## Nachtrag – 2026-11-12: Fünfer-Stornofenster, Abschlussbelege und PDF-Archiv
+
+**Fachliche Klarstellung:**
+Die letzten fünf Einzelbons einer **offenen** Kassensitzung sind lediglich eine dynamische, geräteübergreifend identisch zu berechnende **Storno-Auswahlliste**; sie sind weder ein temporäres Buchungsarchiv noch eine Grenze für verkaufbare Artikel/Buchungen. Neue Bons verdrängen die jeweils ältesten aus der Auswahl. Bereits stornierte Bons bleiben in der Fünfergruppe, damit kein älterer Bon nachrückt. Nach endgültigem Tagesabschluss ist das aktive Stornofenster leer; **alle** ursprünglich gebuchten Belege und ihre Stornogegenbuchungen bleiben dokumentiert.
+
+**V3-Code und Tests:**
+- `src/lib/stornoRules.ts`: `lastFiveCashReceipts`, `lastFiveStornoCandidates`, `prepareFinalCloseStornoSnapshot`; endgültiger Snapshot enthält alle zugehörigen Bons und Stornonachweise, nicht nur fünf.
+- `scripts/check-storno-close-snapshot.mjs`: Szenario mit 1001 Bons einschließlich frühem Storno. Erfolgreich durch GitHub-CI geprüft.
+- `scripts/check-storno-ledger.mjs`: Abgrenzung nach Stornozeitpunkt, kein rückwirkendes Umschreiben finaler Kassenabschlüsse.
+- `src/lib/journalPdfFile.ts`: Wenn ein Benutzer die PDF-Ablage des Tagesabschlusses abbricht, wird dies nicht mehr als erfolgreicher Datei-Speichervorgang ausgegeben. Batch-PDFs können nun den gewählten Archivordner nutzen.
+- `src/lib/archivePaths.ts`: neue `batchArchiveLocation` für standortübergreifende PDF-Sammelberichte, mit Regressionstests in `scripts/check-archive-paths.mjs`.
+- Nachweis erfolgreicher GitHub-Checks (TypeScript, Tests, ESLint, Build) unter https://github.com/Nabster77/holz-bar-kassen-appv2/actions/runs/43307755801 und weiteren GitHub-Actions-Runs. Für spätere Commits jeweils eigenen Status prüfen.
+
+**Noch offen, deshalb nicht als fertig bezeichnen:** atomare Storno-Erfassung in Supabase, zuverlässige persönliche Mitarbeiterauthentifizierung gegenüber dem Cloud-Schreibdienst, Synchronisation von Stornos bis zur endgültigen Buchung, Einbindung von Stornogegenbuchungen in alle Journal- und PDF-Ausgaben, gesicherter finaler Cloud-PDF-Beleg. Das eigenständige Online-Repository und der lokale Praxistestserver sind noch nicht nach Nutzerfreigabe gestartet.
+
+Keine Produktivbuchungen geändert, keine Storno-SQL-Migration auf Supabase angewandt und keine öffentliche Veröffentlichung ausgelöst.
