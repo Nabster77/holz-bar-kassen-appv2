@@ -121,7 +121,12 @@ export function closedSessionReport(session: CashSession, transactions: Transact
     fileName: `${session.location}_Tagesabschluss_${session.date}_${formattedReceipt ?? session.id}.pdf`,
     receiptNumber: formattedReceipt ?? 'wird bei der nächsten Synchronisierung vergeben',
     staffTimeRecords: staffTimesFromSession(session, finalizedAt),
-    yearlyPfandOverview: calculateYearlyPfandOverview(transactions, Number(year), session.location),
+    // An archived daily close must not change when later transactions add
+    // more yearly deposit movements; freeze the year-to-date scope at close.
+    yearlyPfandOverview: calculateYearlyPfandOverview(
+      transactions.filter((transaction) => transaction.timestamp <= finalizedAt),
+      Number(year), session.location,
+    ),
     dailyCloseCash: {
       openingBalance: session.openingBalance,
       cashSales,
