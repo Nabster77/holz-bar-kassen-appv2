@@ -4,6 +4,7 @@ import { buildJournalHTML, type JournalReportData } from '@/lib/journalPdf';
 import { getWeekNumber } from '@/lib/format';
 import type { Location } from '@/types';
 import { colorNegativeMoney } from '@/lib/movementStyle';
+import { archiveSubfolders, safeArchiveFileName } from '@/lib/archivePaths';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const ALL_LABEL = 'Alle-Standorte';
@@ -136,23 +137,26 @@ async function chooseExportFolder(): Promise<FileSystemDirectoryHandle | null | 
   }
 }
 
-function exportFolderNames(location: string): { yearFolder: string; dayFolder: string; locationFolder: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const yyyyMmDd = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const locationFolder = location.toLowerCase().includes('alle') || location.toLowerCase().includes('beide')
-    ? 'Alle Standorte'
-    : location.includes('Bregenz') ? 'Bregenz' : 'Friedrichshafen';
-  return { yearFolder: `Kasse Weihnachten ${year}`, dayFolder: yyyyMmDd, locationFolder };
-}
-
 async function saveIntoJournalFolder(folder: FileSystemDirectoryHandle, data: JournalReportData, blob: Blob): Promise<void> {
-  const names = exportFolderNames(data.location);
-  const year = await folder.getDirectoryHandle(names.yearFolder, { create: true });
-  const day = await year.getDirectoryHandle(names.dayFolder, { create: true });
-  const location = await day.getDirectoryHandle(names.locationFolder, { create: true });
-  const file = await location.getFileHandle(data.fileName, { create: true });
-  const stream = await file.createWritable();
+  // Do not use the current clock: a previous-year journal must be archived
+  // under its actual business year, location and report category.
+  let target = folder;
+  for (const segment of archiveSubfolders(data)) {
+    target = await target.getDirectoryHandle(segment, { create: true });
+  }
+  const name = safeArchiveFileName(data.fileName);
+  if (data.documentStatus === 'Endgültig abgeschlossen') {
+    try {
+      const previous = await target.getFileHandle(name);
+      const file = await previous.getFile();
+      if (file.size > 0) return; // Already archived: never silently overwrite a finalized receipt.
+      throw new Error('Ein vorhandener Tagesabschluss ist leer. Bitte das Archiv prüfen.');
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error;
+    }
+  }
+  const fileHandle = await target.getFileHandle(name, { create: true });
+  const stream = await fileHandle.createWritable();
   await stream.write(blob);
   await stream.close();
 }
@@ -455,6 +459,15 @@ async function savePdfWithUserChoice(data: JournalReportData, blob: Blob): Promi
  */
 export async function exportJournalPdf(data: JournalReportData): Promise<void> {
   const blob = await renderJournalPdf(data);
+  const selected = await loadExportFolder();
+  if (selected && await canWrite(selected as WritableDirectoryHandle)) {
+    try {
+      await saveIntoJournalFolder(selected, data, blob);
+      return;
+    } catch (error) {
+      console.warn('Der festgelegte PDF-Archivordner ist nicht verfügbar.', error);
+    }
+  }
   await savePdfWithUserChoice(data, blob);
 }
 
@@ -503,7 +516,7 @@ function openPrintHtml(html: string): void {
 // capability, it falls back to the normal system save flow.
 export async function saveJournalPdf(data: JournalReportData): Promise<void> {
   const exportFolder = await chooseExportFolder();
-  if (exportFolder === null) return;
+  if (exportFolder === null) throw new Error('PDF-Speicherung abgebrochen: Kein Archivordner freigegeben.');
   const blob = await renderJournalPdf(data);
 
   if (exportFolder) {
