@@ -205,7 +205,9 @@ export default function App() {
     setAdminUnlocked(false);
     setManagementAdministrator(null);
     if (!selectedStaff) {
-      setOpeningManagementAccess({ kind: 'manager-only' });
+      // Home login accepts a personal administrator password or the existing
+      // manager gate, never logs the cashier out or weakens role checks.
+      setOpeningManagementAccess(null);
     } else if (selectedStaff.role === 'administrator') {
       setOpeningManagementAccess({ kind: 'selected-administrator', administrator: selectedStaff });
     } else {
