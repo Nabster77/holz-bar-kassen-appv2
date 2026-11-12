@@ -155,7 +155,7 @@ export async function configureJournalExportFolder(): Promise<{ mode: 'folder' |
     for (const segment of backupDirectorySegments(configuredAt, 'Backup2')) {
       archive = await archive.getDirectoryHandle(segment, { create: true });
     }
-    let reports = await selected.getDirectoryHandle(archiveRootName(configuredAt), { create: true });
+    const reports = await selected.getDirectoryHandle(archiveRootName(configuredAt), { create: true });
     await reports.getDirectoryHandle(String(new Date(configuredAt).getFullYear()), { create: true });
     await rememberExportFolder(selected);
     return { mode: 'folder', folderName: `${selected.name}/${archiveRootName(configuredAt)}` };
