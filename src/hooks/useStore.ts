@@ -14,12 +14,13 @@ function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function migrateProduct(p: any): Product {
+function migrateProduct(p: Product & { taxRate?: number }): Product {
   if (p.taxClass) return p as Product;
   // Legacy product with taxRate: 0|7|19
   const cls: TaxClass = p.taxRate === 7 ? 'reduced' : p.taxRate === 0 ? 'zero' : 'standard';
-  const { taxRate, ...rest } = p;
-  return { ...rest, taxClass: cls } as Product;
+  const rest = { ...p };
+  delete rest.taxRate;
+  return { ...rest, taxClass: cls };
 }
 
 export function useStore() {
