@@ -26,7 +26,7 @@
     "test:backup-checkpoint": "node --import tsx scripts/check-backup-checkpoint.mjs",
     "test:final-close-ack": "node --import tsx scripts/check-final-close-verification.mjs",
     "test:pdf-local-only": "node --experimental-strip-types scripts/check-local-pdf-policy.mjs",
-    "test:daily-close-frozen": "node --import tsx scripts/check-frozen-daily-close-report.mjs"
+    "test:daily-close-frozen": "tsx --tsconfig tsconfig.app.json scripts/check-frozen-daily-close-report.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
