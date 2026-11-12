@@ -6,6 +6,7 @@ const session = { id:'s-1', location:'Friedrichshafen', openedAt:start, closed:f
 const receipts = Array.from({length:7},(_,i)=>({
   id:`r-${i}`,location:'Friedrichshafen',timestamp:start+1000+i,
   paymentMethod:i===6?'card':'cash',total:i===0?-2:10+i,
+  subtotal:i===0?-2:10+i,totalPfand:0,totalNet:i===0?-2:10+i,totalTax:0,taxByRate:{},items:[{productId:'artikel-'+i,quantity:1}],
 }));
 function args(receipt=receipts[5],override={}) {
   return {receipt,session,previousStornos:[],allTransactions:receipts,reason:'Kunde hat Auftrag widerrufen',
@@ -21,6 +22,10 @@ const depositReturn=prepareStorno(args(receipts[0],{allTransactions:[receipts[0]
 assert.equal(effectiveSales(receipts,[cash]).length,6);
 assert.equal(effectiveSales(receipts,[cash]).some(x=>x.id==='r-5'),false);
 assert.equal(receipts.length,7);
+assert.equal(cash.originalSnapshot.id,'r-5');
+receipts[5].items[0].quantity=3;
+assert.equal(cash.originalSnapshot.items[0].quantity,1,'Storno-Snapshot muss die Originalpositionen einfrieren');
+assert.throws(()=>prepareStorno(args({...receipts[5],items:undefined})),/Originalbeleg unvollständig/);
 assert.throws(()=>prepareStorno(args(receipts[5],{previousStornos:[cash]})),/letzten fünf|bereits storniert/);
 assert.throws(()=>prepareStorno(args(receipts[0])),/letzten fünf/);
 assert.throws(()=>prepareStorno(args(receipts[5],{reason:'  '})),/Stornobegründung/);
