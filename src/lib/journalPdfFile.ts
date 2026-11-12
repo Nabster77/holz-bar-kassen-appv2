@@ -4,7 +4,7 @@ import { buildJournalHTML, type JournalReportData } from '@/lib/journalPdf';
 import { getWeekNumber } from '@/lib/format';
 import type { Location } from '@/types';
 import { colorNegativeMoney } from '@/lib/movementStyle';
-import { archiveSubfolders, safeArchiveFileName } from '@/lib/archivePaths';
+import { archiveSubfolders, batchArchiveLocation, safeArchiveFileName } from '@/lib/archivePaths';
 import { readDeviceSetup } from '@/lib/deviceSetup';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -493,11 +493,8 @@ export async function exportJournalPdf(data: JournalReportData): Promise<void> {
 export async function exportJournalPdfBatch(reports: JournalReportData[], fileName: string): Promise<void> {
   if (reports.length === 0) return;
   const blob = await renderPdfHtml(buildJournalBatchHTML(reports));
-  const locations = new Set(reports.map((report) => report.location));
-  // A selected "all sites" batch belongs under Alle-Standorte, even when it
-  // happens to contain only one site. Never file it under the first report.
-  const location = fileName.includes('Alle-Standorte') || locations.size > 1
-    ? 'Alle Standorte' : reports[0].location;
+  // The location filter and every report determine the actual target folder.
+  const location = batchArchiveLocation(reports.map((report) => report.location), fileName);
   const archiveData = { ...reports[0], location, fileName };
   await saveManualPdfToConfiguredArchive(archiveData, blob);
 }
