@@ -15,3 +15,14 @@
     touch-action: manipulation;
   }
 }
+
+@keyframes woodmo-status-glow {
+  0%, 100% { box-shadow: 0 0 7px rgba(16,185,129,.28); }
+  50% { box-shadow: 0 0 17px rgba(16,185,129,.55); }
+}
+.woodmo-brand-ok { animation: woodmo-status-glow 3.3s ease-in-out infinite; }
+.woodmo-brand-error { box-shadow: 0 0 13px rgba(239,68,68,.55); }
+.woodmo-brand-pending { box-shadow: 0 0 10px rgba(245,158,11,.4); }
+@media (prefers-reduced-motion: reduce) {
+  .woodmo-brand-ok { animation: none; box-shadow: 0 0 9px rgba(16,185,129,.35); }
+}
