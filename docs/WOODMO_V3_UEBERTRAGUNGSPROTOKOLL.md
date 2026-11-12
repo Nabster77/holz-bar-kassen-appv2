@@ -103,3 +103,28 @@ Diese **heutigen Schreibzugriffe** zeigen, dass die Datenbank aktiv benutzt wurd
 - **Istbefund `Test-Holz-Bar-Kasse`:** 53 aktive Produkte, 5 Kategorien, 2 aktive Einstellungen sowie 196 Storage-Objekte; die letzten Katalogänderungen datieren auf 2026-11-10. Das ist die bisher beste belegte Stammdatenquelle.
 - Die GitHub-Pages-V2-Deployment-Pipeline verwendet `vars.VITE_SUPABASE_URL` und `secrets.VITE_SUPABASE_ANON_KEY`; diese Werte sind **nicht** in den lesbaren Quelltexten hinterlegt. Der aktuell verwendete V2-Endpunkt muss vor Projektumwidmung zweifelsfrei identifiziert werden. Zwei Auth-Benutzer im unbenutzten Schema sind ein zusätzlicher Grund zur Vorsicht.
 - **Aktiv keine Buchungen löschen und keine bestehende Datenbank umbenennen, reinitialisieren oder als Ziel beschreiben.** Erst nach Zielbestätigung Schema-/Auth-Einrichtung und gesicherter Katalogimport.
+
+## Nachtrag 2026-11-12 – TATSÄCHLICHE V3-Zielmigration (MIG-001 bis MIG-009)
+
+**Achtung: Die früheren Vorprüfungen oben dokumentierten einen damals noch nicht migrierten Zustand. Dieser Nachtrag ist der neue maßgebliche Status.**
+
+- **Ziel**: Supabase `Holz-Bar-Kasse` / `tulndunkpsynkbbebenf`, vom Nutzer zur V3-Grundeinrichtung freigegeben. 2 bestehende Supabase-Auth-Identitäten wurden weder gelöscht noch geändert. Identisches Login (E-Mail-Fingerprint) von Quell-Administrator im Ziel bestätigt; Ziel-Auth-UUID ist unterschiedlich. Keine Anmeldedaten im GitHub-Protokoll.
+- **Quelle**: `Test-Holz-Bar-Kasse` / `fsztsmnxbffanyfbytnr` mit aktiv genutzter V2. Ausschließlich SELECT-Abfragen, keine Quell-Datenänderung.
+- **MIG-001**: 10 historische SQL-Migrationen zu Bildbucket, Buchungen, Kassen und Zugriffskontrolle als `woodmo_v3_base_schema_and_acl` erfolgreich auf leeres Ziel angewendet. Hardcodierte V2-Auth-UUID in Ziel-ACL auf bereits vorhandenes V3-Admin-Konto umgesetzt.
+- **MIG-002**: 8 Migrationen zu Admin-Zugang, Katalog-Sync, Reset und Generationsschutz als `woodmo_v3_catalog_reset_and_admin_acl` erfolgreich.
+- **MIG-003**: 6 Migrationen zu Mitarbeitern, Sicherheitsfragen und Tagesabschlussbelegen als `woodmo_v3_staff_and_close_receipts` erfolgreich.
+- **MIG-004**: 5 Migrationen zu Datenwiederherstellung, Löschung von Mitarbeiter-Anmeldedaten, leeren Sitzungen und Katalogimport als `woodmo_v3_backup_staff_and_catalog_import` erfolgreich. Historische explizite BEGIN/COMMIT-Marker entfernt, da die Migration als einzelne Transaktion angewendet wurde.
+- **MIG-005**: Erste Übernahme versuchte auch einen bestehenden Verwaltungspasswort-Eintrag zu übernehmen; **UNIQUE-Konflikt**, PostgreSQL hat die komplette Datenübernahme transaktional zurückgerollt. Prüfwerte unmittelbar danach: 0 Katalog, 0 Mitarbeiter, 0 Sicherheitsfragen, 1 vorhandener Verwaltungspasswort-Eintrag, 0 Buchungen. **Kein Teilimport**.
+- **MIG-006**: Wiederholung ohne Überschreiben des bestehenden Verwaltungspasswort-Eintrags als `woodmo_v3_import_catalog_staff_security` **erfolgreich**. 77 Katalogzeilen inkl. 53 aktiver Produkte, 5 aktiver Kategorien, 2 aktiver Einstellungen und Löschmarkierungen; 33 Mitarbeiterzeilen (3 aktiv), 3 getrennte Sicherheitsfragen/Prüfwerte.
+- **MIG-007: 1:1-Hashvergleich** der kompletten Tabellen inklusive Metadaten/Soft-Deletes erfolgreich:
+  - `pos_catalog_items`: 77/77, MD5 `0366d8ad2c4940f468dbab20f312ac8e`
+  - `pos_staff_users`: 33/33, MD5 `3ef8916762553654e2fb6da66463e12f`
+  - `pos_staff_security`: 3/3, MD5 `4098f6c8fed191d7461584a94f727ad7`
+  - **V3-Buchungen 0 und V3-Kassensitzungen 0** (Quelle 17 Buchungen und 13 Kassensitzungen zum Prüftermin). Keine alten Beleg-/Buchungsdaten übernommen. MD5 ist ein pragmatischer Vergleich, kein kryptografischer Herkunftsnachweis.
+- **MIG-008**: Temporäre, JWT-geschützte Supabase-Edge-Funktion für Bildtransfer bereitgestellt, aber der automatische Auslöser wurde durch eine Sicherheitsprüfung blockiert; **kein Bildtransfer erfolgt**. Unmittelbar danach als harmlose, nur HTTP 410 liefernde Funktion **Version 2 deaktiviert**. `pg_net` in V3 installiert, aber nicht verwendet. Keine Quelländerung. V3-Storage-Bucket vorhanden, zunächst 0 Dateien.
+- **MIG-009**: Bild-Upload-Berechtigung in V3 auf authentifiziertes Admin-Konto beschränkt; öffentlicher Lesezugriff für Produktbilder bleibt. Zusätzlich RLS und Entzug direkter Clientrechte für `pos_daily_close_receipt_counters` aktiviert (intern ausschließlich via geschützte RPC).
+- **Bilder**: In V2 sind **53 eindeutige, vorhandene und typgeprüfte Produktdateien** (PNG/JPG/WebP), V3-Artikel referenzieren bis zur echten Dateiübertragung noch V2-Bild-URLs. Ein lokal ausführbares Windows-Paket `WOODMO_V3_53_Bilder_Transferpaket.zip` mit 53-Datei-Manifest, Download, Sicherungs-ZIP, Upload per bestehendem Supabase-Admin-Login und SHA-256-Vergleich wurde erstellt; es wurde **noch nicht am Windows-Rechner ausgeführt**.
+- **Nächster notwendiger Schritt des Nutzers**: ZIP entpacken, `WOODMO_V3_53_Bilder_STARTEN.cmd` starten und Passwort des bestehenden Supabase-Kontos `admin@kasse.local` **nur lokal** eingeben. Danach Erfolgsanzeige 53/53 oder Fehlermeldung (keine Zugangsdaten) mitteilen.
+- **Danach durch Assistent**: Zielstorage prüfen, ausschließlich im V3-Ziel die vorbereitete, durch 53-Datei-Vollständigkeit abgesicherte `docs/sql/WOODMO_V3_BILDURL_UMSTELLUNG_NACH_TRANSFER.sql` anwenden, anschließend 53/53 neue Bildadressen und Buchungsleere erneut prüfen, V3-App-Code/Ziel-URL/Browser testen.
+
+**Nicht erledigt**: Vollständige Bildkopie, reale Android/PC-Abnahme, finaler V3-GitHub-Quellcode-Upload, getrennte V3-Webveröffentlichung. Bitte diese Schritte niemals als abgeschlossen darstellen.
