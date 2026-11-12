@@ -156,3 +156,16 @@ Der Nutzer hat die Umsetzung der vereinbarten V3-Anforderungen schrittweise auto
 **Bereits im Code enthalten, derzeit nicht dupliziert:** manuelle PDF-Archivordnerwahl und IndexDB-Speicherung, Jahres-/Standort-/Berichtsordner, Backup-Konfliktfilter. Die Erststart-Setup-Oberfläche, Storno-UI, automatische Cloud-PDF-Archivierung und sichere Ordner-/BAT-Routinen sind weiterhin offen.
 
 **Nächster Entwicklungsschritt:** isolierte Prüfung des append-only Storno-Schemas, atomarer Storno-RPC, anschließend Integration der Storno-Gegenbewegungen in alle Report- und Tagesabschlussrechner sowie PDF. Erst danach Geräte-Setup und gestaltende Feinschliffe.
+
+
+## Nachtrag 2026-11-12 – erneuter Abgleich der Fünfer-Stornoregel
+
+**Verbindlich geklärt:** Die temporäre Begrenzung betrifft ausschließlich die Storno-**Auswahl** in der aktuell offenen Kassensitzung. Die Originalbuchungen sind **ab Entstehung** dauerhaft gespeichert. Es gibt keine Begrenzung der buchbaren Verkaufsvorgänge oder der im Tagesabschluss aufbewahrten Belege auf fünf.
+
+**Behobener Logikfehler:** Die frühere Kandidatenfunktion schloss bereits stornierte Belege aus, *bevor* sie auf fünf begrenzte; dadurch konnte ein älterer Bon nachrücken. Jetzt in `src/lib/stornoRules.ts`: Zuerst `lastFiveCashReceipts` (genau die fünf neuesten, einschließlich stornierter), danach `lastFiveStornoCandidates` (bereits stornierte unzulässig, **kein Nachrücken**). Ab geschlossener/finalisierter Sitzung liefert die Auswahl keine Kandidaten.
+
+**Abschluss:** `prepareFinalCloseStornoSnapshot` validiert und kopiert **alle** Originalsätze sowie die mit Sitzung und Original verknüpften Stornonachweise. `CashSession.dailyCloseSnapshot` besitzt dazu ein optionales `stornos`-Feld. Tests mit 1001 bzw. 1007 Originalen prüfen Erhaltung, ältere Stornos, Doppelstorno-Sperre und Unveränderlichkeit. Isolierte Tests des Storno-Journals, inklusive periodenrichtiger Gegenbuchungen, bestanden. `npm test` ist auch um `test:storno-ledger` ergänzt.
+
+**Wichtige Grenze:** Diese geprüften Hilfsfunktionen sind *noch nicht* als vollständiger Storno-Bedienablauf aktiviert oder mit einer geschützten, atomaren Server-RPC verbunden. Der bestehende Live-Tagesabschluss speichert bereits sämtliche Originalsätze, jedoch noch keine Stornos, da derzeit kein produktiver Storno-Speicher angebunden ist. Eine Freigabe wird erst nach Einbindung in Cloud, Tagesabschluss, Bericht/PDF und Backup mit Ende-zu-Ende-Tests erfolgen.
+
+**Freigabestatus unverändert:** Kein Start des lokalen Praxistestservers, keine produktive Veröffentlichung, keine destruktive Datenbankänderung.
