@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Download, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { configureJournalExportFolder } from '@/lib/journalPdfFile';
 import { readDeviceSetup, saveDeviceSetup } from '@/lib/deviceSetup';
+import { readBackupCheckpoint } from '@/lib/backupCheckpoint';
 
 interface Props {
   onComplete: () => void;
@@ -12,6 +13,8 @@ export function DeviceSetupDialog({ onComplete, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previous = readDeviceSetup();
+  const last = readBackupCheckpoint();
+  const when = (time: number | null) => time ? new Date(time).toLocaleString('de-DE') : 'Noch nicht bestätigt';
 
   async function chooseFolder() {
     if (busy) return;
@@ -54,12 +57,18 @@ export function DeviceSetupDialog({ onComplete, onCancel }: Props) {
         </div>
         <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
           Wo möchtest du Journale und Tagesabschlüsse lokal speichern?
-          Wir sortieren die Dokumente nach <strong>Jahr, Standort und Berichtsart</strong>.
+          Wir legen im gewählten Ort automatisch <strong>Kasse 26</strong> und darunter die Berichte nach Jahr, Standort und Berichtsart sowie die Ordner <strong>Sicherung/Backup1</strong> und <strong>Sicherung/Backup2</strong> an. Auf Tablets ohne Ordnerfreigabe wird der Download- oder Teilen-Dialog verwendet.
           Bereits angelegte Dokumentenordner bleiben auch nach einem Buchungs-Reset bestehen.
         </p>
         {previous?.folderLabel && <p className="rounded-lg bg-slate-100 p-2 text-sm dark:bg-slate-800">
           Bisheriger Ordner: <strong>{previous.folderLabel}</strong>
         </p>}
+        <div className="rounded-xl border border-slate-200 p-3 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-300">
+          <p className="mb-1 font-semibold">Letzte bestätigte Abgleiche auf diesem Gerät</p>
+          <p>Tablet ↔ Cloud: <strong>{when(last.cloudSyncedAt)}</strong></p>
+          <p>Backup 1: <strong>{when(last.backup1SyncedAt)}</strong></p>
+          <p>Backup 2: <strong>{when(last.backup2SyncedAt)}</strong></p>
+        </div>
         <div className="space-y-2">
           <button type="button" onClick={() => void chooseFolder()} disabled={busy}
             className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
