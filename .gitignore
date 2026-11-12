@@ -3,6 +3,8 @@ dist/
 .npm-cache/
 .bolt/
 .env
+.env.local
+.env.*.local
 vite.config.js.timestamp-*.mjs
 vite.config.mjs.timestamp-*.mjs
 vite.config.cjs.timestamp-*.mjs
