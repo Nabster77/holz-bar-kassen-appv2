@@ -81,7 +81,11 @@ assert.deepEqual((await loadArchivedBackup(parent,configuredAt,'Backup2')).data.
   changed.data.transactions);
 
 const b1dir=root.folders.get('Backup1');
-const file=b1dir.files.keys().find(x=>x.startsWith('transactions-')&&x.endsWith('.json'));
+// Mutate the shard named by the CURRENT manifest, not an older preserved
+// version. Old immutable shards are intentionally kept for recovery.
+const pointer=JSON.parse(b1dir.files.get('current.json'));
+const manifest=JSON.parse(b1dir.files.get(pointer.manifestFile));
+const file=`transactions-${manifest.sections.transactions}.json`;
 b1dir.files.set(file,'CORRUPTED');
 await assert.rejects(loadArchivedBackup(parent,configuredAt,'Backup1'),/beschädigt|Revision/);
 console.log('BACKUP-ARCHIV: Kasse26, Vollsicherung, unveränderte Abschnitte, inkrementelles Backup2, Mitarbeiter-Gate und Integrität OK.');
