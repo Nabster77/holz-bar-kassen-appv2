@@ -1,0 +1,34 @@
+name: WOODMO V3 - Codequalitaet (keine Veroeffentlichung)
+
+on:
+  push:
+    branches:
+      - woodmo-v3.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruefen:
+    name: TypeScript, Tests, Build, ESLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Quellcode lesen
+        uses: actions/checkout@v4
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhaengigkeiten
+        run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Kassen- und Sicherheitstests
+        run: npm test
+      - name: Produktions-Build pruefen (ohne Deployment)
+        run: npm run build
+      - name: ESLint
+        run: npm run lint
