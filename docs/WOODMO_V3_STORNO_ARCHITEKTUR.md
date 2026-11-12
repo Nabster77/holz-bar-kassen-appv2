@@ -55,3 +55,22 @@ Diese Prüfung ersetzt **keine** umfassende steuerrechtliche Abnahme des elektro
 In V3 existieren für Mitarbeiterverwaltung bislang Funktionen zum Anlegen/Ändern und für Sicherheitsfragen, **aber keine RPC zur persönlichen serverseitigen Bestätigung einer Stornierung**. Die gemeinsame Supabase-Cloud-Anmeldung identifiziert daher noch nicht den jeweils stornierenden Mitarbeiter. Eine Server-RPC, die bloß `employee_id` aus einem Browserparameter übernimmt, ist **nicht ausreichend**. Vor Freischaltung ist ein tragfähiger individueller Berechtigungsnachweis erforderlich. Bis dahin bleibt die Storno-Schreibfunktion deaktiviert; keine direkten INSERT-Rechte für normale Browserclients.
 
 Die reine Journalprojektion `salesLedgerMovements` führt `employeeName`, `employeeId` und `reason` auf Storno-Gegenbewegungen mit, damit die Informationen im künftigen Bericht/PDF nicht verloren gehen. Die Ergebnisse werden unter `scripts/check-storno-ledger.mjs` geprüft und über `npm test` ausgeführt.
+
+## Fortsetzung: sichere Cloud-Schicht und Sitzungsbindung (2026-11-12)
+
+Bereits im **V3-Entwicklungsbranch** umgesetzt, aber absichtlich **noch nicht in der Produktiv-App aktiviert**:
+
+- `Transaction.cashSessionId` verbindet neue Verkaufsbons dauerhaft mit der geöffneten Kassensitzung. Bei alten Bons ohne Kennung bleibt die bisherige Zeit-/Standort-Zuordnung lesbar.
+- `sessionTransactions`, `DailyCloseDialog` und die abschließende Beleg-Fixierung in `App.tsx` nutzen diese Zuordnung. Die Storno-Fünferauswahl und der vollständige Storno-Abschlusssnapshot ebenso.
+- `supabase/functions/woodmo-v3-storno/passwordProof.ts` prüft den bisherigen PBKDF2-SHA256-Nachweis (210.000 Iterationen) auf dem Server anhand des persönlich eingegebenen Mitarbeiterpassworts; keine Neuanlage von Benutzerpasswörtern erforderlich.
+- `supabase/functions/woodmo-v3-storno/index.ts` ist als Edge-Dienst vorbereitet: Supabase-Auth-Token validieren, Mitarbeiterstatus/Passwort kontrollieren und erst anschließend eine geschützte Datenbank-RPC aufrufen. Noch **nicht deployed**.
+- `src/lib/stornoCloud.ts` implementiert den rein online vorgesehenen Aufruf mit **stabiler Storno-ID für idempotente Wiederholungen**. Stornos dürfen nicht in eine ungeprüfte Offline-Queue gelangen.
+- `src/lib/stornoCodec.ts` validiert gespeicherte Cloud-Stornoeinträge einschließlich Belegidentität, Zahlungsart, Cent-Gegenbuchung und historischer Originaldaten.
+- `docs/sql/WOODMO_V3_STORNO_SCHEMA_ENTWURF_NICHT_AUSFUEHREN.sql` enthält ein **nicht angewendetes** Append-only-Schema und eine service-role-beschränkte RPC mit Kassensitzungs-, Fünfer-, Generation-, Doppelstorno- und Kassenstandsprüfungen. **Sie liegt bewusst außerhalb `supabase/migrations`.**
+- `scripts/check-storno-sql-staging.mjs` blockiert künftige CI-Checks, falls ein Storno-SQL-Entwurf vor Freigabe als ausführbare Migration abgelegt wird.
+
+**Ausgeführte isolierte Node-/TypeScript-Tests:** PBKDF2-Mitarbeiternachweis, Cloud-Belegdecoder (inkl. Bar/Karte/Pfandretoure), Storno-Regelbasis, Journal-Zeitraumrechnung, Sitzungstrennung und Abschlusssnapshot mit mehr als 1.000 Buchungen bestanden. Diese Nachweise **ersetzen keinen** vollständigen App-Produktionsbuild oder einen atomaren Datenbank-Parallellauftest.
+
+**Zusätzlich bestätigtes Sicherheitsrisiko in der derzeitigen Architektur:** Der gemeinsame Supabase-Cloud-Login `admin@kasse.local` darf gemäß den bestehenden RLS-Regeln `pos_staff_users` direkt schreiben und `pos_transactions` direkt anlegen. Daher kann eine persönliche Passwortprüfung für neue Stornos zwar als Zusatzbarriere dienen, ist aber **keine vollständige Manipulationssicherheit** gegen jemanden mit dem gemeinsamen Cloud-Zugang. Vor einer fachlichen Produktivfreigabe sind serverseitige Mitarbeiterrechte und die bisherigen direkten Tabellen-Schreibwege gesondert abzusichern; die bestehenden App-Anmeldeabläufe dürfen dabei nicht zerstört werden.
+
+**Noch offene Abnahmepunkte:** Entwurf-RPC tatsächlich isoliert mit PostgreSQL und konkurrierenden Aufrufen testen; sichere persönliche Mitarbeiter-Autorisierung für Buchungsänderungen insgesamt; Stornobelege in Tagesabschluss/Journal/PDF/Backup-Ende-zu-Ende integrieren; Buchungs-Reset/Aufbewahrung regeln; vollständige Build-/Lint-/Regressionstests; erst dann Testserver und öffentliche Veröffentlichung nach Nutzerfreigabe.
