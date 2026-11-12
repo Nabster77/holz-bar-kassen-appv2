@@ -130,6 +130,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     transactions: filteredTx,
     categories,
     fileName: buildJournalFileName(period, start, end, locationFilter),
+    reportPeriodStart: start,
     exportedByName: currentStaff?.name,
     cashAuditRecords: cashAuditRecordsFromSessions(relevantSessions)
       .filter((record) => record.timestamp >= start && record.timestamp <= end),
