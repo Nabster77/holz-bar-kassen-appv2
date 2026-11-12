@@ -6,6 +6,7 @@ import type { Location } from '@/types';
 import { colorNegativeMoney } from '@/lib/movementStyle';
 import { archiveSubfolders, batchArchiveLocation, safeArchiveFileName } from '@/lib/archivePaths';
 import { readDeviceSetup } from '@/lib/deviceSetup';
+import { archiveRootName, backupDirectorySegments } from '@/lib/archiveRoot';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const ALL_LABEL = 'Alle-Standorte';
@@ -143,8 +144,21 @@ export async function configureJournalExportFolder(): Promise<{ mode: 'folder' |
   try {
     // Call picker directly from the button handler to preserve user activation.
     const selected = await picker({ id: 'holzbar-journal-exports', mode: 'readwrite', startIn: 'desktop' });
+    // Permission was explicitly granted by this click. The user selects only
+    // the parent folder; WOODMO creates Kasse 26 plus its backup folders.
+    const configuredAt = Date.now();
+    let archive = selected;
+    for (const segment of backupDirectorySegments(configuredAt, 'Backup1')) {
+      archive = await archive.getDirectoryHandle(segment, { create: true });
+    }
+    archive = selected;
+    for (const segment of backupDirectorySegments(configuredAt, 'Backup2')) {
+      archive = await archive.getDirectoryHandle(segment, { create: true });
+    }
+    let reports = await selected.getDirectoryHandle(archiveRootName(configuredAt), { create: true });
+    await reports.getDirectoryHandle(String(new Date(configuredAt).getFullYear()), { create: true });
     await rememberExportFolder(selected);
-    return { mode: 'folder', folderName: selected.name };
+    return { mode: 'folder', folderName: `${selected.name}/${archiveRootName(configuredAt)}` };
   } catch (error) {
     if (isAbortError(error)) return { mode: 'cancelled' };
     throw error;
@@ -154,7 +168,10 @@ export async function configureJournalExportFolder(): Promise<{ mode: 'folder' |
 async function saveIntoJournalFolder(folder: FileSystemDirectoryHandle, data: JournalReportData, blob: Blob): Promise<void> {
   // Do not use the current clock: a previous-year journal must be archived
   // under its actual business year, location and report category.
-  let target = folder;
+  // Stable installation root; report years remain nested underneath it.
+  // Changing the user's parent folder never erases previous archives.
+  const rootName = archiveRootName(readDeviceSetup()?.configuredAt ?? Date.now());
+  let target = await folder.getDirectoryHandle(rootName, { create: true });
   for (const segment of archiveSubfolders(data)) {
     target = await target.getDirectoryHandle(segment, { create: true });
   }
