@@ -1,0 +1,55 @@
+name: WOODMO V3 - Codepruefung ohne Deployment
+
+on:
+  push:
+    branches: [woodmo-v3.0]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: woodmo-v3-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: TypeScript, Tests, Produktions-Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Quellcode
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Installieren
+        run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Regressionstests
+        run: npm test
+      - name: Produktions-Build nur pruefen
+        run: npm run build
+      - name: Build-Protokollartefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: woodmo-v3-check-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  lint:
+    name: ESLint separat
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
