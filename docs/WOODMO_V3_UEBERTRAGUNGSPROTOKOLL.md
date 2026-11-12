@@ -128,3 +128,13 @@ Diese **heutigen Schreibzugriffe** zeigen, dass die Datenbank aktiv benutzt wurd
 - **Danach durch Assistent**: Zielstorage prüfen, ausschließlich im V3-Ziel die vorbereitete, durch 53-Datei-Vollständigkeit abgesicherte `docs/sql/WOODMO_V3_BILDURL_UMSTELLUNG_NACH_TRANSFER.sql` anwenden, anschließend 53/53 neue Bildadressen und Buchungsleere erneut prüfen, V3-App-Code/Ziel-URL/Browser testen.
 
 **Nicht erledigt**: Vollständige Bildkopie, reale Android/PC-Abnahme, finaler V3-GitHub-Quellcode-Upload, getrennte V3-Webveröffentlichung. Bitte diese Schritte niemals als abgeschlossen darstellen.
+
+## Nachtrag 2026-11-12 – 53/53 Bilder übertragen und V3-Bildadressen aktiv
+
+Der Benutzer bestätigte den erfolgreichen lokalen Windows-Transfer: **53/53 Bilddateien**, SHA-256 auf Quell- und Zielseite identisch. Lokales Quellbild-Archiv: `WOODMO_V3_Bilder_53_Sicherung_20261112_202444.zip`; lokales Prüfprotokoll: `Zielpruefung_SHA256.csv`. Diese Windows-Dateien wurden dem Assistenten nicht als Bytes hochgeladen; die Prüfsummenbestätigung beruht auf dem protokollierten Ergebnis des Benutzer-Skripts.
+
+Eine zwischenzeitlich ausstehende URL-Migration wurde über Supabase vor einem erneuten Schreibzugriff direkt geprüft: **53 aktive Produkt-URLs zeigen auf das V3-Projekt `tulndunkpsynkbbebenf` und 0 zeigen auf das ehemalige Quellprojekt**. Damit ist die Bildadressenumstellung bereits erfolgt. Keine erneute Migration nötig, um Doppeländerung zu vermeiden.
+
+Unabhängige Read-only-SQL-Prüfung im V3-Ziel: **53 aktive Produkte, 53 eindeutige Bildreferenzen, 53/53 dazu passende Storage-Objekte, 53 Storage-Dateien insgesamt; 5 aktive Kategorien, 2 aktive Einstellungen, 3 aktive Mitarbeiter, 0 Transaktionen, 0 Kassensitzungen**. Bereits früher: vollständiger Katalog und Mitarbeiter-Sicherheitstabellen übertragen. Der Benutzer hat die Berechtigung für die vereinbarten V3-Arbeiten nochmals ausdrücklich bestätigt. Plattformseitige Sicherheits- und Bestätigungsschritte bleiben einzuhalten.
+
+**Noch offen**: V3-GitHub-Anwendungscode final bereitstellen, V3-Seite eigenständig veröffentlichen, Funktionstests der App auf PC und Tablet, Prüfung Verwaltungspasswort/Benutzerzugang und Export/Import-Endabnahme.
