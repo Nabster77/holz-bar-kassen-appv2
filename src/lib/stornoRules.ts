@@ -40,7 +40,8 @@ function assertSessionIsOpen(session: CashSession, receipt: Transaction): void {
   if (session.closed || session.closedAt != null || session.dailyCloseFinalizedAt != null || session.dailyCloseSnapshot != null) {
     throw new StornoRuleError('Dieser Kassenabschluss ist endgültig oder die Sitzung geschlossen. Eine Korrekturbuchung in einem neuen Zeitraum ist erforderlich.');
   }
-  if (session.location !== receipt.location || receipt.timestamp < session.openedAt) {
+  if (session.location !== receipt.location || receipt.timestamp < session.openedAt ||
+      (receipt.cashSessionId && receipt.cashSessionId !== session.id)) {
     throw new StornoRuleError('Beleg und offene Kassensitzung passen nicht zusammen.');
   }
 }
@@ -59,7 +60,8 @@ export function lastFiveCashReceipts(
   if (session.closed || session.discarded || session.closedAt != null ||
       session.dailyCloseFinalizedAt != null || session.dailyCloseSnapshot != null) return [];
   return transactions
-    .filter((t) => t.location === session.location && t.timestamp >= session.openedAt)
+    .filter((t) => t.location === session.location && t.timestamp >= session.openedAt &&
+      (!t.cashSessionId || t.cashSessionId === session.id))
     .sort((a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id))
     .slice(0, 5);
 }
@@ -154,7 +156,8 @@ export function prepareFinalCloseStornoSnapshot(
     throw new StornoRuleError('Ein bereits abgeschlossener Kassenvorgang darf nicht erneut abgeschlossen werden.');
   }
   const sales = transactions.filter((t) => t.location === session.location &&
-    t.timestamp >= session.openedAt && t.timestamp <= finalizedAt);
+    t.timestamp >= session.openedAt && t.timestamp <= finalizedAt &&
+    (!t.cashSessionId || t.cashSessionId === session.id));
   const byId = new Map(sales.map((t) => [t.id, t]));
   if (byId.size !== sales.length) throw new StornoRuleError('Doppelte Originalbelege im Tagesabschluss.');
   const stornos = stornoRecords.filter((entry) => entry.cashSessionId === session.id);
