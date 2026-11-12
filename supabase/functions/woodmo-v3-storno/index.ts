@@ -124,17 +124,17 @@ Deno.serve(async (request) => {
 
   return reply(200, {
     id: storno.id,
-    originalTransactionId: storno.original_transaction_id,
-    cashSessionId: storno.cash_session_id,
+    original_transaction_id: storno.original_transaction_id,
+    cash_session_id: storno.cash_session_id,
     location: storno.location,
-    timestamp: Date.parse(storno.recorded_at),
+    recorded_at: storno.recorded_at,
     reason: storno.reason,
-    employeeId: storno.employee_id,
-    employeeName: storno.employee_name,
-    paymentMethod: storno.payment_method,
-    grossAmount: Number(storno.gross_amount_cents) / 100,
-    cashEffect: Number(storno.cash_effect_cents) / 100,
-    cardEffect: Number(storno.card_effect_cents) / 100,
-    originalSnapshot: storno.original_receipt_snapshot,
+    employee_id: storno.employee_id,
+    employee_name: storno.employee_name,
+    payment_method: storno.payment_method,
+    gross_amount_cents: storno.gross_amount_cents,
+    cash_effect_cents: storno.cash_effect_cents,
+    card_effect_cents: storno.card_effect_cents,
+    original_receipt_snapshot: storno.original_receipt_snapshot,
   });
 });
