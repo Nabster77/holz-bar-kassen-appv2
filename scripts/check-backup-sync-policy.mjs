@@ -13,7 +13,7 @@ const state={
   lastActivityAt:now-BACKUP_2_IDLE_MS-1,
 };
 const conditions={now,cloudOnline:true,testMode:false,staffSignedIn:false,
-  busy:false,hasPendingBookings:false,folderWritable:true};
+  busy:false,hasPendingBookings:false,folderWritable:true,allStaffSignedOutVerified:true};
 assert.deepEqual(backup1Eligibility(state,conditions,'r9'),{allowed:true});
 assert.deepEqual(backup1Eligibility(state,{...conditions,staffSignedIn:true},'r9'),{allowed:true},
   'Cloud -> Backup 1 may continue while cashier is logged in');
@@ -28,6 +28,8 @@ assert.deepEqual(backup1Eligibility({...state,backup1SyncedAt:now-1000},conditio
 assert.deepEqual(backup2Eligibility(state,conditions),{allowed:true});
 assert.deepEqual(backup2Eligibility(state,{...conditions,staffSignedIn:true}),
   {allowed:false,reason:'employee-signed-in'});
+assert.deepEqual(backup2Eligibility(state,{...conditions,allStaffSignedOutVerified:false}),
+  {allowed:false,reason:'presence-unverified'},'Other tablets must also be logged out');
 assert.deepEqual(backup2Eligibility({...state,lastActivityAt:now-BACKUP_2_IDLE_MS+1000},conditions),
   {allowed:false,reason:'not-idle'});
 assert.deepEqual(backup2Eligibility({...state,backup2Revision:'r8'},conditions),
