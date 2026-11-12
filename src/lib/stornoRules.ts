@@ -87,6 +87,9 @@ export function prepareStorno(input: StornoProposalInput): StornoRecord {
   if (!input.employeeId.trim() || !input.employeeName.trim() || !input.stornoId.trim()) {
     throw new StornoRuleError('Storno-ID und Mitarbeiter müssen eindeutig angegeben sein.');
   }
+  if (!Array.isArray(receipt.items) || !receipt.taxByRate || typeof receipt.taxByRate !== 'object') {
+    throw new StornoRuleError('Originalbeleg unvollständig: Artikel oder Steueraufteilung fehlen.');
+  }
   const gross = cents(receipt.total);
   const cashEffect = receipt.paymentMethod === 'cash' ? -gross : 0;
   const cardEffect = receipt.paymentMethod === 'card' ? -gross : 0;
