@@ -17,7 +17,9 @@ export function archiveSubfolders(report: ArchiveReport): string[] {
   const scope = report.location.trim().toLocaleLowerCase('de-DE');
   const location = scope.includes('alle') || scope.includes('beide')
     ? 'Alle-Standorte'
-    : scope.includes('bregenz') ? 'Bregenz' : 'Friedrichshafen';
+    : scope.includes('bregenz') ? 'Bregenz'
+      : scope.includes('friedrichshafen') ? 'Friedrichshafen' : null;
+  if (!location) throw new Error('Unbekannter Standort im PDF-Bericht.');
   const name = (report.documentTitle ?? '') + ' ' + report.fileName;
   const kind = /Tagesabschluss/i.test(name) ? 'Tagesabschluss'
     : /Wochenjournal/i.test(name) ? 'Wochenjournal'
