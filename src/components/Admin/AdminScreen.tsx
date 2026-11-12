@@ -12,7 +12,7 @@ import { DynamicIcon, availableIconNames } from '@/components/DynamicIcon';
 import { importFileToDataURL, isSupported, ACCEPTED_TYPES } from '@/lib/imageImport';
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
-import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, Wine, Recycle, MonitorDot, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
+import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, Wine, Recycle, MonitorDot, Settings, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
@@ -40,6 +40,7 @@ interface Props {
   onReorderProduct?: (id: string, direction: 'up' | 'down') => void;
   onMoveProductTo?: (sourceId: string, targetId: string) => void;
   onResetAllData?: () => Promise<void>;
+  onDeviceSetup?: () => void;
   testMode?: boolean;
   onToggleMode?: () => void;
   onExportBackup?: () => void | Promise<void>;
@@ -79,7 +80,7 @@ const COLOR_OPTIONS = [
 
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
-export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, onExportBackup, onImportBackup, ...props }: Props) {
+export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
   const [shotDraftDirty, setShotDraftDirty] = useState(false);
   const changeTab = (next: typeof tab) => {
@@ -133,6 +134,11 @@ export function AdminScreen({ onResetAllData, testMode = false, onToggleMode, on
           </button>
         </div>
         <div className="flex items-center gap-2">
+          {onDeviceSetup && (
+            <button type="button" onClick={onDeviceSetup} className="flex min-h-10 items-center gap-2 rounded-xl border border-emerald-400 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/30">
+              <Settings className="h-4 w-4" /> Setup / PDF-Ordner
+            </button>
+          )}
           {onToggleMode && (
             <button
               onClick={onToggleMode}
