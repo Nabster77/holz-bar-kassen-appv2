@@ -6,7 +6,8 @@ import { buildLocalEntries, PFAND_SETTING_ID, type CatalogRow, type CatalogEntry
 import { supabase } from '@/lib/supabaseClient';
 import { loadJSON, STORAGE_KEYS } from '@/lib/storage';
 import { fetchCloudData } from '@/lib/cloudPull';
-import { clearOutbox, enqueueEntries, flushOutbox, type OutboxEntry } from '@/lib/outbox';
+import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, type OutboxEntry } from '@/lib/outbox';
+import { recoverableTransactions, recoverableCashSessions } from '@/lib/recoveryGuards';
 import { DEFAULT_PFAND_SETTINGS } from '@/lib/seed';
 import { fetchAllStaffRows, pushStaffUser, type StaffRow } from '@/lib/staffDirectory';
 import type { CashSession, Category, Location, PfandSettings, Product, StaffUser, Transaction } from '@/types';
@@ -130,6 +131,13 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
     fetchCatalogRows(),
     fetchAllStaffRows(),
   ]);
+  // A backup restore must NOT delete unuploaded sales from this device.
+  // First flush valid pending entries, and discard only entries from a
+  // booking generation that the cloud has already reset.
+  await discardEntriesBeforeGeneration(reset?.generation ?? 0);
+  while (await flushOutbox()) {
+    // Wait for all previously queued entries before taking a cloud snapshot.
+  }
   const cloud = await fetchCloudData(null, reset?.generation ?? 0);
 
   const backupTransactions = list<Transaction>(backup.data.transactions);
@@ -164,16 +172,16 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
     return !cloudRow || user.updatedAt > cloudRow.updated_at;
   });
 
-  const cloudTransactionsById = new Map(cloud.transactions.map((transaction) => [transaction.id, transaction]));
-  const cloudSessionsById = new Map(cloud.cashSessions.map((session) => [session.id, session]));
-  const restorableTransactions = backupTransactions.filter((transaction) => {
-    const cloudTransaction = cloudTransactionsById.get(transaction.id);
-    return !cloudTransaction || transaction.timestamp > cloudTransaction.timestamp;
-  });
-  const restorableSessions = backupSessions.filter((session) => {
-    const cloudSession = cloudSessionsById.get(session.id);
-    return !cloudSession || (!cloudSession.closed && newestSessionTime(session) > newestSessionTime(cloudSession));
-  });
+  // Restoring an old archive after a booking reset must not resurrect sales
+  // deleted by that reset. Immutable cloud transactions always win.
+  const resetAt = reset?.resetAt ?? 0;
+  const canReplayBookings = backupTime > resetAt;
+  const restorableTransactions = canReplayBookings
+    ? recoverableTransactions(backupTransactions, cloud.transactions, resetAt)
+    : [];
+  const restorableSessions = canReplayBookings
+    ? recoverableCashSessions(backupSessions, cloud.cashSessions, resetAt, newestSessionTime)
+    : [];
 
   // Only records that are missing in the cloud or are newer in the backup are
   // written. Cloud-only records are never deleted by a restore.
@@ -215,7 +223,8 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
       row: { id: session.id, booking_generation: generation, location: session.location, date: session.date, data: session },
     })),
   ];
-  await clearOutbox();
+  // Pending local bookings were synchronized BEFORE this recovery snapshot.
+  // Never clear the outbox here: doing so can silently lose real sales.
   await enqueueEntries(bookingEntries);
   while (await flushOutbox()) {
     // Flush all queued backup rows before updating this browser's local data.
