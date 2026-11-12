@@ -13,8 +13,8 @@ Stand: 12.11.2026. Ersetzt alle früheren Forderungen, fertige PDF-Dateien autom
 
 ## 2. Auswahl des Speicherortes und fehlende Ordner
 
-- Der Benutzer wählt im Geräte-Setup nur einen übergeordneten **lokalen** Ordner. Die App legt bei ausreichender Browserberechtigung `Kasse 26 / 2026 / [Standort] / [Berichtsart]` sowie `Sicherung/Backup1` und `Sicherung/Backup2` an.
-- Vorhandene Ordner werden mit `getDirectoryHandle(name,{create:true})` **wiederverwendet**; sie werden nicht gelöscht, geleert oder dupliziert.
+- Der Benutzer wählt im Geräte-Setup nur einen übergeordneten **lokalen** Ordner. Die App legt bei ausreichender Browserberechtigung `Kasse 26 / [Standort] / [Monat] / [Berichtsart]` für 2026; ab 2027 `Kasse 27`, ab 2028 `Kasse 28` usw., jeweils mit `Sicherung/Backup1` und `Sicherung/Backup2` an.
+- Vorhandene Ordner werden mit `getDirectoryHandle(name,{create:true})` **wiederverwendet**; sie werden nicht gelöscht, geleert oder dupliziert. Die Grundstruktur für Standorte und Backup 1/2 wird beim nächsten Zugriff im neuen Jahr angelegt; Monat und Berichtsart werden nur bei Bedarf ergänzt. Historische Berichte bleiben stets im ursprünglichen Berichtsjahr und -monat.
 - Fehlt die Freigabe, ist der Pfad nicht erreichbar oder ist er nicht beschreibbar, darf das Programm **nicht kommentarlos auf einen anderen Ordner ausweichen**.
 - Stattdessen: sichtbarer Warnhinweis im Geräte-Setup, Auswahl korrigieren. Nach der Korrektur kann der Bericht aus Cloud-Daten erneut erzeugt werden.
 - Auf Android/Browsern ohne dauerhaften Ordnerzugriff ist der Nutzer explizit auf den lokalen Download-/Teilen-Dialog angewiesen. Automatisches geräteübergreifendes Filesystem-Schreiben ist nicht möglich.
@@ -22,7 +22,7 @@ Stand: 12.11.2026. Ersetzt alle früheren Forderungen, fertige PDF-Dateien autom
 ## 3. Gleichnamige PDF-Dateien
 
 - Ein erneut erzeugtes, normales Journal-PDF kann das alte, erneut erzeugbare PDF im ausgewählten lokalen Archivordner aktualisieren.
-- **Endgültige Tagesabschluss-PDFs sind historische Belege:** Eine Datei mit identischer Belegnummer darf **nicht unbemerkt durch abweichende Zahlen ersetzt** werden. Originaldaten in Supabase und ihre Abschlussnummer sind unveränderlich. Bei abweichenden Versionen ist ein ausdrücklicher Konflikthinweis beziehungsweise eine neue, als Neuausgabe gekennzeichnete Kopie erforderlich, nicht eine unkontrollierte Änderung des Originals.
+- **Endgültige Tagesabschluss-PDFs sind historische Belege:** Byte-identische Dateien werden nicht erneut geschrieben; abweichender PDF-Inhalt erzeugt einen ausdrücklich sichtbaren Konflikt und wird nicht überschrieben. Eine getrennt gekennzeichnete Neuausgabe benötigt einen eigenen Dateinamen. Originaldaten in Supabase und ihre Abschlussnummer sind unveränderlich. Bei abweichenden Versionen ist ein ausdrücklicher Konflikthinweis beziehungsweise eine neue, als Neuausgabe gekennzeichnete Kopie erforderlich, nicht eine unkontrollierte Änderung des Originals.
 - Die Tatsache, dass eine neue PDF-Datei heute erzeugt wurde, macht ihre Buchungsdaten nicht automatisch „neuer“ als die korrekten Daten der ursprünglichen Abschlussnummer. Ein echter Versionsvergleich der Geschäftsquellen ist nötig.
 
 ## 4. Aktuelle Umsetzung und Restrisiken
