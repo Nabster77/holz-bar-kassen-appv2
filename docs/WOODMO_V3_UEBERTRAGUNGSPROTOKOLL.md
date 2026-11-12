@@ -64,3 +64,18 @@ Fingerprint ist ausschließlich ein pragmatischer Änderungsindikator, kein Kryp
 5. Neu-Buchungen, Tagesabschluss, Pfand, Login, Synchronisierung, PWA und PC/Tablet testen; danach Produktivfreigabe.
 
 **Weder V2-Produktivdaten noch Testdaten wurden bei dieser Vorprüfung mutiert.**
+
+## Nachtrag 2026-11-12 – Vertiefte Prüfung (PRE-008 bis PRE-013)
+
+| ID | Prüfschritt | Ergebnis | Schreibzugriff |
+|---|---|---|---|
+| PRE-008 | Aktive Artikel gegen Storage-Dateireferenzen prüfen | 53/53 referenzierte Dateien im Bucket `article-images` gefunden; Bildbytes selbst noch nicht verglichen | Nein |
+| PRE-009 | Standortpreise prüfen | Für 53/53 Artikel sind `prices.Bregenz` und `prices.Friedrichshafen` vorhanden; keine fehlenden Kategorien oder Steuerklassen | Nein |
+| PRE-010 | Postgres Policies/privilegierte Funktionen prüfen | RLS aktiv; Policy-Zugriffe in wesentlichen Tabellen an konkrete Auth-UID gebunden. Beim Klonen muss die neue Auth-UID konfiguriert werden | Nein |
+| PRE-011 | Supabase Security Advisor | Warnung: `public.rls_auto_enable()` als `SECURITY DEFINER` für `anon` aufrufbar; weitere Hinweise zu `authenticated`-RPCs. Sicherheit vor Produktionsfreigabe untersuchen, **keine blinde Änderung** | Nein |
+| PRE-012 | V2-Projekt-Abfrage & Wiederherstellungsversuch | Plattform meldete Projekt zuvor als `hibernated` und später `ACTIVE_HEALTHY`; Restore-Aufruf meldet „nicht länger pausiert“, SQL-Zugriff bleibt wegen Timeout nicht möglich | Keine bestätigte Datenänderung; Restore angestoßen/abgewiesen |
+| PRE-013 | Kombiniertes ZIP lokal prüfen | Build in isolierter Prüfumgebung blockiert: npm-Registry nicht erreichbar (`EAI_AGAIN`); erfolgreiche Windows-Builds beziehen sich auf früheren Stand | Nein |
+
+**Sperren:** V2-Quelle nicht auslesbar, Datenbankisolation V3 ungeklärt, kein vollständiger Code-Build des letzten Gesamtstands, Bildbytes nicht geprüft, reale PC-/Tablet-Synchronisierung nicht geprüft. Datenmigration/Reset/Produktivschaltung bleiben untersagt.
+
+**Sicherheitshinweis:** [Supabase RLS-/RPC-Sicherheitswarnungen](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable). Ein Warnhinweis ist noch kein Nachweis einer ausnutzbaren Schwachstelle; Rechte und Funktionskörper müssen vor einem Eingriff geprüft werden.
