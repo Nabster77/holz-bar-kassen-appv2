@@ -14,8 +14,8 @@ import { JournalPreviewDialog } from '@/components/Journal/JournalPreviewDialog'
 import { calculateYearlyPfandOverview, type JournalReportData } from '@/lib/journalPdf';
 import { mergeTaxByRate, getTaxByRate, isTaxFreeItem, isReducedRate, sortedRateKeys } from '@/lib/tax';
 import {
-  Calendar, TrendingUp, Clock, Receipt, ChevronDown, ChevronUp,
-  Filter, List, LayoutGrid, Package, Tag, Euro, Trophy, MapPin,
+  TrendingUp, Clock, Receipt, ChevronDown, ChevronUp,
+  Filter, Package, Tag, Euro, Trophy, MapPin,
   Recycle, Banknote, CreditCard, Printer, FileDown, ClipboardCheck, CheckSquare, Square, Eye,
 } from 'lucide-react';
 
@@ -166,7 +166,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   const closeReport = (session: CashSession) => closedSessionReport(session, transactions, categories, currentStaff?.name);
   const selectedCloseReports = visibleDailyCloses.filter((session) => selectedCloseIds.has(session.id)).map(closeReport);
   const toggleClose = (id: string) => setSelectedCloseIds((current) => {
-    const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next;
+    const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
   });
   const toggleAllCloses = () => setSelectedCloseIds((current) => {
     const allVisibleSelected = visibleDailyCloses.length > 0 && visibleDailyCloses.every((session) => current.has(session.id));
