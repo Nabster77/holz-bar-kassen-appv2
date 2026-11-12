@@ -7,6 +7,7 @@ import { mergeTaxByRate, sortedRateKeys } from '@/lib/tax';
 import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
 import { renderPdfHtml } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type YearlyPfandOverview } from '@/lib/journalPdf';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import type { CashSession, StaffActivity, StaffLoginInterval, StaffUser, Transaction } from '@/types';
 
 const DENOMINATIONS: { label: string; value: number }[] = [
@@ -100,9 +101,8 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
   const [expandedMovementGroups, setExpandedMovementGroups] = useState<Partial<Record<MovementKind, boolean>>>({});
 
   const sessionTx = useMemo(
-    () => transactions.filter((t) => t.location === session.location && t.timestamp >= session.openedAt &&
-      (!session.closedAt || t.timestamp <= session.closedAt)),
-    [transactions, session.openedAt, session.closedAt, session.location],
+    () => sessionTransactions(transactions, session),
+    [transactions, session],
   );
   const yearlyPfandOverview = useMemo(
     () => calculateYearlyPfandOverview(transactions, new Date(session.openedAt).getFullYear(), session.location),
