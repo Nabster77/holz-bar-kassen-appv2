@@ -325,6 +325,18 @@ export function useStore() {
     );
   }, [transactions]);
 
+  /** Commit only a record that Supabase has already acknowledged verbatim. */
+  const commitFinalizedSession = useCallback((closed: CashSession) => {
+    if (!closed.closed || !closed.dailyCloseSnapshot || !closed.dailyCloseReceiptNumber) {
+      throw new Error('Unbestätigter Tagesabschluss darf nicht lokal gebucht werden.');
+    }
+    setCashSessions((sessions) => sessions.map((session) => {
+      if (session.id !== closed.id) return session;
+      if (session.closed) return session;
+      return closed;
+    }));
+  }, []);
+
   const setDailyCloseReceipt = useCallback((sessionId: string, receiptNumber: number, location: Location, year: number, finalizedBy?: Pick<StaffUser, 'id' | 'name'>) => {
     setCashSessions((sessions) => sessions.map((session) => {
       if (session.id !== sessionId) return session;
@@ -496,6 +508,7 @@ export function useStore() {
     correctOpeningBalance,
     addCashEntry,
     closeCashSession,
+    commitFinalizedSession,
     setDailyCloseReceipt,
     setDailyCloseSnapshot,
     recordStaffActivity,
