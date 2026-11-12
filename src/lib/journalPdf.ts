@@ -10,6 +10,8 @@ export interface JournalReportData {
   transactions: Transaction[];
   categories: Category[];
   fileName: string;
+  /** Date the report covers, independently of the date it is exported. */
+  reportPeriodStart?: number;
   /** Person, die den Export bzw. Druck ausgelöst hat. */
   exportedByName?: string;
   cashAuditRecords?: CashAuditRecord[];
