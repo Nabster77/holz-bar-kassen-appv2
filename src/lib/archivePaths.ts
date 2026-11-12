@@ -39,3 +39,14 @@ export function safeArchiveFileName(name: string): string {
   if (!cleaned || cleaned === '.' || cleaned === '..') throw new Error('Ungültiger Dateiname.');
   return cleaned.endsWith('.pdf') ? cleaned : cleaned + '.pdf';
 }
+
+
+/** Determine the archive location for a batch rather than using the first receipt. */
+export function batchArchiveLocation(locations: readonly string[], fileName: string): string {
+  if (locations.length === 0) throw new Error('Leerer PDF-Sammelbericht.');
+  if (/Alle[- ]Standorte/i.test(fileName) ||
+      new Set(locations.map((location) => location.trim().toLocaleLowerCase('de-DE'))).size > 1) {
+    return 'Alle Standorte';
+  }
+  return locations[0];
+}
