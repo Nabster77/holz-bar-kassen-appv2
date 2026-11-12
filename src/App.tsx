@@ -392,6 +392,12 @@ export default function App() {
             onCloseCash={async (bal, closingWithdrawalAmount) => {
               const session = store.activeSession;
               if (!session || !currentStaff) return { ok: false, error: 'Es ist keine aktive Kasse oder kein angemeldeter Mitarbeiter vorhanden.' };
+              if (testMode) {
+                // Test mode is a simulation only: no Cloud receipt number,
+                // final Cloud write, or official persisted close/PDF.
+                store.closeCashSession(session.id, bal, currentStaff, closingWithdrawalAmount);
+                return { ok: true };
+              }
               if (!online || !navigator.onLine) {
                 return { ok: false, error: 'Beleg konnte nicht erstellt werden, da keine Internetverbindung besteht. Bitte Internetverbindung prüfen und erneut versuchen.' };
               }
@@ -427,7 +433,7 @@ export default function App() {
                 return { ok: true };
               } catch (error) {
                 console.warn('Tagesabschluss ohne Belegnummer abgelehnt.', error);
-                return { ok: false, error: `Tagesabschluss nicht durchgeführt: ${readableSyncError(error)} Die aktive Kasse und ihr Bestand bleiben erhalten.` };
+                return { ok: false, error: `Tagesabschluss konnte nicht sicher bestätigt werden: ${readableSyncError(error)} Bitte vor weiteren Buchungen den Cloud-Status prüfen und erneut synchronisieren; keine zweite Abschlussbuchung erzwingen.` };
               }
             }}
             onEnterAdmin={openManagementFromCashOpening}
