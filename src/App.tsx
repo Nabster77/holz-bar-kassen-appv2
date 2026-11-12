@@ -31,7 +31,7 @@ import { formatDateISO } from '@/lib/format';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
-  ArrowDownCircle, ArrowUpCircle, Recycle, MonitorDot,
+  ArrowDownCircle, ArrowUpCircle, Recycle,
   FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, Menu, X, ArrowLeft,
 } from 'lucide-react';
 
@@ -51,7 +51,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
-  const [testMode, setTestModeState] = useState<boolean>(isTestMode());
+  const [testMode] = useState<boolean>(isTestMode());
   const [modeConfirm, setModeConfirm] = useState<null | 'to-test' | 'to-active'>(null);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const closeSyncToast = useCallback(() => setSyncedAt(null), []);
