@@ -449,6 +449,7 @@ export default function App() {
             onResetStaffPassword={staff.resetPassword}
             lastStaffId={lastStaffId}
             onDiscardEmptySession={discardUnusedSession}
+            onHome={goHome}
             openingBalanceSuggestions={openingBalanceSuggestions}
           />
           </div>
