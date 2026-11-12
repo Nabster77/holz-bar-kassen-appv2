@@ -1,4 +1,4 @@
-import { Cloud, LockKeyhole, Settings2, ShoppingCart, WifiOff } from 'lucide-react';
+import { Cloud, LockKeyhole, Settings2, WifiOff } from 'lucide-react';
 import { WoodmoBrand } from './WoodmoBrand';
 import type { Location } from '@/types';
 
@@ -24,7 +24,7 @@ export function WoodmoHome({ onCash, onAdmin, sessionOpen, location, status, tes
         <div className="grid w-full grid-cols-2 gap-3 sm:gap-5">
           <button type="button" onClick={onCash}
             className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-900/40 p-3 text-center shadow-lg transition hover:bg-emerald-800/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 active:scale-[0.98] sm:min-h-48 sm:p-6">
-            <span className="rounded-xl bg-emerald-500/20 p-3"><ShoppingCart className="h-8 w-8 text-emerald-300 sm:h-10 sm:w-10" /></span>
+            <span className="rounded-xl bg-emerald-500/15 p-2.5"><img src={`${import.meta.env.BASE_URL}woodmo-v3-logo.png`} alt="" className="h-10 w-10 rounded-xl object-cover sm:h-12 sm:w-12" /></span>
             <span className="text-lg font-bold sm:text-xl">Kasse</span>
             <span className="text-xs text-emerald-100/90 sm:text-sm">{sessionOpen ? 'Kasse fortsetzen' : 'Kasse eröffnen'}</span>
           </button>
