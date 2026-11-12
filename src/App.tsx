@@ -7,6 +7,8 @@ import { useCatalogSync } from '@/hooks/useCatalogSync';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { useStaffDirectory } from '@/hooks/useStaffDirectory';
 import { StaffLoginDialog } from '@/components/StaffLoginDialog';
+import { DeviceSetupDialog } from '@/components/DeviceSetupDialog';
+import { readDeviceSetup } from '@/lib/deviceSetup';
 import { RootPasswordWarning } from '@/components/RootPasswordWarning';
 import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
 import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
@@ -49,6 +51,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('pos');
   const [previousTab, setPreviousTab] = useState<Tab | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [deviceSetupOpen, setDeviceSetupOpen] = useState(() => readDeviceSetup() === null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
   const [testMode] = useState<boolean>(isTestMode());
@@ -465,6 +468,7 @@ export default function App() {
               onReorderProduct={store.reorderProduct}
               onMoveProductTo={store.moveProductTo}
               onResetAllData={resetBookings}
+              onDeviceSetup={() => setDeviceSetupOpen(true)}
               pfandSettings={store.pfandSettings}
               onUpdatePfandSettings={store.updatePfandSettings}
               getProductPfand={store.getProductPfand}
@@ -627,6 +631,7 @@ export default function App() {
           onCancel={() => setStaffAdminLoginOpen(false)}
         />
       )}
+      {deviceSetupOpen && <DeviceSetupDialog onComplete={() => setDeviceSetupOpen(false)} onCancel={readDeviceSetup() ? () => setDeviceSetupOpen(false) : undefined} />}
       <InstallPrompt />
       <RootPasswordWarning visible={signedInUser === 'admin' && rootWarningOpen} onClose={() => { saveJSON(STORAGE_KEYS.rootPasswordNoticeDismissed, true); setRootWarningOpen(false); }} />
     </div>
