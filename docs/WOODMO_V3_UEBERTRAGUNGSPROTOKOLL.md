@@ -79,3 +79,18 @@ Fingerprint ist ausschließlich ein pragmatischer Änderungsindikator, kein Kryp
 **Sperren:** V2-Quelle nicht auslesbar, Datenbankisolation V3 ungeklärt, kein vollständiger Code-Build des letzten Gesamtstands, Bildbytes nicht geprüft, reale PC-/Tablet-Synchronisierung nicht geprüft. Datenmigration/Reset/Produktivschaltung bleiben untersagt.
 
 **Sicherheitshinweis:** [Supabase RLS-/RPC-Sicherheitswarnungen](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable). Ein Warnhinweis ist noch kein Nachweis einer ausnutzbaren Schwachstelle; Rechte und Funktionskörper müssen vor einem Eingriff geprüft werden.
+
+## Nachtrag 2026-11-12 – Kritische Datenbanktrennung (PRE-014)
+
+**Read-only Abfrage der aktiv genutzten Datenbank `Test-Holz-Bar-Kasse`** (Ref `fsztsmnxbffanyfbytnr`):
+
+| Tabelle | Zeilen (einschließlich gelöschter/älterer Datensätze) | Neuester `synced_at` (UTC) |
+|---|---:|---|
+| `pos_catalog_items` | 77 | 2026-11-10 10:08:31 |
+| `pos_staff_users` | 33 | 2026-11-10 17:49:51 |
+| `pos_cash_sessions` | 13 | 2026-11-12 18:00:32 |
+| `pos_transactions` | 17 | 2026-11-12 17:54:45 |
+
+Diese **heutigen Schreibzugriffe** zeigen, dass die Datenbank aktiv benutzt wurde. Das ist **kein Beweis, welche Version** geschrieben hat. Ohne identifizierte Datenbank-URL der tatsächlich veröffentlichten V2 darf dieses Projekt **weder zurückgesetzt noch exklusiv der V3 zugeordnet werden**. Nutzerziel: V3-Stammdaten 1:1, aber unabhängige neue Buchungen; deshalb ist Datenbankisolation eine zwingende Voraussetzung.
+
+**Nächster notwendiger Eingriff durch Benutzer:** In der lokalen V2-Konfiguration ausschließlich die Supabase-Projekt-Referenz (Host aus `VITE_SUPABASE_URL`) ausgeben, **niemals Schlüssel oder Passwörter**. Zusätzlich ggf. veröffentlichten V2-Build auf tatsächlich verwendete Referenz prüfen. Erst nach Nachweis eine V3-Datenbank auswählen. Kein V3-Datenbankwrite durchgeführt.
