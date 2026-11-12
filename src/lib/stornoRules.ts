@@ -14,6 +14,8 @@ export interface StornoRecord {
   employeeName: string;
   paymentMethod: PaymentMethod;
   grossAmount: number;
+  /** Frozen original including historic item prices and tax rates. */
+  originalSnapshot: Transaction;
   cashEffect: number;
   cardEffect: number;
 }
@@ -101,6 +103,7 @@ export function prepareStorno(input: StornoProposalInput): StornoRecord {
     employeeName: input.employeeName.trim(),
     paymentMethod: receipt.paymentMethod,
     grossAmount: gross / 100,
+    originalSnapshot: { ...receipt, items: receipt.items.map((item) => ({ ...item })), taxByRate: { ...receipt.taxByRate } },
     cashEffect: cashEffect / 100,
     cardEffect: cardEffect / 100,
   };
