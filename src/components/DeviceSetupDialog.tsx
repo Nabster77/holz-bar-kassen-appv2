@@ -3,6 +3,7 @@ import { Download, FolderOpen, ShieldCheck, X } from 'lucide-react';
 import { configureJournalExportFolder } from '@/lib/journalPdfFile';
 import { readDeviceSetup, saveDeviceSetup } from '@/lib/deviceSetup';
 import { readBackupCheckpoint } from '@/lib/backupCheckpoint';
+import { archiveRootName } from '@/lib/archiveRoot';
 
 interface Props {
   onComplete: () => void;
@@ -59,7 +60,7 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
         {warning && <p role="alert" className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">{warning}</p>}
         <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
           Wo möchtest du Journale und Tagesabschlüsse lokal speichern?
-          Wir legen im gewählten Ort automatisch <strong>Kasse 26</strong> und darunter die Berichte nach Jahr, Standort und Berichtsart sowie die Ordner <strong>Sicherung/Backup1</strong> und <strong>Sicherung/Backup2</strong> an. Auf Tablets ohne Ordnerfreigabe wird der Download- oder Teilen-Dialog verwendet.
+          Wir legen im gewählten Ort automatisch <strong>{archiveRootName(Date.now())}</strong> mit den Standort- und Sicherungsordnern an. Bei jedem Jahreswechsel entsteht beim nächsten Zugriff ein neuer Jahresordner. Berichte liegen unter Standort / Monat / Berichtsart. Vorhandene Ordner und Dateien bleiben erhalten. Auf Tablets ohne Ordnerfreigabe wird der Download- oder Teilen-Dialog verwendet.
           Bereits angelegte Dokumentenordner bleiben auch nach einem Buchungs-Reset bestehen.
         </p>
         {previous?.folderLabel && <p className="rounded-lg bg-slate-100 p-2 text-sm dark:bg-slate-800">
