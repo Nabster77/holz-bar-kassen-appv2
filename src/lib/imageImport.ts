@@ -30,7 +30,7 @@ export async function importFileToDataURL(file: File): Promise<string> {
 
 async function processImage(file: File): Promise<string> {
   const bitmap = await loadBitmap(file);
-  const canvas = renderToCanvas(bitmap, file.type);
+  const canvas = renderToCanvas(bitmap);
   const format = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
   return canvas.toDataURL(format, 0.85);
 }
@@ -59,8 +59,8 @@ function loadViaImg(file: File): Promise<ImageBitmap> {
   });
 }
 
-function renderToCanvas(bitmap: ImageBitmap, fileType: string): HTMLCanvasElement {
-  const { width, height } = computeTargetSize(bitmap.width, bitmap.height, fileType);
+function renderToCanvas(bitmap: ImageBitmap): HTMLCanvasElement {
+  const { width, height } = computeTargetSize(bitmap.width, bitmap.height);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -70,7 +70,7 @@ function renderToCanvas(bitmap: ImageBitmap, fileType: string): HTMLCanvasElemen
   return canvas;
 }
 
-function computeTargetSize(origW: number, origH: number, fileType: string): { width: number; height: number } {
+function computeTargetSize(origW: number, origH: number): { width: number; height: number } {
   // BMP files often have embedded DPI metadata; we treat all images the same:
   // scale down so that the effective DPI is ~150 and max dimension is MAX_DIMENSION px.
   // For a typical product image, this means capping at 800px on the longest side.
@@ -103,7 +103,7 @@ async function renderPDF(file: File): Promise<string> {
   await page.render({ canvasContext: ctx, viewport }).promise;
 
   // Scale down if too large for display
-  let { width, height } = canvas;
+  const { width, height } = canvas;
   if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
     const scale = MAX_DIMENSION / Math.max(width, height);
     const scaled = document.createElement('canvas');
