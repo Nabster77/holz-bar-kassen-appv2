@@ -34,7 +34,8 @@ export function archiveSubfolders(report: ArchiveReport): string[] {
 }
 
 export function safeArchiveFileName(name: string): string {
-  const cleaned = name.replace(/[\\/:*?"<>|\x00-\x1F]/g, '_').trim();
+  const cleaned = Array.from(name, char => char.charCodeAt(0) < 32 ? '_' : char)
+    .join('').replace(/[\\/:*?"<>|]/g, '_').trim();
   if (!cleaned || cleaned === '.' || cleaned === '..') throw new Error('Ungültiger Dateiname.');
   return cleaned.endsWith('.pdf') ? cleaned : cleaned + '.pdf';
 }
