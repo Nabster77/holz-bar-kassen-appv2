@@ -42,6 +42,7 @@ export function buildDailyReport(
     transactions,
     categories,
     fileName: buildJournalFileName('daily', startOfDay(day.getTime()), endOfDay(day.getTime()), loc),
+    reportPeriodStart: startOfDay(day.getTime()),
     exportedByName,
     cashAuditRecords: cashAuditRecordsFromSessions(sessions),
     yearlyPfandOverview: calculateYearlyPfandOverview(allTransactions, day.getFullYear(), loc),
@@ -94,10 +95,11 @@ export function closedSessionReport(session: CashSession, transactions: Transact
   const snapshot = session.dailyCloseSnapshot;
   const reportTransactions = snapshot?.transactions ?? sessionTransactions(transactions, session);
   const finalizedAt = snapshot?.finalizedAt ?? session.closedAt ?? Date.now();
-  const [year, month, day] = session.date.split('-');
+  const [year] = session.date.split('-');
   const closingWithdrawalAmount = session.closingWithdrawalAmount ?? session.entries.filter((entry) => entry.isClosingWithdrawal).reduce((sum, entry) => sum + entry.amount, 0);
   const deposits = session.entries.filter((entry) => entry.type === 'deposit').reduce((sum, entry) => sum + entry.amount, 0);
   const normalWithdrawals = session.entries.filter((entry) => entry.type === 'withdrawal' && !entry.isClosingWithdrawal).reduce((sum, entry) => sum + entry.amount, 0);
+  const formattedReceipt = formatDailyCloseReceiptNumber(session.dailyCloseReceiptNumber, session.dailyCloseReceiptLocation ?? session.location, session.closedAt ?? session.openedAt, session.dailyCloseReceiptYear);
   const cashTransactions = reportTransactions.filter((transaction) => transaction.paymentMethod === 'cash');
   // A cash balance only changes through cash transactions. Card-paid deposit
   // income and returns are deliberately excluded here.
@@ -116,8 +118,8 @@ export function closedSessionReport(session: CashSession, transactions: Transact
     headerLabel: `${session.location} · ${new Date(session.openedAt).toLocaleDateString('de-DE')} · ${new Date(finalizedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
     documentTitle: 'Tagesabschluss',
     documentStatus: 'Endgültig abgeschlossen',
-    fileName: `${session.location}_Tagesabschluss_${day}-${month}-${year}.pdf`,
-    receiptNumber: formatDailyCloseReceiptNumber(session.dailyCloseReceiptNumber, session.dailyCloseReceiptLocation ?? session.location, session.closedAt ?? session.openedAt, session.dailyCloseReceiptYear) ?? 'wird bei der nächsten Synchronisierung vergeben',
+    fileName: `${session.location}_Tagesabschluss_${session.date}_${formattedReceipt ?? session.id}.pdf`,
+    receiptNumber: formattedReceipt ?? 'wird bei der nächsten Synchronisierung vergeben',
     staffTimeRecords: staffTimesFromSession(session, finalizedAt),
     yearlyPfandOverview: calculateYearlyPfandOverview(transactions, Number(year), session.location),
     dailyCloseCash: {
