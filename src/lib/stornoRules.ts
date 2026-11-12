@@ -7,6 +7,8 @@ import type { CashSession, Location, PaymentMethod, Transaction } from '../types
 export interface StornoRecord {
   id: string;
   originalTransactionId: string;
+  /** Original cash session; ensures final-close audit cannot mix registers. */
+  cashSessionId: string;
   location: Location;
   timestamp: number;
   reason: string;
@@ -115,6 +117,7 @@ export function prepareStorno(input: StornoProposalInput): StornoRecord {
   return {
     id: input.stornoId.trim(),
     originalTransactionId: receipt.id,
+    cashSessionId: session.id,
     location: receipt.location,
     timestamp: now,
     reason,
@@ -125,6 +128,55 @@ export function prepareStorno(input: StornoProposalInput): StornoRecord {
     originalSnapshot: { ...receipt, items: receipt.items.map((item) => ({ ...item })), taxByRate: { ...receipt.taxByRate } },
     cashEffect: cashEffect / 100,
     cardEffect: cardEffect / 100,
+  };
+}
+
+/**
+ * The complete documentary close basis. The five-receipt UI window is NEVER a
+ * data-retention rule. Final close must preserve every receipt and all storno
+ * reasons for this session, even if the receipt is no longer stornierbar.
+ *
+ * This is a pure preparation/validation step, not a cloud write. The caller
+ * must persist the resulting snapshot atomically with the finalized session
+ * after the server-side storno log has been synchronized and verified.
+ */
+export function prepareFinalCloseStornoSnapshot(
+  transactions: readonly Transaction[],
+  stornoRecords: readonly StornoRecord[],
+  session: CashSession,
+  finalizedAt: number,
+): Pick<NonNullable<CashSession['dailyCloseSnapshot']>, 'transactions' | 'stornos'> {
+  if (!Number.isFinite(finalizedAt) || finalizedAt < session.openedAt) {
+    throw new StornoRuleError('Ungültiger Abschlusszeitpunkt.');
+  }
+  if (session.closed || session.discarded || session.closedAt != null ||
+      session.dailyCloseFinalizedAt != null || session.dailyCloseSnapshot != null) {
+    throw new StornoRuleError('Ein bereits abgeschlossener Kassenvorgang darf nicht erneut abgeschlossen werden.');
+  }
+  const sales = transactions.filter((t) => t.location === session.location &&
+    t.timestamp >= session.openedAt && t.timestamp <= finalizedAt);
+  const byId = new Map(sales.map((t) => [t.id, t]));
+  if (byId.size !== sales.length) throw new StornoRuleError('Doppelte Originalbelege im Tagesabschluss.');
+  const stornos = stornoRecords.filter((entry) => entry.cashSessionId === session.id);
+  const stornoIds = new Set<string>();
+  const cancelledIds = new Set<string>();
+  for (const storno of stornos) {
+    const original = byId.get(storno.originalTransactionId);
+    if (!original || storno.location !== session.location ||
+        storno.timestamp < original.timestamp || storno.timestamp > finalizedAt ||
+        stornoIds.has(storno.id) || cancelledIds.has(storno.originalTransactionId) ||
+        !storno.originalSnapshot || storno.originalSnapshot.id !== original.id ||
+        storno.originalSnapshot.paymentMethod !== original.paymentMethod ||
+        cents(storno.grossAmount) !== cents(original.total)) {
+      throw new StornoRuleError('Unvollständiger oder doppelter Stornonachweis im Tagesabschluss.');
+    }
+    stornoIds.add(storno.id);
+    cancelledIds.add(storno.originalTransactionId);
+  }
+  // Cloning makes accidental later UI mutations unable to alter the close.
+  return {
+    transactions: sales.map((sale) => structuredClone(sale)),
+    stornos: stornos.map((storno) => structuredClone(storno)),
   };
 }
 
