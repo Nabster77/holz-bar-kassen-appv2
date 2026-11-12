@@ -1,3 +1,5 @@
+import type { StornoRecord } from './lib/stornoRules';
+
 export type TaxClass = 'reduced' | 'standard' | 'zero';
 
 export type TaxRate = number;
@@ -187,6 +189,8 @@ export interface CashSession {
   /** Immutable data basis of a finalized daily close. */
   dailyCloseSnapshot?: {
     transactions: Transaction[];
+    /** Full audit list. The UI limit of five is never a retention limit. */
+    stornos?: StornoRecord[];
     finalizedAt: number;
     finalizedById?: string;
     finalizedByName?: string;
