@@ -6,6 +6,9 @@ import { buildLocalEntries, PFAND_SETTING_ID, type CatalogRow, type CatalogEntry
 import { supabase } from '@/lib/supabaseClient';
 import { loadJSON, STORAGE_KEYS } from '@/lib/storage';
 import { fetchCloudData } from '@/lib/cloudPull';
+import { loadCloudStornos } from '@/lib/stornoCloud';
+import { assertBackupStornosPresent } from '@/lib/stornoBackupIntegrity';
+import type { StornoRecord } from '@/lib/stornoRules';
 import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, type OutboxEntry } from '@/lib/outbox';
 import { recoverableTransactions, recoverableCashSessions } from '@/lib/recoveryGuards';
 import { DEFAULT_PFAND_SETTINGS } from '@/lib/seed';
@@ -15,6 +18,7 @@ import type { CashSession, Category, Location, PfandSettings, Product, StaffUser
 type BackupData = {
   transactions?: Transaction[];
   cashSessions?: CashSession[];
+  stornos?: StornoRecord[];
   categories?: Category[];
   products?: Product[];
   pfandSettings?: PfandSettings;
@@ -126,11 +130,15 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
   if (!Number.isFinite(backupTime)) throw new Error('Ungültige Backup-Datei: Exportzeit ist nicht lesbar.');
   if (!navigator.onLine) throw new Error('Eine Wiederherstellung ist nur online möglich, damit neuere Cloud-Daten geschützt bleiben.');
 
-  const [reset, catalogRows, staffRows] = await Promise.all([
+  const [reset, catalogRows, staffRows, authoritativeStornos] = await Promise.all([
     fetchLatestBookingReset(),
     fetchCatalogRows(),
     fetchAllStaffRows(),
+    loadCloudStornos(),
   ]);
+  // Fail BEFORE modifying articles, staff, sessions or sales. A browser may
+  // never synthesize immutable cloud Stornos from a backup JSON file.
+  assertBackupStornosPresent(backup.data.stornos, authoritativeStornos);
   // A backup restore must NOT delete unuploaded sales from this device.
   // First flush valid pending entries, and discard only entries from a
   // booking generation that the cloud has already reset.
