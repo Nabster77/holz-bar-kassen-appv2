@@ -64,6 +64,8 @@ interface Props {
   onShotDraftDirtyChange?: (dirty: boolean) => void;
 }
 
+type AdminDataProps = Omit<Props, 'menuOpen' | 'onCloseMenu' | 'onOpenJournal' | 'onShotDraftDirtyChange'>;
+
 const COLOR_OPTIONS = [
   { label: 'Blau', value: 'from-cyan-500 to-blue-600' },
   { label: 'Orange', value: 'from-amber-500 to-orange-600' },
@@ -101,7 +103,12 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
     onCloseMenu();
   };
   const openAdminAction = (action: () => void) => {
-    if (!canLeaveShots()) return;
+    // A modal action must never discard an unsaved SCHUSS draft that remains
+    // mounted underneath. Ask the operator to finish that draft first.
+    if (tab === 'shots' && shotDraftDirty) {
+      window.alert('Bitte zuerst SCHUSS-Änderungen speichern oder verwerfen.');
+      return;
+    }
     onCloseMenu();
     action();
   };
@@ -272,7 +279,7 @@ function ConfirmDialog({ title, message, onConfirm, onClose }: {
 
 // ---- Category Manager ----
 
-function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onMoveCategoryTo }: Props) {
+function CategoryManager({ categories, products, onAddCategory, onUpdateCategory, onDeleteCategory, onMoveCategoryTo }: AdminDataProps) {
   const [editing, setEditing] = useState<Category | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteCat, setDeleteCat] = useState<Category | null>(null);
@@ -449,7 +456,7 @@ function CategoryModal({ category, onSave, onClose }: {
 
 // ---- Product Manager ----
 
-function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings, testMode = false }: Props) {
+function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings, testMode = false }: AdminDataProps) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
