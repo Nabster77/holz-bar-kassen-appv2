@@ -307,6 +307,14 @@ export default function App() {
     setAdminUnlocked(false);
   }
 
+  // Keep the current action visible in the heading even when it opens a
+  // top-level dialog instead of an AdminScreen-internal modal.
+  const activeAdminSectionTitle = deviceSetupOpen && tab === 'admin'
+    ? 'Setup / PDF-Ordner'
+    : modeConfirm && tab === 'admin'
+      ? modeConfirm === 'to-test' ? 'Auf Testmodus wechseln' : 'Auf aktiven Modus wechseln'
+      : adminSection;
+
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
       {/* Compact toolbar: Home never closes the register or clears its cart. */}
@@ -321,8 +329,8 @@ export default function App() {
             {tab === 'admin' && adminUnlocked && (
               <span className="min-w-0 max-w-[35vw] truncate border-l border-emerald-500/50 pl-2 text-xs font-semibold text-emerald-200 sm:text-sm"
                 role="status" aria-live="polite"
-                title={`Verwaltung · ${adminSection}`}>
-                {adminSection}
+                title={`Verwaltung · ${activeAdminSectionTitle}`}>
+                {activeAdminSectionTitle}
               </span>
             )}
             <button type="button" aria-label="Zur Startseite" title="Zur Startseite" onClick={goHome}
