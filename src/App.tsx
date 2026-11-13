@@ -334,12 +334,12 @@ export default function App() {
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" aria-label="Cloud synchronisieren" title="Cloud synchronisieren"
                 onClick={() => setSyncOpen(true)}
-                className="flex h-10 items-center gap-1 rounded-xl border border-emerald-700/40 px-2 text-emerald-700 dark:text-emerald-400">
+                className="flex h-10 items-center gap-1 rounded-xl border border-emerald-500/60 px-2 text-emerald-300 hover:bg-emerald-900/30">
                 <RefreshCw className="h-4 w-4" />
                 <span className="hidden min-[1080px]:inline text-xs font-semibold">Sync Cloud</span>
               </button>
               <span role="status" title={!online ? 'Cloud nicht erreichbar' : catalog.syncStatus === 'error' ? 'Artikel-Abgleich fehlgeschlagen' : 'Cloud verbunden'}
-                className={`flex h-10 items-center gap-1 rounded-xl border px-2 text-xs font-bold ${!online || catalog.syncStatus === 'error' ? 'border-red-700/50 text-red-600 dark:text-red-400' : 'border-emerald-700/40 text-emerald-700 dark:text-emerald-400'}`}>
+                className={`flex h-10 items-center gap-1 rounded-xl border px-2 text-xs font-bold ${!online || catalog.syncStatus === 'error' ? 'border-red-500/80 bg-red-950/35 text-red-300' : 'border-emerald-500/60 bg-emerald-950/20 text-emerald-300'}`}>
                 <Cloud className="h-4 w-4" />
                 <span className="hidden min-[1100px]:inline">{!online ? 'Offline' : 'Cloud'}</span>
                 <span className="text-[10px]">{testMode ? 'TEST' : 'AKTIV'}</span>
@@ -347,12 +347,12 @@ export default function App() {
               {tab === 'pos' && currentStaff && (
                 <button type="button" aria-label="Mitarbeiter abmelden" title={`${currentStaff.name} abmelden`}
                   onClick={() => void handleStaffLogout()}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-600/40 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-500/70 text-red-300 hover:bg-red-900/30">
                   <LogOut className="h-5 w-5" />
                 </button>
               )}
               <button type="button" aria-label="Darstellung wechseln" title="Hell/Dunkel" onClick={toggle}
-                className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-200 min-[780px]:flex">
+                className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-600 text-slate-100 hover:bg-slate-700 min-[780px]:flex">
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
             </div>
