@@ -443,6 +443,17 @@ export function useStore() {
     });
   }, []);
 
+  /** Replace only an explicitly archived, unused local opening with the
+   * confirmed cloud opening of the same location. Never touch transactions. */
+  const adoptCloudCashSession = useCallback((localId: string, remote: CashSession) => {
+    setCashSessions((sessions) => {
+      if (!sessions.some((session) => session.id === localId && session.location === remote.location)) return sessions;
+      const retained = sessions.filter((session) => session.id !== localId && session.id !== remote.id);
+      return [...retained, remote];
+    });
+    setSelectedLocation(remote.location);
+  }, []);
+
   const applyCatalogRows = useCallback((rows: CatalogRow[], skipKeys: Set<string>, replaceLocal = false) => {
     const byId = (kind: CatalogKind) => new Map(rows.filter((r) => r.kind === kind).map((r) => [r.id, r]));
     const remoteCategories = byId('category');
@@ -519,6 +530,7 @@ export function useStore() {
     recordStaffActivity,
     switchLocation,
     mergeCloudData,
+    adoptCloudCashSession,
     applyCatalogRows,
     resetAllData,
     discardEmptySession: (id: string) => setCashSessions((sessions) => sessions.map((session) => session.id === id && canDiscardCashSession(session, transactions) ? { ...session, closed: true, discarded: true } : session)),
