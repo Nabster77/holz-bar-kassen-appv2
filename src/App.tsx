@@ -564,6 +564,7 @@ export default function App() {
                 // modifying either cloud cash register or its history.
                 store.mergeCloudData({ generation: knownBookingReset().generation,
                   transactions: [], cashSessions: [existing], newestTransactionTimestamp: null });
+                store.switchLocation(location);
                 throw new Error(`In ${location} ist bereits eine Kasse geöffnet. Sie wird übernommen. Bitte mit deinem Mitarbeiterkonto erneut anmelden, statt eine zweite Kasse zu eröffnen.`);
               }
               store.openCashSession(location, balance, currentStaff);
