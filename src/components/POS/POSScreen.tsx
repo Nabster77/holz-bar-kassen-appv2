@@ -29,7 +29,7 @@ interface Props {
   products: Product[];
   activeSession: CashSession | null;
   onCheckout: (tx: Transaction) => void;
-  onOpenCash: (location: Location, openingBalance: number) => void;
+  onOpenCash: (location: Location, openingBalance: number) => Promise<boolean>;
   onCorrectOpening: (newAmount: number, reason: string) => void;
   onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure?: boolean) => void;
   onCloseCash: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
@@ -478,7 +478,7 @@ export function POSScreen({
 
       {/* Dialogs */}
       {showOpenDialog && (
-        <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => { setShowOpenDialog(false); onHome?.(); }} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
+        <CashOpeningDialog existingSession={activeSession} onSave={async (loc, bal) => { if (!activeSession) { const ok = await onOpenCash(loc, bal); if (!ok) return false; } setShowOpenDialog(false); return true; }} onClose={() => { setShowOpenDialog(false); onHome?.(); }} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
         <CashCorrectionDialog session={activeSession} currentCashBalance={currentCashBalance} onSave={(amt, reason) => { onCorrectOpening(amt, reason); setShowCorrection(false); }} onClose={() => setShowCorrection(false)} />
