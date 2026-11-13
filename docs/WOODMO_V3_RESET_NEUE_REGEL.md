@@ -14,6 +14,13 @@ Die Sicherung enthält ALLE Datensätze und Detailinhalte aus:
 
 Außerdem Reset-Generation, Standort, Exportdatum, Datensatzzahlen, Formatversion und SHA-256 des Backups protokollieren. Der Archivbestand muss nach dem Reset abrufbar und wiederherstellbar bleiben. Dass Browser einen Download **anstoßen**, beweist noch nicht, dass die Datei auf dem Dateisystem vorhanden ist. Verifizierbar ist z. B. erneutes Öffnen und Hash-Vergleich der geschriebenen Datei oder ein serverseitig dauerhaft hinterlegtes und erneut gelesenes Cloud-Archiv.
 
+## Aktiver V3-Endmodus – entscheidende Freigaberegel
+- Der spätere **Aktivmodus/Onlinebetrieb** DARF den ordnungsgemäßen Admin-Gesamtreset nicht durch einen pauschalen aktiven-Kasse-Sperrschalter blockieren.
+- Eine **offene Kasse ist kein Verhinderungsgrund**, wenn der Administrator authentifiziert ist, das vollständige Buchungsbackup dauerhaft gespeichert und rücklesbar geprüft ist, die Geräte synchronisiert sind und der Datenstand bis zur atomaren Löschung unverändert blieb.
+- Nach bestätigtem Reset werden aktive Kassen ausdrücklich beendet/invalidiert; eine neue Kasse muss mit neuem Anfangsbestand eröffnet werden.
+- `src/lib/verifiedResetPolicy.ts` beschreibt diesen endgültigen Preflight; die bisherige Sperre `src/lib/bookingResetSafety.ts` betrifft nur den alten ungesicherten Reset-Aufruf, der im finalen Ablauf ersetzt wird.
+- **Nicht als fertig behandeln:** Der geprüfte Cloud-Archivierungs-, Nachweis- und atomare Server-Reset-Workflow ist noch nicht verbunden.
+
 ## Obligatorischer Ablauf
 1. Administrator authentifiziert sich (keine Mitarbeiterrechte).
 2. Alle erreichbaren Geräte synchronisieren. Unbekannte Offline-Buchungen können NICHT garantiert archiviert werden: Geräte vor dem Reset ausdrücklich prüfen bzw. eine unvollständige Sicherung nicht als vollständig ausgeben.
