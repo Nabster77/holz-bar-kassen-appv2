@@ -64,9 +64,12 @@ assert(menu.includes("chooseCashAction('close')") && pos.includes('requestDailyC
 assert(pos.includes('<DailyCloseDialog') && app.includes('persistFinalizedCashSession(closed)'),
   'Cloud-confirmed final close path stays untouched');
 
-assert(open.includes('if (selectedStaff && staffAuthenticated) onSave(location, parsedOpeningBalance)'),
-  'Re-login resumes the active cash session without jumping to Home');
-assert(pos.includes('onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }}'),
-  'Re-login never reopens or overwrites the existing cash session');
+assert(open.includes('if (openingBusy || !selectedStaff || !staffAuthenticated) return;') &&
+  open.includes('if (!existingSession && !canOpenWithBalance) return;') &&
+  open.includes('await onSave(location, parsedOpeningBalance);'),
+  'Re-login and cash opening await the confirmed handler without jumping Home');
+assert(pos.includes('if (!activeSession) { const ok = await onOpenCash(loc, bal); if (!ok) return false; }') &&
+  pos.includes('setShowOpenDialog(false); return true;'),
+  'Re-login does not open a new session; failed cloud preflight keeps login dialog open');
 assert(open.includes("existingSession ? 'Mitarbeiter anmelden' : 'Kasseneröffnung'"));
 console.log('V3-KASSENMENUE: Einzelner Login/Logout-Knopf, Pfand im Verkauf, Startseite oben, Navigation, Bestandskorrektur und gesicherter Tagesabschluss geprüft.');
