@@ -155,3 +155,65 @@ export async function flushOutbox(): Promise<number> {
 
   return keys.length;
 }
+
+/**
+ * Explicit recovery of a duplicate, unused local till. This does not touch
+ * cloud data and never drops receipts. All queued snapshots of the opening
+ * must be financially empty; otherwise recovery is refused.
+ * The caller must have archived the snapshot BEFORE calling this function.
+ */
+export async function removeQueuedUnusedCashSession(
+  localSessionId: string,
+  location: string,
+  openedAt: number,
+): Promise<OutboxEntry[]> {
+  const db = await openDb();
+  const read = db.transaction(STORE, 'readonly');
+  const keysRequest = read.objectStore(STORE).getAllKeys();
+  const entriesRequest = read.objectStore(STORE).getAll();
+  await transactionDone(read);
+  const keys = keysRequest.result;
+  const entries = entriesRequest.result as OutboxEntry[];
+  const relevant = entries.filter((entry) =>
+    entry.table === 'pos_cash_sessions' && entry.row.id === localSessionId);
+
+  const unsafeReceipt = entries.some((entry) => entry.table === 'pos_transactions' &&
+    (entry.row.data as { cashSessionId?: string; timestamp?: number; location?: string } | undefined)?.cashSessionId === localSessionId);
+  if (unsafeReceipt) throw new Error('Es gibt noch nicht hochgeladene Verkäufe zu dieser Kasse. Automatische Übernahme gesperrt.');
+  // Legacy sales without a session ID cannot be safely reassigned either.
+  const legacyReceipt = entries.some((entry) => {
+    if (entry.table !== 'pos_transactions') return false;
+    const data = entry.row.data as { cashSessionId?: string; timestamp?: number; location?: string } | undefined;
+    return data?.location === location && !data.cashSessionId && typeof data.timestamp === 'number' && data.timestamp >= openedAt;
+  });
+  if (legacyReceipt) throw new Error('Alte, noch nicht synchronisierte Verkäufe erkannt. Übernahme gesperrt.');
+
+  const hasMovements = (entry: OutboxEntry) => {
+    const data = entry.row.data as { entries?: unknown[]; corrections?: unknown[];
+      closingWithdrawalAmount?: number; dailyCloseSnapshot?: unknown; closed?: boolean;
+      activities?: Array<{ type?: string }> } | undefined;
+    return !data || (data.entries?.length ?? 0) > 0 || (data.corrections?.length ?? 0) > 0 ||
+      Boolean(data.closingWithdrawalAmount || data.dailyCloseSnapshot || data.closed) ||
+      (data.activities ?? []).some((activity) => !['cash_opened', 'login', 'logout'].includes(activity.type ?? ''));
+  };
+  if (relevant.some(hasMovements)) {
+    throw new Error('Die lokale Offline-Warteschlange enthält Kassenbewegungen. Übernahme gesperrt.');
+  }
+  if (!relevant.length) return [];
+  const transaction = db.transaction(STORE, 'readwrite');
+  const store = transaction.objectStore(STORE);
+  entries.forEach((entry, index) => {
+    if (entry.table === 'pos_cash_sessions' && entry.row.id === localSessionId) store.delete(keys[index]);
+  });
+  await transactionDone(transaction);
+  return relevant;
+}
+
+/** Read-only snapshot of pending entries for an explicit, verified backup. */
+export async function readPendingOutbox(): Promise<OutboxEntry[]> {
+  const db = await openDb();
+  const tx = db.transaction(STORE, 'readonly');
+  const request = tx.objectStore(STORE).getAll();
+  await transactionDone(tx);
+  return request.result as OutboxEntry[];
+}
