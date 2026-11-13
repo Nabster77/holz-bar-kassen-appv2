@@ -458,7 +458,12 @@ export default function App() {
       <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
         {homeVisible && (
           <WoodmoHome
-            onCash={() => navigateTo('pos')}
+            onCash={() => {
+              navigateTo('pos');
+              // The Home tile must reopen the existing login/opening flow even
+              // after the operator previously chose "Zur Startseite".
+              if (!store.activeSession || !currentStaff) setCashierLoginRequest((n) => n + 1);
+            }}
             onAdmin={() => openManagementFromCashOpening(currentStaff?.role === 'administrator' ? currentStaff : null)}
             sessionOpen={Boolean(store.activeSession)}
             location={store.activeSession?.location ?? store.selectedLocation}
