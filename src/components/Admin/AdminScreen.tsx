@@ -99,11 +99,7 @@ const ADMIN_SECTION_TITLES = {
 
 export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, menuOpen, onCloseMenu, onOpenJournal, onAdminSectionChange, onShotDraftDirtyChange, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
-  // Always publish the active administration section, including the initial
-  // overview and after a return from Journal/Home. The header lives in App.
-  useEffect(() => {
-    onAdminSectionChange(ADMIN_SECTION_TITLES[tab]);
-  }, [tab, onAdminSectionChange]);
+
   const [shotDraftDirty, setShotDraftDirty] = useState(false);
   const canLeaveShots = () => {
     if (tab !== 'shots' || !shotDraftDirty) return true;
@@ -133,6 +129,15 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
   const [showCatalogTransfer, setShowCatalogTransfer] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  // A selected menu entry, including a modal, is always named in the shared
+  // header. Closing that modal restores the previously active admin section.
+  useEffect(() => {
+    const activeTitle = showCatalogTransfer ? 'Excel-Import / Export'
+      : showImport ? 'Backup importieren'
+      : showReset ? 'Buchungen zurücksetzen'
+      : ADMIN_SECTION_TITLES[tab];
+    onAdminSectionChange(activeTitle);
+  }, [tab, showCatalogTransfer, showImport, showReset, onAdminSectionChange]);
 
   return (
     <div className="flex h-full flex-col">
