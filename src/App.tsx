@@ -64,6 +64,7 @@ export default function App() {
   const [posVisited, setPosVisited] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [adminShotDirty, setAdminShotDirty] = useState(false);
+  const [adminSection, setAdminSection] = useState('Kassen-Übersicht');
   const [deviceSetupOpen, setDeviceSetupOpen] = useState(() => readDeviceSetup() === null);
   const [pdfArchiveWarning, setPdfArchiveWarning] = useState<string | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -313,10 +314,17 @@ export default function App() {
         <>
           <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-2 border-b border-emerald-900/50 bg-[#0d1628] px-2 py-1.5 text-white shadow-sm sm:px-3">
             <WoodmoBrand status={!online || catalog.syncStatus === 'error' ? 'error' : !testMode && catalog.syncStatus !== 'saved' ? 'pending' : 'ok'} />
-            <h1 className={`min-w-0 truncate text-base font-bold sm:text-lg ${!online ? 'woodmo-heading-offline text-red-400' : 'text-white'}`}
+            <h1 className={`min-w-0 shrink-0 truncate text-base font-bold sm:text-lg ${!online ? 'woodmo-heading-offline text-red-400' : 'text-white'}`}
               aria-live="polite">
               {tab === 'pos' ? 'Kasse' : tab === 'admin' ? 'Verwaltung' : 'Journal'}
             </h1>
+            {tab === 'admin' && adminUnlocked && (
+              <span className="min-w-0 max-w-[35vw] truncate border-l border-emerald-500/50 pl-2 text-xs font-semibold text-emerald-200 sm:text-sm"
+                role="status" aria-live="polite"
+                title={`Verwaltung · ${adminSection}`}>
+                {adminSection}
+              </span>
+            )}
             <button type="button" aria-label="Zur Startseite" title="Zur Startseite" onClick={goHome}
               className="flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-sky-600/80 bg-sky-900/35 px-2.5 text-sky-100 shadow-[0_0_10px_rgba(56,189,248,.12)] transition hover:border-sky-400 hover:bg-sky-700/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400">
               <Home className="h-5 w-5" />
@@ -504,6 +512,7 @@ export default function App() {
               menuOpen={menuOpen}
               onCloseMenu={() => setMenuOpen(false)}
               onOpenJournal={() => navigateToProtected('journal')}
+              onAdminSectionChange={setAdminSection}
               onShotDraftDirtyChange={setAdminShotDirty}
               onPrepareCatalogImport={catalog.prepareImport}
               onCommitCatalogImport={catalog.commitImport}
