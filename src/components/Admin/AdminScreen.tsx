@@ -14,6 +14,7 @@ import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, Wine, Recycle, MonitorDot, Settings, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
+import { parsePfandAmount } from '@/lib/pfandValidation';
 import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
 
@@ -46,7 +47,7 @@ interface Props {
   onExportBackup?: () => void | Promise<void>;
   onImportBackup?: (file: File) => void;
   pfandSettings: PfandSettings;
-  onUpdatePfandSettings: (settings: PfandSettings) => void;
+  onUpdatePfandSettings: (settings: PfandSettings) => Promise<'cloud' | 'local'>;
   getProductPfand: (product: Product, loc: Location) => number;
   staffUsers?: StaffUser[];
   staffOnline?: boolean;
@@ -172,7 +173,7 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
       <div className="flex-1 overflow-y-auto">
         {tab === 'sessions' ? <LiveSessionOverview transactions={props.transactions} cashSessions={props.cashSessions} categories={props.categories} activeSession={props.activeSession} selectedLocation={props.selectedLocation} onSwitchLocation={props.onSwitchLocation} exportedByName={props.currentStaff?.name} />
           : tab === 'categories' ? <CategoryManager {...props} />
-            : tab === 'products' ? <ProductManager {...props} />
+            : tab === 'products' ? <ProductManager {...props} testMode={testMode} />
               : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} onDirtyChange={setShotDraftDirty} />
               : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
@@ -411,7 +412,7 @@ function CategoryModal({ category, onSave, onClose }: {
 
 // ---- Product Manager ----
 
-function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings }: Props) {
+function ProductManager({ categories, products, onAddProduct, onUpdateProduct, onDeleteProduct, onMoveProductTo, pfandSettings, onUpdatePfandSettings, testMode = false }: Props) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
@@ -421,7 +422,17 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
   const [dragEnabled, setDragEnabled] = useState(false);
   const [pfandF, setPfandF] = useState(String(pfandSettings.Friedrichshafen));
   const [pfandB, setPfandB] = useState(String(pfandSettings.Bregenz));
-  const [showPfandSaved, setShowPfandSaved] = useState(false);
+  const [pfandPhase, setPfandPhase] = useState<'idle' | 'dirty' | 'saving' | 'cloud' | 'local' | 'error'>('idle');
+  const [pfandError, setPfandError] = useState('');
+  const [pfandEditing, setPfandEditing] = useState(false);
+
+  // A cloud change is allowed to refresh untouched form fields. Never replace
+  // an operator's ongoing edit with a background sync result.
+  useEffect(() => {
+    if (pfandEditing || pfandPhase === 'saving') return;
+    setPfandF(String(pfandSettings.Friedrichshafen));
+    setPfandB(String(pfandSettings.Bregenz));
+  }, [pfandSettings, pfandEditing, pfandPhase]);
 
   const sorted = [...products].sort(sortMode === 'alphabetical'
     ? (a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
@@ -430,12 +441,29 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
       : (a, b) => a.sortOrder - b.sortOrder);
   const filtered = filterCat ? sorted.filter((p) => p.categoryId === filterCat) : sorted;
 
-  function savePfandSettings() {
-    const f = parseFloat(pfandF.replace(',', '.')) || 0;
-    const b = parseFloat(pfandB.replace(',', '.')) || 0;
-    onUpdatePfandSettings({ Friedrichshafen: f, Bregenz: b });
-    setShowPfandSaved(true);
-    setTimeout(() => setShowPfandSaved(false), 2000);
+  async function savePfandSettings() {
+    if (pfandPhase === 'saving') return;
+    const f = parsePfandAmount(pfandF);
+    const b = parsePfandAmount(pfandB);
+    if (f === null || b === null) {
+      setPfandPhase('error');
+      setPfandError('Bitte beide Standortwerte als nichtnegative Eurobeträge mit maximal zwei Nachkommastellen eingeben.');
+      return;
+    }
+    setPfandPhase('saving');
+    setPfandError('');
+    try {
+      const result = await onUpdatePfandSettings({ Friedrichshafen: f, Bregenz: b });
+      setPfandEditing(false);
+      setPfandF(f.toFixed(2).replace('.', ','));
+      setPfandB(b.toFixed(2).replace('.', ','));
+      setPfandPhase(result === 'cloud' ? 'cloud' : 'local');
+    } catch (reason) {
+      // The store already adopted the values locally. A failed readback must
+      // remain visible, not be disguised as a successful Cloud write.
+      setPfandPhase('error');
+      setPfandError(`Lokal übernommen, aber nicht in der Cloud bestätigt: ${reason instanceof Error ? reason.message : 'Unbekannter Fehler'}`);
+    }
   }
 
   return (
@@ -462,17 +490,29 @@ function ProductManager({ categories, products, onAddProduct, onUpdateProduct, o
               <div key={loc}>
                 <label className="mb-1 block text-xs font-semibold text-teal-700 dark:text-teal-400">{loc}</label>
       <div className="flex items-center gap-1">
-                  <input value={val} onChange={(e) => setVal(e.target.value)} onBlur={savePfandSettings} placeholder="0,00" inputMode="decimal"
-                    className="w-24 rounded-lg border border-teal-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-teal-500 focus:outline-none dark:border-teal-700 dark:bg-gray-900 dark:text-gray-100" />
+                  <input value={val} onChange={(e) => { setVal(e.target.value); setPfandEditing(true); setPfandPhase('dirty'); setPfandError(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void savePfandSettings(); } }}
+                    placeholder="0,00" inputMode="decimal" disabled={pfandPhase === 'saving'}
+                    aria-label={`Pfandbetrag ${loc} in Euro`}
+                    className="w-24 rounded-lg border border-teal-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-teal-500 focus:outline-none disabled:opacity-50 dark:border-teal-700 dark:bg-gray-900 dark:text-gray-100" />
                   <span className="text-sm text-teal-600 dark:text-teal-400">€</span>
                 </div>
               </div>
             );
           })}
-          <button onClick={savePfandSettings} className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-700 active:scale-95">
-            <Save className="h-4 w-4" /> Speichern
+          <button type="button" onClick={() => void savePfandSettings()} disabled={pfandPhase === 'saving'}
+            className="flex min-h-10 items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-700 active:scale-95 disabled:opacity-50">
+            {pfandPhase === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {pfandPhase === 'saving' ? 'Cloud wird geprüft …' : 'Speichern'}
           </button>
-          {showPfandSaved && <span className="flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400"><Check className="h-3.5 w-3.5" /> Gespeichert</span>}
+          <span role="status" aria-live="polite" className="text-xs font-semibold">
+            {pfandPhase === 'cloud' && <span className="flex items-center gap-1 text-green-700 dark:text-green-400"><Check className="h-3.5 w-3.5" /> Cloud gespeichert und überprüft</span>}
+            {pfandPhase === 'local' && <span className="text-amber-700 dark:text-amber-400">Nur lokal übernommen – Testmodus, kein Cloud-Abgleich</span>}
+            {pfandPhase === 'dirty' && <span className="text-slate-600 dark:text-slate-300">Noch nicht gespeichert</span>}
+            {pfandPhase === 'saving' && <span className="text-amber-700 dark:text-amber-400">Lokaler Wert übernommen, Cloud-Bestätigung ausstehend</span>}
+            {pfandPhase === 'error' && <span role="alert" className="text-red-700 dark:text-red-400">{pfandError}</span>}
+            {pfandPhase === 'idle' && testMode && <span className="text-amber-700 dark:text-amber-400">Testmodus: Einstellungen werden nicht in die Cloud hochgeladen</span>}
+          </span>
         </div>
       </div>
       <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
