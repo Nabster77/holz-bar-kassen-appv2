@@ -8,7 +8,7 @@ import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
 import { renderPdfHtml } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type YearlyPfandOverview } from '@/lib/journalPdf';
 import { sessionTransactions } from '@/lib/sessionTransactions';
-import { projectFinancialTransactions } from '@/lib/stornoReportProjection';
+import { projectFinancialTransactions, type StornoJournalTransaction } from '@/lib/stornoReportProjection';
 import type { StornoRecord } from '@/lib/stornoRules';
 import type { CashSession, StaffActivity, StaffLoginInterval, StaffUser, Transaction } from '@/types';
 
@@ -55,7 +55,7 @@ function transactionMovementRecords(transaction: Transaction): MovementRecord[] 
       timestamp: transaction.timestamp,
       employeeName: transaction.employeeName,
       amount: transaction.total,
-      details: `Originalbon: ${transaction.stornoOriginalId} · Grund: ${transaction.stornoReason}`,
+      details: `Originalbon: ${(transaction as StornoJournalTransaction).stornoOriginalId} · Grund: ${(transaction as StornoJournalTransaction).stornoReason}`,
     }];
   }
   const records: MovementRecord[] = [];
