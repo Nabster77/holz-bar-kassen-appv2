@@ -55,7 +55,7 @@ assert(menu.includes("currentStaff?.role === 'administrator'") && menu.includes(
 assert(!menu.includes('Pfand-Retoure'), 'Deposit return is not in the popup menu');
 assert(menu.includes('> Bestandskorrektur'));
 assert(!menu.includes('> Anfangsbestand'));
-assert(menu.includes('LockKeyhole') && menu.includes('> Tagesabschluss') &&
+assert(menu.includes('LockKeyhole') && menu.includes('<span>Tagesabschluss</span>') &&
   menu.includes('Nach Bestätigung unwiderruflich'),
   'Irreversible day close has a visible locked warning in the popup');
 assert(menu.includes("chooseCashAction('close')") && pos.includes('requestDailyClose()'),
