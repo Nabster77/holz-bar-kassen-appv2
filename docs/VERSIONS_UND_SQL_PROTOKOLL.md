@@ -38,3 +38,5 @@
 | --- | --- | --- | --- | --- | --- |
 | 11.11.2026 | Verwaltungspasswort-Dialog im Android-App-Vollbild | `main@10bec80b` | `main@dccc003` (PR #13) | keine | Veröffentlicht; GitHub Pages #24 erfolgreich; echter Samsung-PWA-Vollbildtest bestanden |
 | 11.11.2026 | Navigationsmenü und Kassenaktionen (Entwicklung) | `main@dccc003` | `woodmo-entwicklung@5cfb095` | keine | Umsetzung im Entwicklungszweig; Tablet-Test und Veröffentlichung ausstehend |
+
+| 13.11.2026 | Verwaltungsmenü V3: Toolbar durch gruppiertes Menü ersetzt, Home-/Menü-Reihenfolge und Cloud-Logo-Glow | `woodmo-v3.0` vor Umbau | `woodmo-v3.0` (laufende UI-Entwicklung) | **keine** | Nur Entwicklungsbranch; Rollensperre und bestehende Dialoge beibehalten; echte Tablet-Abnahme ausstehend. Umsetzungsprompt: `docs/WOODMO_V3_VERWALTUNGSMENUE_2026-11-13.md` |
