@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Category, CashSession, StaffUser, Transaction } from '@/types';
+import type { StornoRecord } from '@/lib/stornoRules';
+import { projectFinancialTransactions } from '@/lib/stornoReportProjection';
+import type { StornoJournalTransaction } from '@/lib/stornoReportProjection';
+import { exportStornoDocument } from '@/lib/stornoReceiptPdf';
 import {
   formatCurrency, formatDate, formatDateGermanFromISO, formatDateISO, formatDateLong, parseGermanDate,
   formatTime,
@@ -29,13 +33,14 @@ type JournalSort = 'newest' | 'oldest' | 'nameAsc' | 'nameDesc' | 'amountHigh' |
 
 interface Props {
   transactions: Transaction[];
+  stornos: StornoRecord[];
   categories: Category[];
   cashSessions: CashSession[];
   defaultLocation?: Exclude<LocationFilter, 'all'>;
   currentStaff?: StaffUser | null;
 }
 
-export function JournalScreen({ transactions, categories, cashSessions, defaultLocation = 'Friedrichshafen', currentStaff }: Props) {
+export function JournalScreen({ transactions, stornos, categories, cashSessions, defaultLocation = 'Friedrichshafen', currentStaff }: Props) {
   const [period, setPeriod] = useState<Period>('daily');
   const [groupMode, setGroupMode] = useState<GroupMode>('category');
   const [locationFilter, setLocationFilter] = useState<LocationFilter>(defaultLocation);
@@ -84,18 +89,35 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     });
   }, [transactions, start, end, locationFilter, journalSearch, categories]);
 
-  const taxByRateMap = useMemo(() => mergeTaxByRate(filteredTx), [filteredTx]);
+  const filteredStornos = useMemo(() => {
+    const search = journalSearch.trim().toLocaleLowerCase('de-DE');
+    return stornos.filter((record) => {
+      if (record.timestamp < start || record.timestamp > end ||
+          (locationFilter !== 'all' && record.location !== locationFilter)) return false;
+      if (!search) return true;
+      return [record.id, record.originalTransactionId, record.reason, record.employeeName,
+        record.paymentMethod, record.location, ...record.originalSnapshot.items.map((item) => item.name)]
+        .join(' ').toLocaleLowerCase('de-DE').includes(search);
+    });
+  }, [stornos, start, end, locationFilter, journalSearch]);
+  const financialTx = useMemo(
+    () => projectFinancialTransactions(filteredTx, filteredStornos, start, end + 1),
+    [filteredTx, filteredStornos, start, end],
+  );
+  const taxByRateMap = useMemo(() => mergeTaxByRate(financialTx), [financialTx]);
 
   const stats = useMemo(() => {
     let total = 0, count = 0, totalNet = 0;
     let pfandCollected = 0, pfandReturned = 0;
-    for (const t of filteredTx) {
+    for (const t of financialTx) {
+      const reversing = (t as Partial<StornoJournalTransaction>).isStornoProjection === true;
       total += t.subtotal;
-      count++;
+      if (!reversing) count++;
       totalNet += t.totalNet;
       for (const item of t.items) {
         if (item.isPfandRetoure) {
-          pfandReturned += Math.abs(item.pfand);
+          const amount = Math.abs(item.pfand || item.price * item.quantity);
+          pfandReturned += reversing ? -amount : amount;
         } else {
           pfandCollected += item.pfand;
         }
@@ -105,7 +127,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
     const taxByRate: Record<number, number> = {};
     for (const [k, v] of taxByRateMap) taxByRate[k] = v;
     return { total, taxByRate, count, totalNet, totalTax, pfandCollected, pfandReturned, pfandSaldo: pfandCollected - pfandReturned };
-  }, [filteredTx, taxByRateMap]);
+  }, [financialTx, taxByRateMap]);
 
   const relevantSessions = useMemo(
     () => cashSessions.filter((s) => {
@@ -121,13 +143,14 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
   // The control total is intentionally independent from the displayed period:
   // every journal shows the current calendar year's deposit balance.
   const yearlyPfandOverview = useMemo(
-    () => calculateYearlyPfandOverview(transactions, new Date().getFullYear(), locationFilter, sessionLocationLabel),
-    [transactions, locationFilter, sessionLocationLabel],
+    () => calculateYearlyPfandOverview(projectFinancialTransactions(transactions, stornos), new Date().getFullYear(), locationFilter, sessionLocationLabel),
+    [transactions, stornos, locationFilter, sessionLocationLabel],
   );
   const reportData = () => ({
     headerLabel,
     location: sessionLocationLabel,
-    transactions: filteredTx,
+    transactions: financialTx,
+    stornos: filteredStornos,
     categories,
     fileName: buildJournalFileName(period, start, end, locationFilter),
     reportPeriodStart: start,
@@ -163,7 +186,7 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
       return bAt - aAt;
     });
   }, [cashSessions, start, end, locationFilter, journalSearch, dailyCloseStatus, journalSort]);
-  const closeReport = (session: CashSession) => closedSessionReport(session, transactions, categories, currentStaff?.name);
+  const closeReport = (session: CashSession) => closedSessionReport(session, transactions, categories, currentStaff?.name, stornos);
   const selectedCloseReports = visibleDailyCloses.filter((session) => selectedCloseIds.has(session.id)).map(closeReport);
   const toggleClose = (id: string) => setSelectedCloseIds((current) => {
     const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
@@ -186,14 +209,14 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
         <div className="flex gap-2">
           <button
             onClick={groupMode === 'dailyClose' ? exportSelectedCloses : exportReport}
-            disabled={groupMode === 'dailyClose' ? selectedCloseReports.length === 0 : filteredTx.length === 0}
+            disabled={groupMode === 'dailyClose' ? selectedCloseReports.length === 0 : financialTx.length === 0}
             className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <FileDown className="h-3.5 w-3.5" /> PDF-Export
           </button>
           <button
             onClick={groupMode === 'dailyClose' ? printSelectedCloses : printReport}
-            disabled={groupMode === 'dailyClose' ? selectedCloseReports.length === 0 : filteredTx.length === 0}
+            disabled={groupMode === 'dailyClose' ? selectedCloseReports.length === 0 : financialTx.length === 0}
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
           >
             <Printer className="h-3.5 w-3.5" /> Drucken
@@ -308,26 +331,46 @@ export function JournalScreen({ transactions, categories, cashSessions, defaultL
           />
         ) : null}
         <StatCard label="Verkäufe" value={String(stats.count)} icon={<Receipt className="h-4 w-4" />} color="text-green-600 dark:text-green-400" />
+        {filteredStornos.length > 0 && <StatCard label="Stornos" value={String(filteredStornos.length)} icon={<Receipt className="h-4 w-4" />} color="text-red-600 dark:text-red-400" />}
       </div>
 
       <div>
-        {filteredTx.length === 0 ? (
+        {financialTx.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-gray-400 dark:text-gray-500">
             <Receipt className="h-12 w-12" />
             <p className="text-sm">Keine Verkäufe im gewählten Zeitraum für {locationFilter === 'all' ? 'die gewählten Standorte' : locationFilter}</p>
           </div>
         ) : groupMode === 'category' ? (
-          <CategoryGroupView transactions={filteredTx} categories={categories} sort={journalSort} />
+          <CategoryGroupView transactions={financialTx} categories={categories} sort={journalSort} />
         ) : groupMode === 'article' ? (
-          <ArticleGroupView transactions={filteredTx} sort={journalSort} />
+          <ArticleGroupView transactions={financialTx} sort={journalSort} />
         ) : groupMode === 'tax' ? (
-          <TaxClassView transactions={filteredTx} sort={journalSort} />
+          <TaxClassView transactions={financialTx} sort={journalSort} />
         ) : groupMode === 'bestseller' ? (
-          <BestsellerView transactions={filteredTx} categories={categories} sort={journalSort} />
+          <BestsellerView transactions={financialTx} categories={categories} sort={journalSort} />
         ) : (
-          <TransactionListView transactions={filteredTx} sort={journalSort} />
+          <TransactionListView transactions={financialTx} sort={journalSort} />
         )}
       </div>
+      {filteredStornos.length > 0 && (
+        <section className="mt-4 rounded-2xl border border-red-300 bg-white p-3 dark:border-red-900/60 dark:bg-slate-800">
+          <h3 className="mb-2 text-sm font-bold text-red-700 dark:text-red-300">Stornobelege – dokumentierte Gegenbuchungen ({filteredStornos.length})</h3>
+          <div className="max-h-64 space-y-2 overflow-y-auto">
+            {[...filteredStornos].sort((a,b)=>b.timestamp-a.timestamp).map((record) => (
+              <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 p-3 text-xs dark:border-red-950/80">
+                <div className="min-w-0 flex-1">
+                  <strong>{formatDate(record.timestamp)} {formatTime(record.timestamp)} · {record.paymentMethod === 'cash' ? 'Bar' : 'Karte'} · {formatCurrency(-record.grossAmount)}</strong>
+                  <p className="mt-1 break-words text-slate-600 dark:text-slate-300">Originalbon {record.originalTransactionId} · {record.employeeName} · {record.reason}</p>
+                </div>
+                <button type="button" onClick={() => { void exportStornoDocument(record); }}
+                  className="flex min-h-10 items-center gap-1 rounded-lg border border-red-400 px-3 py-2 font-semibold text-red-700 dark:text-red-300">
+                  <FileDown className="h-4 w-4" /> Storno-PDF
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       </>}
       {previewReport && <JournalPreviewDialog data={previewReport} onClose={() => setPreviewReport(null)} />}
     </div>
