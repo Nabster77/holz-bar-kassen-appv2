@@ -37,6 +37,7 @@ import { SyncDialog } from '@/components/SyncDialog';
 import { CatalogConflictDialog } from '@/components/CatalogConflictDialog';
 import { rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
 import { discardEntriesBeforeGeneration } from '@/lib/outbox';
+import { assertBookingResetSafe } from '@/lib/bookingResetSafety';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
 import { issueDailyCloseReceipt } from '@/lib/dailyCloseReceipt';
@@ -196,9 +197,10 @@ export default function App() {
   }
 
   async function resetBookings() {
-    // Reset only booking/cash-session data. Credentials, staff identities,
-    // device preferences, local document archives and catalog remain unchanged.
-    // In test mode the reset is local only, exactly like test bookings.
+    // Never clear an active till. The legacy server reset also deletes
+    // finalized sessions, so refuse it until selective retention is available.
+    assertBookingResetSafe(store.cashSessions, testMode);
+    // Credentials, personnel, local documents and catalog remain unchanged.
     if (!testMode) {
       const reset = await resetCloudBookings();
       // Prevent queued entries from a previous booking generation being
