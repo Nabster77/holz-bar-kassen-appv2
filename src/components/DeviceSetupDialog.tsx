@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Download, FolderOpen, ShieldCheck, X } from 'lucide-react';
+import { Download, FolderOpen, ShieldCheck, X, Laptop, Monitor, TabletSmartphone } from 'lucide-react';
 import { configureJournalExportFolder } from '@/lib/journalPdfFile';
-import { readDeviceSetup, saveDeviceSetup } from '@/lib/deviceSetup';
+import { readDeviceSetup, saveDeviceSetup, type DeviceKind } from '@/lib/deviceSetup';
 
 interface Props {
   onComplete: () => void;
@@ -13,6 +13,8 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previous = readDeviceSetup();
+  const [deviceKind, setDeviceKind] = useState<DeviceKind>(() => previous?.deviceKind ?? (/Android|iPad/i.test(navigator.userAgent) ? 'tablet' : 'pc'));
+  const hasDirectoryPicker = typeof (window as Window & { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function';
 
   async function chooseFolder() {
     if (busy) return;
@@ -22,7 +24,7 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
       const result = await configureJournalExportFolder();
       if (result.mode === 'cancelled') return;
       if (result.mode === 'folder') {
-        saveDeviceSetup('folder', result.folderName);
+        saveDeviceSetup('folder', result.folderName, deviceKind);
         onComplete();
       } else {
         // The filesystem picker is unavailable on this browser (notably Android).
@@ -36,7 +38,7 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
   }
 
   function chooseDownloads() {
-    saveDeviceSetup('downloads');
+    saveDeviceSetup('downloads', undefined, deviceKind);
     onComplete();
   }
 
@@ -54,8 +56,25 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
           </div>
         </div>
         {warning && <p role="alert" className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">{warning}</p>}
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-semibold text-slate-800 dark:text-slate-100">Welches Gerät verwenden Sie?</legend>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { kind: 'tablet' as const, label: 'Tablet', Icon: TabletSmartphone },
+              { kind: 'pc' as const, label: 'PC', Icon: Monitor },
+              { kind: 'notebook' as const, label: 'Notebook', Icon: Laptop },
+            ]).map(({ kind, label, Icon }) => (
+              <button type="button" key={kind} aria-pressed={deviceKind === kind} disabled={busy}
+                onClick={() => setDeviceKind(kind)}
+                className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 py-2 text-xs font-semibold transition ${deviceKind === kind ? 'border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950 dark:text-blue-100' : 'border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-200'}`}>
+                <Icon size={22} />{label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">WOODMO prüft anschließend die Möglichkeiten dieses Browsers. Die Geräteauswahl legt keine Bildschirmrotation fest.</p>
+        </fieldset>
         <div className="space-y-2 text-sm text-slate-700 dark:text-slate-200">
-          <p>Wähle nur den <strong>Speicherort</strong>. WOODMO verwaltet alle Unterordner automatisch.</p>
+          <p>Wähle den <strong>Speicherort</strong>. Falls der Browser Ordnerverwaltung unterstützt, kann WOODMO Unterordner anlegen.</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Beispiel: Kasse 26 / Friedrichshafen / November / Tagesabschluss
           </p>
@@ -67,10 +86,16 @@ export function DeviceSetupDialog({ onComplete, onCancel, warning }: Props) {
           Aktueller Speicherort: <strong>{previous.folderLabel}</strong>
         </p>}
         <div className="space-y-2">
-          <button type="button" onClick={() => void chooseFolder()} disabled={busy}
-            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-            <FolderOpen size={19} /> {busy ? 'Ordner wird geprüft …' : 'Speicherort auswählen – automatisch'}
-          </button>
+          {hasDirectoryPicker ? (
+            <button type="button" onClick={() => void chooseFolder()} disabled={busy}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+              <FolderOpen size={19} /> {busy ? 'Ordner wird geprüft …' : 'Speicherort auswählen – automatisch'}
+            </button>
+          ) : (
+            <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              Dieser Browser bietet keine automatische Ordnerwahl. Verwende die Download-Option. WOODMO speichert die Kassenbuchungen davon unabhängig.
+            </p>
+          )}
           <button type="button" onClick={chooseDownloads} disabled={busy}
             className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800">
             <Download size={19} /> Selbst verwalten (Downloads / Teilen)
