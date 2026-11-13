@@ -63,6 +63,7 @@ export default function App() {
   const [homeVisible, setHomeVisible] = useState(true);
   const [posVisited, setPosVisited] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [adminShotDirty, setAdminShotDirty] = useState(false);
   const [deviceSetupOpen, setDeviceSetupOpen] = useState(() => readDeviceSetup() === null);
   const [pdfArchiveWarning, setPdfArchiveWarning] = useState<string | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -208,6 +209,10 @@ export default function App() {
   }
 
   function goHome() {
+    // The administration's unsaved SCHUSS draft must not silently disappear.
+    if (tab === 'admin' && adminShotDirty && !homeVisible &&
+      !window.confirm('Ungespeicherte SCHUSS-Änderungen verwerfen und zur Startseite wechseln?')) return;
+    setAdminShotDirty(false);
     setMenuOpen(false);
     setHomeVisible(true);
   }
@@ -306,22 +311,27 @@ export default function App() {
       {/* Compact toolbar: Home never closes the register or clears its cart. */}
       {!homeVisible && (
         <>
-          <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:border-emerald-900/70 dark:bg-slate-900 sm:px-3">
-            <button type="button" aria-label="Zur Startseite" title="Startseite" onClick={goHome}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
-              <Home className="h-5 w-5" />
-            </button>
+          <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-2 border-b border-emerald-900/50 bg-[#0d1628] px-2 py-1.5 text-white shadow-sm sm:px-3">
             <WoodmoBrand status={!online || catalog.syncStatus === 'error' ? 'error' : !testMode && catalog.syncStatus !== 'saved' ? 'pending' : 'ok'} />
-            <h1 className="min-w-0 truncate text-base font-bold text-slate-900 dark:text-slate-100 sm:text-lg">
+            <h1 className={`min-w-0 truncate text-base font-bold sm:text-lg ${!online ? 'woodmo-heading-offline text-red-400' : 'text-white'}`}
+              aria-live="polite">
               {tab === 'pos' ? 'Kasse' : tab === 'admin' ? 'Verwaltung' : 'Journal'}
             </h1>
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              <button type="button" aria-label="Kassenmenü öffnen" title="Kassenmenü"
+            <button type="button" aria-label="Zur Startseite" title="Zur Startseite" onClick={goHome}
+              className="flex h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-sky-600/80 bg-sky-900/35 px-2.5 text-sky-100 shadow-[0_0_10px_rgba(56,189,248,.12)] transition hover:border-sky-400 hover:bg-sky-700/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400">
+              <Home className="h-5 w-5" />
+              <span className="hidden min-[1040px]:inline text-xs font-semibold">Home</span>
+            </button>
+            {(tab !== 'admin' || adminUnlocked) && (
+              <button type="button" aria-label={tab === 'admin' ? 'Verwaltungsmenü öffnen' : tab === 'journal' ? 'Journalmenü öffnen' : 'Kassenmenü öffnen'}
+                title="Menü" aria-expanded={menuOpen} aria-haspopup="dialog"
                 onClick={() => setMenuOpen((wasOpen) => !wasOpen)}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 px-2 text-slate-700 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">
+                className={`flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 font-semibold text-white transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 ${menuOpen ? 'border-emerald-400 bg-emerald-900/40' : 'border-slate-600 bg-slate-800/65'}`}>
                 <LayoutGrid className="h-5 w-5" />
-                <span className="hidden min-[980px]:inline text-xs font-semibold">Menü</span>
+                <span className="hidden min-[740px]:inline text-xs">Menü</span>
               </button>
+            )}
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" aria-label="Cloud synchronisieren" title="Cloud synchronisieren"
                 onClick={() => setSyncOpen(true)}
                 className="flex h-10 items-center gap-1 rounded-xl border border-emerald-700/40 px-2 text-emerald-700 dark:text-emerald-400">
@@ -347,7 +357,7 @@ export default function App() {
               </button>
             </div>
           </header>
-          {menuOpen && (
+          {menuOpen && (tab !== 'admin' || !adminUnlocked) && (
             <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/55 px-3 pt-16" onClick={() => setMenuOpen(false)}>
               <nav role="dialog" aria-modal="true" aria-label="Kassenmenü"
                 className="w-full max-w-xl rounded-2xl border border-emerald-700/30 bg-white p-3 shadow-2xl dark:bg-slate-900"
@@ -491,6 +501,10 @@ export default function App() {
         {!homeVisible && tab === 'admin' && (
           adminUnlocked ? (
             <AdminScreen
+              menuOpen={menuOpen}
+              onCloseMenu={() => setMenuOpen(false)}
+              onOpenJournal={() => navigateToProtected('journal')}
+              onShotDraftDirtyChange={setAdminShotDirty}
               onPrepareCatalogImport={catalog.prepareImport}
               onCommitCatalogImport={catalog.commitImport}
               shotOptions={store.shotOptions}
