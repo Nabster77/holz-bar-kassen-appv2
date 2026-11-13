@@ -35,3 +35,15 @@
 - Echte Browser-/Tablet-Abnahme einschließlich Hoch-/Querformat und Offline-Schalter.
 - Automatische Backup-Scheduler und Storno-Cloud-Integration laut anderen V3-Arbeitsdokumenten bleiben eigenständig offen.
 - Erst nach Nutzerabnahme veröffentlichen; ursprüngliche V2 `main` unangetastet.
+
+## Nachtrag – sichtbarer Bereichsname in der Kopfzeile
+
+Nutzerklarstellung: Nach der Menüauswahl muss der gerade geöffnete Bereich **auch in der oberen Kopfzeile lesbar** sein, nicht nur im Menü selbst.
+
+- Links unverändert Logo, „Verwaltung“, danach der ausgewählte Unterbereich (zum Beispiel „Kassen-Übersicht“, „Warengruppen“, „Artikel“, „SCHUSS“, „Benutzer“).
+- Home und Menü stehen unmittelbar nach dieser Bereichsangabe. Cloud und Sync bleiben rechts.
+- Zusätzlich zeigt die Bereichsangabe für geöffnete Verwaltungsdialoge „Excel-Import / Export“, „Backup importieren“ oder „Buchungen zurücksetzen“, für die App-Dialoge „Setup / PDF-Ordner“ und den Moduswechsel.
+- Bei Rückkehr aus einem Dialog erscheint wieder der aktive Verwaltungsbereich. Beim neuen Öffnen der Verwaltung ist dies „Kassen-Übersicht“.
+- Titel „Journal“ und „Kasse“ bleiben beim Wechsel in diese Bereiche erhalten. Im Offline-Fall bleibt die Überschrift „Verwaltung“ rot, der Unterbereich lesbar.
+- `AdminScreen` meldet die interne Auswahl über `onAdminSectionChange` an `App`; keine neuen Buchungspfade.
+- Automatischer Regressionstest: `scripts/check-v3-admin-menu.mjs`.
