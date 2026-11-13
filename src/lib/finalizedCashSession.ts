@@ -39,9 +39,10 @@ export function buildFinalizedCashSession(
   } : null;
   const entries = withdrawal ? [...session.entries,withdrawal] : [...session.entries];
   const cashTotal=ownSales.filter(t=>t.paymentMethod==='cash').reduce((sum,t)=>sum+t.total,0);
+  const stornoCashTotal=(close.snapshot.stornos??[]).filter(storno=>storno.cashSessionId===session.id).reduce((sum,storno)=>sum+storno.cashEffect,0);
   const deposits=entries.filter(e=>e.type==='deposit').reduce((sum,e)=>sum+e.amount,0);
   const withdrawals=entries.filter(e=>e.type==='withdrawal').reduce((sum,e)=>sum+e.amount,0);
-  const expected=Math.round((session.openingBalance+cashTotal+deposits-withdrawals)*100)/100;
+  const expected=Math.round((session.openingBalance+cashTotal+stornoCashTotal+deposits-withdrawals)*100)/100;
   if (!Number.isFinite(expected) || expected < 0) throw new Error('Negativer oder ungültiger Kassenbestand.');
   const intervals=(session.staffLoginIntervals??[]).map(i=>i.logoutAt?i:{...i,logoutAt:close.closedAt});
   return {
