@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { StornoRecord } from '@/lib/stornoRules';
 import { loadCloudStornos } from '@/lib/stornoCloud';
-import type { CatalogSyncResult } from '@/lib/catalogEngine';
 
 export type StornoCloudState = 'test' | 'loading' | 'ready' | 'offline' | 'unavailable' | 'error';
 
