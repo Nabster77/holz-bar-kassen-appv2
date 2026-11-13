@@ -13,11 +13,11 @@ Stand 13.11.2026 · Ziel: PC zunächst sicher testbar, anschließend Tablet und 
 | --- | --- | --- | --- |
 | P0 | Eine offene Kasse pro Standort | Auch bei parallelen Geräten und Tageswechsel keine Zweiteröffnung; pro Standort unabhängig | **Serverseitiger Unique-Index aktiv und mit abgewiesenem Duplikat geprüft. Clientcode nur im Prüfbranch; kompletter Praxislauf offen.** |
 | P0 | Fortsetzen offener Kasse | Logout, Browserneustart und Mitternacht lassen unveränderte Sitzung weiterlaufen, mit Öffnungszeit und Mitarbeiterprotokoll | Clientcode und Regressionstest im Prüfbranch; Browserlauf offen |
-| P0 | Reset | Artikel, Preise, Mitarbeiter, Bilder und sämtliche endgültigen Tagesabschlüsse bleiben. Bei aktiver Kasse keinerlei Reset; offline-ungesendete Buchungen nicht verlieren | Alte vollständige RPC im Aktivmodus im Prüfbranch gesperrt; DB-Sitzungs-Löschschutz aktiv; selektiver Cloud-Reset noch nicht umgesetzt |
+| P0 | Reset | Nach **geprüftem Vollbackup** darf Administrator gesamten Buchungsbestand inklusive offener/abgeschlossener Kassen, Stornos und Abschlussnummern löschen; Stammdaten behalten, geprüfte Archivkopie niemals löschen, Offline-Geräte abgleichen | Neue Anforderung 13.11.: Administrator darf jederzeit (auch Jahreswechsel/aktive Kasse) nach vollständiger rücklesbarer SHA-256-Sicherung ALLE Buchungsdaten inkl. Stornos/Abschlussbelege zurücksetzen. Alte RPC im Aktivmodus vorläufig gesperrt; verifizierter Cloud-Gesamtreset noch zu implementieren. |
 | P0 | Aktive Buchungen | POS-Verkäufe, Bar/Karte, Pfand, Stornos, Einlagen/Entnahmen korrekt und ohne Doppelzählung | Noch vollständig zu prüfen |
 | P0 | Tagesabschluss | Einmalig und unwiderruflich, Summen DE/AT korrekt, numerierter Cloud-Nachweis und verifizierte lokale Speicherung/PDF; keine falsche Erfolgsanzeige | Cloud-Belegnummern und Snapshot-Code vorhanden; echter End-to-End-/Fehlerfalltest sowie Offline-Abschluss noch offen |
 | P0 | Offline-Speicher | Lokale Buchung trotz Internetverlust, Speicherfehler erkennbar, sichere Warteschlange mit Idempotenz und Konfliktanzeige; Kasse nach Neustart | Teilweise vorhanden; robustes Speichern/Neustart weiter offen |
-| P0 | Offline-Storno | Berechtigung/Passwort, letzte fünf Bons, Storno ohne Internet, sofort richtige Salden, synchronisierbar ohne Duplikat, Originalbeleg bleibt | Noch nicht implementiert; aktuelle Cloud-Storno-Funktion verweigert offline |
+| P0 | Offline-Storno | Berechtigung/Passwort, fünf zur Stornierung zulässige Bons (Nutzer schrieb jetzt „erste“, Code aktuell „letzte“ – klären), Storno ohne Internet, richtige Salden, keine Duplikate | Noch nicht implementiert; aktuelle Cloud-Storno-Funktion verweigert offline |
 | P1 | Bargeldlogik | Anfangsbestand >0, letzter IST-Betrag bei neuer Sitzung übernehmen, nie negativer Kassenbestand; Karten nicht Bargeld | Code teils vorhanden, Sonderfälle und DE/AT prüfen |
 | P1 | Export/Journale DE und AT | Brutto/Netto/Steuer, Pfand, Bar/Karte, Geldbewegungen, Stornos, vollständige PDFs ohne abgeschnittene Tabellen | Vorhandene Regressionstests; PDF-Anzeige und Druck in echten Browsern offen |
 | P1 | Geräte-Setup und Ordner | Auswahl Tablet/PC/Notebook; automatische Capability-Erkennung; Downloads-Fallback Firefox, Chrome/Edge und Android inkl. Samsung Internet | V3-Prüfbranch erweitert; reale Berechtigungs-/Schreibtests offen |
@@ -34,7 +34,7 @@ Stand 13.11.2026 · Ziel: PC zunächst sicher testbar, anschließend Tablet und 
 2. Bei jedem Cloud-Test vor/nachher Tabellenzählungen: Verkäufe, Sitzungen, Abschlüsse, Stornos, Reset-Generationen; Katalog/Personal unverändert.
 3. Für Eröffnung und Tagesabschluss gleichzeitige-PC/Tablet-Zugriffe durch Cloud-RPC/Unique-Index schützen.
 4. V2-Datenbankzuordnung verifizieren; nicht allein aus Projektname oder Branch schließen, dass Cloud isoliert ist.
-5. Server-SQL-Resets und ältere Tests, die eine vollständige Löschung inklusive Abschlusszählern erwarten, später auf selektiven Reset umbauen.
+5. Server-SQL-Reset und ältere Tests auf **verifizierten vollständigen Administrator-Reset** umbauen: Backup dauerhaft lesen/verifizieren, atomar Buchungsdaten entfernen, Generation und neues Nummernsystem; Stammdaten unverändert.
 6. Nach Abschluss auf PC Tabletbrowser Samsung Internet/Chrome im Quer- und Hochformat testen, QR-Link und Ablageberechtigung manuell bestätigen.
 
 ## Nachträge ausdrücklich behalten
@@ -45,3 +45,8 @@ Stand 13.11.2026 · Ziel: PC zunächst sicher testbar, anschließend Tablet und 
 - Gerätesicherung und Tagesabschluss-PDF müssen auch bei Browserordner-/Downloadfehlern eine nachvollziehbare Wiederholung ermöglichen, ohne den Tagesabschluss ein zweites Mal zu buchen.
 - Bezahltaste kompakt, Warenkorb ausreichend Platz, Artikel- und Bildauswahl touchbedienbar.
 - Prüfen ob Rücksetzung der Administrator-Zugangsdaten im Reset-Dialog noch irreführend/gefährlich dokumentiert ist.
+
+## Ergänzung 13.11. – verbindlicher Reset & Excel
+- Neue Reset-Regel ist in [WOODMO_V3_RESET_NEUE_REGEL.md](./WOODMO_V3_RESET_NEUE_REGEL.md) dokumentiert; sie ersetzt jede frühere Aussage „Reset darf niemals abgeschlossene Buchungen entfernen“. Nach **verifiziertem Archiv** ist ein vollständiger Buchungsreset durch Administrator erlaubt.
+- Vollarchiv-Prüfmodul und Regressionstests: `src/lib/bookingResetArchive.ts` und `scripts/check-v3-booking-reset-archive.mjs`. Noch **nicht** mit Cloud-Löschung verknüpft.
+- Excel-Import/Export bleibt: Vorschau, doppelte Artikel verhindern, Waren-/Preis-/Steuer-/Pfanddaten DE und AT, SCHUSS geschützt, ZIP-Bildzuordnung ohne Überschreibungen, explizite Bestätigung, danach Cloud-Synchronisation.
