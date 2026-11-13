@@ -451,13 +451,22 @@ export function useStore() {
     });
   }, []);
 
-  const applyCatalogRows = useCallback((rows: CatalogRow[], skipKeys: Set<string>) => {
+  const applyCatalogRows = useCallback((rows: CatalogRow[], skipKeys: Set<string>, replaceLocal = false) => {
     const byId = (kind: CatalogKind) => new Map(rows.filter((r) => r.kind === kind).map((r) => [r.id, r]));
     const remoteCategories = byId('category');
     const remoteProducts = byId('product');
-    setCategories((cs) => normalizeCategories(mergeById(cs, remoteCategories, 'category', skipKeys)));
-
-    setProducts((ps) => mergeById(ps, remoteProducts, 'product', skipKeys));
+    if (replaceLocal) {
+      // Explicit operator choice: Cloud is authoritative. Existing local
+      // demo records absent from V3 must not remain as phantom products.
+      setCategories(normalizeCategories([...remoteCategories.values()]
+        .filter((r) => !r.deleted).map((r) => r.data as Category)));
+      setProducts([...remoteProducts.values()]
+        .filter((r) => !r.deleted).map((r) => r.data as Product)
+        .sort((a, b) => a.sortOrder - b.sortOrder));
+    } else {
+      setCategories((cs) => normalizeCategories(mergeById(cs, remoteCategories, 'category', skipKeys)));
+      setProducts((ps) => mergeById(ps, remoteProducts, 'product', skipKeys));
+    }
     const pfandRow = byId('setting').get(PFAND_SETTING_ID);
     if (pfandRow && !pfandRow.deleted && !skipKeys.has(keyOf('setting', PFAND_SETTING_ID))) {
       setPfandSettings(pfandRow.data as PfandSettings);
