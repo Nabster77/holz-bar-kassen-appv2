@@ -26,3 +26,11 @@
 @media (prefers-reduced-motion: reduce) {
   .woodmo-brand-ok { animation: none; box-shadow: 0 0 9px rgba(16,185,129,.35); }
 }
+
+@keyframes woodmo-text-glow {
+  0%, 100% { text-shadow: 0 0 8px rgba(16,185,129,.1); }
+  50% { text-shadow: 0 0 14px rgba(16,185,129,.28); }
+}
+.woodmo-title-ok { animation: woodmo-text-glow 3.3s ease-in-out infinite; }
+.woodmo-title-error { text-shadow: 0 0 10px rgba(239,68,68,.38); }
+@media (prefers-reduced-motion: reduce) { .woodmo-title-ok { animation: none; } }
