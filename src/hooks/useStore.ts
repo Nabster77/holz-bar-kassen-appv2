@@ -1,4 +1,5 @@
 import { canDiscardCashSession } from '@/lib/cashBalanceCarry';
+import { activeCashSessionsByLocation, canOpenNewCashSession } from '@/lib/activeCashSessions';
 import { useCallback, useEffect, useState } from 'react';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import type { StornoRecord } from '@/lib/stornoRules';
@@ -161,26 +162,12 @@ export function useStore() {
   }, []);
 
   // Cash session management
-  const today = formatDateISO(Date.now());
-
-  // Only the latest session at each location may be resumed. Older open
-  // records from a restore must not reappear after a newer daily close.
-  const latestSessionsToday = new Map<Location, CashSession>();
-  for (const session of cashSessions.filter((s) => s.date === today && !s.discarded)) {
-    const latest = latestSessionsToday.get(session.location);
-    if (!latest || session.openedAt > latest.openedAt ||
-        (session.openedAt === latest.openedAt && session.closed)) {
-      latestSessionsToday.set(session.location, session);
-    }
-  }
-  const openSessionsToday = [...latestSessionsToday.values()].filter((s) =>
-    !s.closed && !s.closedAt && !s.dailyCloseFinalizedAt && !s.dailyCloseSnapshot);
-  // Resume the selected till first.  A newly opened browser/device may not
-  // have a stored selection yet; when exactly one till is open today, it is
-  // unambiguous and should be resumed automatically.
+  // A till stays open across midnight, restarts and staff changes until a
+  // final close. Never limit the lookup to the opening calendar day.
+  const openSessions = activeCashSessionsByLocation(cashSessions);
   const activeSession =
-    openSessionsToday.find((s) => s.location === selectedLocation) ??
-    (openSessionsToday.length === 1 ? openSessionsToday[0] : null);
+    openSessions.find((s) => s.location === selectedLocation) ??
+    (openSessions.length === 1 ? openSessions[0] : null);
 
   useEffect(() => {
     if (activeSession && activeSession.location !== selectedLocation) {
@@ -207,9 +194,8 @@ export function useStore() {
       staffLoginIntervals: staff ? [{ id: uid('staff-login'), staffId: staff.id, staffName: staff.name, loginAt: openedAt }] : [],
     };
     setCashSessions((ss) => {
-      const latest = ss.filter(s => s.date === session.date && s.location === location && !s.discarded)
-        .sort((a, b) => b.openedAt - a.openedAt)[0];
-      if (latest && !latest.closed && !latest.closedAt && !latest.dailyCloseSnapshot && !latest.dailyCloseFinalizedAt) return ss;
+      // Refuse a second opening even if the existing session began yesterday.
+      if (!canOpenNewCashSession(ss, location)) return ss;
       return [...ss, session];
     });
   }, []);
