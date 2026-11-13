@@ -21,6 +21,14 @@ assert.match(header, /!online \? 'woodmo-heading-offline text-red-400' : 'text-w
 assert.match(app, /menuOpen=\{menuOpen\}/);
 assert.match(app, /onCloseMenu=\{\(\) => setMenuOpen\(false\)\}/);
 assert.match(app, /onOpenJournal=\{\(\) => navigateToProtected\('journal'\)\}/);
+assert.match(app, /onAdminSectionChange=\{setAdminSection\}/,
+  'The admin screen must report its current section to App.');
+assert.match(app, /const \[adminSection, setAdminSection\] = useState\('Kassen-Übersicht'\)/);
+assert.match(header, /activeAdminSectionTitle/,
+  'The shared header must show the active admin section.');
+assert.match(app, /title=\{`Verwaltung · \$\{activeAdminSectionTitle\}`\}/);
+assert.match(app, /modeConfirm === 'to-test' \? 'Auf Testmodus wechseln'/);
+assert.match(app, /deviceSetupOpen && tab === 'admin'/);
 assert.match(app, /menuOpen && \(tab !== 'admin' \|\| !adminUnlocked\)/,
   'Original cash register menu must not overlay the admin menu.');
 assert.match(app, /adminUnlocked \? \(/,
@@ -28,6 +36,14 @@ assert.match(app, /adminUnlocked \? \(/,
 
 assert.match(admin, /useState<'sessions' \| 'categories' \| 'products' \| 'shots' \| 'staff'>\('sessions'\)/,
   'The administrative entry view must remain cash overview.');
+for (const title of ['Kassen-Übersicht', 'Warengruppen', 'Artikel', 'SCHUSS', 'Benutzer']) {
+  assert(admin.includes(title), `Missing a user-visible admin section title: ${title}`);
+}
+assert.match(admin, /onAdminSectionChange\(activeTitle\)/);
+assert.match(admin, /showCatalogTransfer \? 'Excel-Import \/ Export'/);
+assert.match(admin, /showImport \? 'Backup importieren'/);
+assert.match(admin, /showReset \? 'Buchungen zurücksetzen'/);
+assert.match(admin, /: ADMIN_SECTION_TITLES\[tab\]/);
 for (const item of [
   'Verwaltungsbereiche','Kassen-Übersicht','Warengruppen','Artikel','SCHUSS','Benutzer','Journal',
   'App-Einstellungen','Setup / PDF-Ordner','Auf Testmodus wechseln',
