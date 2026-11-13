@@ -38,8 +38,10 @@ assert(!admin.includes('className="mb-3 flex flex-wrap items-center justify-betw
 assert.match(admin, /\{menuOpen && \(/);
 assert.match(admin, /<ResetConfirmDialog/,
   'Reset remains behind its original safety confirmation.');
-assert.match(admin, /shotDraftDirty && !window.confirm/,
-  'SCHUSS draft loss protection must remain in place.');
+assert.match(admin, /if \(tab !== 'shots' \|\| !shotDraftDirty\) return true/,
+  'SCHUSS draft guard must remain in place.');
+assert.match(admin, /if \(!window.confirm\('Ungespeicherte SCHUSS-/,
+  'Leaving SCHUSS requires confirmation.');
 assert.match(admin, /if \(tab === 'shots' && shotDraftDirty\)/,
   'Modal actions must not silently lose SCHUSS drafts.');
 
