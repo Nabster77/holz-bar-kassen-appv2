@@ -247,6 +247,7 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
         onClose={() => setShowCatalogTransfer(false)} />}
       {showReset && (
         <ResetConfirmDialog
+          testMode={testMode}
           onExport={onExportBackup}
           onCancel={() => setShowReset(false)}
           onConfirm={async () => { await onResetAllData?.(); setShowReset(false); }}
@@ -1474,7 +1475,7 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
 
 // ---- Reset / Backup / Import dialogs ----
 
-function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () => void | Promise<void>; onCancel: () => void; onConfirm: () => Promise<void> }) {
+function ResetConfirmDialog({ testMode, onExport, onCancel, onConfirm }: { testMode: boolean; onExport?: () => void | Promise<void>; onCancel: () => void; onConfirm: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1498,14 +1499,14 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
             <RotateCcw className="h-6 w-6" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Tagesbuchungen zurücksetzen?</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Buchungen und Kassensitzungen werden zurückgesetzt; Benutzer bleiben erhalten</p>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Testbuchungen zurücksetzen?</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Im Testmodus nur simulierte Buchungen löschen; Stamm- und Abschlussdaten schützen</p>
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Dadurch werden <strong>alle Transaktionen und Kassensitzungen</strong> (Anfangsbestände, Einlagen, Abschlüsse) entfernt. Die Belegzähler beginnen wieder bei 0; der nächste Tagesabschluss erhält je Standort die Nummer 000001. <strong>Alle Mitarbeiter und Administratoren samt Rollen, persönlichen Passwörtern und Sicherheitsfragen bleiben erhalten.</strong> Benutzer können weiterhin einzeln in der Benutzerverwaltung geändert oder gelöscht werden. Das Passwort für Verwaltung und Journal wird wieder auf <strong>kasse</strong> gesetzt; der Cloud-Hauptzugang wird auf <strong>Admin / 123456</strong> zurückgesetzt.<br /><br />
-          Ihre <strong>Artikel, Warengruppen, Preise, Bilder und sonstigen Katalogdaten bleiben erhalten</strong>. Die Löschung gilt auch in der Cloud. Alle verbundenen Geräte übernehmen den Reset bei der nächsten Synchronisierung. Danach wird die Cloud-Anmeldung beendet; melden Sie sich anschließend wieder mit <strong>Admin / 123456</strong> an.<br /><br />
-          <strong>Empfehlung:</strong> Sichern Sie die Daten zuerst als Backup-Datei, damit Sie sie später jederzeit wieder importieren und auswerten können — auch noch in kommenden Jahren.
+          {testMode
+            ? 'Im Testmodus können simulierte Buchungen und Sitzungen zurückgesetzt werden, sofern keine Kasse mehr aktiv ist. Artikel, Preise, Warengruppen, Mitarbeiter und ihre Zugangsdaten bleiben erhalten. Die Cloud wird dabei nicht gelöscht.'
+            : 'Im Aktivmodus ist der bisherige vollständige Buchungs-Reset vorsorglich gesperrt: Er würde abgeschlossene Tagesabschlüsse und möglicherweise Buchungen anderer Geräte gefährden. Erst nach Umsetzung eines selektiven Cloud-Resets wird die Funktion wieder freigegeben. Artikel, Preise und Mitarbeiter bleiben unangetastet.'}
         </p>
         {error && (
           <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
@@ -1524,10 +1525,10 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () =
           )}
           <button
             onClick={confirm}
-            disabled={busy}
+            disabled={busy || !testMode}
             className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
           >
-            <RotateCcw className="h-4 w-4" /> {busy ? 'Wird zurückgesetzt …' : 'Jetzt vollständig zurücksetzen'}
+            <RotateCcw className="h-4 w-4" /> {busy ? 'Wird zurückgesetzt …' : testMode ? 'Testbuchungen zurücksetzen' : 'Im Aktivmodus gesperrt'}
           </button>
           <button onClick={onCancel} disabled={busy} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
             Abbrechen
