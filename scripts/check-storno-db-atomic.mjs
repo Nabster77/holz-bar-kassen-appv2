@@ -88,6 +88,7 @@ await assert.rejects(
 // Nor may a reset delete an original receipt or session with storno evidence.
 await assert.rejects(db.query('DELETE FROM public.pos_transactions WHERE id=$1',['bon-1']),/darf nicht gelöscht/);
 await assert.rejects(db.query('DELETE FROM public.pos_cash_sessions WHERE id=$1',[sessionId]),/darf nicht gelöscht/);
+await assert.rejects(db.query('INSERT INTO public.pos_booking_resets(id,reset_at) VALUES(1,$1)',[now]),/Buchungs-Reset gesperrt/);
 // SQL stores UTC timestamp while the finalized snapshot stores JS milliseconds.
 // The close's audit guard verifies all booked fields, including the original.
 const decodeRow = row=>({
