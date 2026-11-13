@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const schema = readFileSync('docs/sql/WOODMO_V3_STORNO_SCHEMA_ENTWURF_NICHT_AUSFUEHREN.sql','utf8');
+const schema = readFileSync('supabase/migrations/20261113115500_woodmo_v3_protected_storno.sql','utf8');
 const adminId='6dfda066-31a0-4a40-8f1b-b82d886487c3';
 const employeeId='4c8ae922-fbae-47cf-b3ad-1b87d74527a0';
 const sessionId='v3-storno-test-session';
