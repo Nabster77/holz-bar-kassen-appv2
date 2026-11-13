@@ -241,3 +241,92 @@ GRANT EXECUTE ON FUNCTION public.create_pos_storno_v3(uuid,text,text,uuid,text)
 
 -- Test with isolated fixtures before applying; there is deliberately no
 -- booking reset, trigger bypass, or automatic destructive cleanup in this file.
+
+-- SECURITY ADDENDUM (2026-11-13): a finalized cash snapshot MUST contain
+-- all recorded stornos verbatim. The original RPC takes SHARE table locks;
+-- an UPDATE/INSERT of pos_cash_sessions needs a conflicting ROW EXCLUSIVE
+-- lock, so the write and the storno RPC cannot overtake one another.
+CREATE OR REPLACE FUNCTION public.pos_storno_closed_session_guard()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE
+  v_audit_count bigint;
+  v_audit_rows jsonb;
+  v_storno public.pos_stornos%ROWTYPE;
+  v_matches bigint;
+BEGIN
+  IF NOT coalesce((NEW.data->>'closed')::boolean,false) THEN RETURN NEW; END IF;
+
+  SELECT count(*) INTO v_audit_count
+  FROM public.pos_stornos
+  WHERE cash_session_id=NEW.id;
+  v_audit_rows:=NEW.data#>'{dailyCloseSnapshot,stornos}';
+
+  IF v_audit_count=0 THEN
+    IF jsonb_typeof(v_audit_rows)='array' AND jsonb_array_length(v_audit_rows)>0 THEN
+      RAISE EXCEPTION 'Tagesabschluss enthält nicht bestätigte Stornobelege.';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF coalesce(jsonb_typeof(v_audit_rows),'null')<>'array' OR
+     jsonb_array_length(v_audit_rows)<>v_audit_count THEN
+    RAISE EXCEPTION 'Tagesabschluss enthält nicht alle bestätigten Stornobelege.';
+  END IF;
+
+  FOR v_storno IN
+    SELECT * FROM public.pos_stornos WHERE cash_session_id=NEW.id
+  LOOP
+    SELECT count(*) INTO v_matches
+    FROM jsonb_array_elements(v_audit_rows) AS a(record)
+    WHERE a.record->>'id'=v_storno.id::text
+      AND a.record->>'originalTransactionId'=v_storno.original_transaction_id
+      AND a.record->>'cashSessionId'=v_storno.cash_session_id
+      AND a.record->>'location'=v_storno.location
+      AND a.record->>'employeeId'=v_storno.employee_id::text
+      AND a.record->>'employeeName'=v_storno.employee_name
+      AND a.record->>'reason'=v_storno.reason
+      AND a.record->>'paymentMethod'=v_storno.payment_method
+      AND round(((a.record->>'grossAmount')::numeric)*100)::bigint=v_storno.gross_amount_cents
+      AND round(((a.record->>'cashEffect')::numeric)*100)::bigint=v_storno.cash_effect_cents
+      AND round(((a.record->>'cardEffect')::numeric)*100)::bigint=v_storno.card_effect_cents
+      AND a.record->'originalSnapshot'=v_storno.original_receipt_snapshot;
+    IF v_matches<>1 THEN
+      RAISE EXCEPTION 'Tagesabschluss enthält fehlerhaften oder unbestätigten Stornonachweis.';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pos_storno_closed_session_guard() FROM PUBLIC, anon;
+DROP TRIGGER IF EXISTS pos_storno_closed_session_guard_trigger ON public.pos_cash_sessions;
+CREATE TRIGGER pos_storno_closed_session_guard_trigger
+  BEFORE INSERT OR UPDATE ON public.pos_cash_sessions
+  FOR EACH ROW EXECUTE FUNCTION public.pos_storno_closed_session_guard();
+
+-- A booking reset must NEVER destroy an original or daily session linked to
+-- a permanent storno. The reset RPC then fails atomically, rather than
+-- orphaning or silently erasing finance/audit evidence.
+CREATE OR REPLACE FUNCTION public.pos_storno_protect_bookings()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+  IF TG_TABLE_NAME='pos_transactions' THEN
+    IF EXISTS (SELECT 1 FROM public.pos_stornos WHERE original_transaction_id=OLD.id) THEN
+      RAISE EXCEPTION 'Originalbon mit Stornobeleg darf nicht gelöscht werden.';
+    END IF;
+  ELSIF TG_TABLE_NAME='pos_cash_sessions' THEN
+    IF EXISTS (SELECT 1 FROM public.pos_stornos WHERE cash_session_id=OLD.id) THEN
+      RAISE EXCEPTION 'Kassensitzung mit Stornobeleg darf nicht gelöscht werden.';
+    END IF;
+  END IF;
+  RETURN OLD;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pos_storno_protect_bookings() FROM PUBLIC, anon;
+DROP TRIGGER IF EXISTS pos_storno_transactions_retain ON public.pos_transactions;
+CREATE TRIGGER pos_storno_transactions_retain
+  BEFORE DELETE ON public.pos_transactions
+  FOR EACH ROW EXECUTE FUNCTION public.pos_storno_protect_bookings();
+DROP TRIGGER IF EXISTS pos_storno_sessions_retain ON public.pos_cash_sessions;
+CREATE TRIGGER pos_storno_sessions_retain
+  BEFORE DELETE ON public.pos_cash_sessions
+  FOR EACH ROW EXECUTE FUNCTION public.pos_storno_protect_bookings();
