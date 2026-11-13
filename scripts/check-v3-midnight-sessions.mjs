@@ -25,8 +25,12 @@ assert.equal(activeCashSessionsByLocation([finalized]).length, 0,
 assert.equal(canOpenNewCashSession([finalized], 'Friedrichshafen'), true,
   'New session is possible after final close.');
 const newerFinalized = { ...finalized, id: 'newer-close', openedAt: later + 1000 };
-assert.equal(activeCashSessionsByLocation([opening, newerFinalized]).length, 0,
-  'An older stale open record must not supersede a newer closed session.');
+assert.deepEqual(activeCashSessionsByLocation([opening, newerFinalized]).map(x => x.id), [opening.id],
+  'Even an older open till must not be hidden by another finalized session.');
+assert.equal(canOpenNewCashSession([opening, newerFinalized], 'Friedrichshafen'), false,
+  'ANY active till blocks a second opening at this site.');
+assert.equal(canOpenNewCashSession([opening, newerFinalized], 'Bregenz'), true,
+  'Another location stays independent.');
 const discarded = { ...opening, discarded: true };
 assert.equal(activeCashSessionsByLocation([discarded]).length, 0);
 assert.equal(canOpenNewCashSession([discarded], 'Friedrichshafen'), true);
