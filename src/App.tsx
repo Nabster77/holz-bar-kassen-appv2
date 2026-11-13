@@ -42,7 +42,7 @@ import { formatDateISO } from '@/lib/format';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
-  ArrowDownCircle, ArrowUpCircle, Recycle,
+  ArrowDownCircle, ArrowUpCircle,
   FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, LayoutGrid, X, Home, LogOut, LogIn, LockKeyhole,
 } from 'lucide-react';
 
