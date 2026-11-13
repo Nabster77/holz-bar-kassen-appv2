@@ -330,3 +330,20 @@ DROP TRIGGER IF EXISTS pos_storno_sessions_retain ON public.pos_cash_sessions;
 CREATE TRIGGER pos_storno_sessions_retain
   BEFORE DELETE ON public.pos_cash_sessions
   FOR EACH ROW EXECUTE FUNCTION public.pos_storno_protect_bookings();
+
+-- Reset marker creation must never hide fiscal stornos in an older
+-- booking generation, even if a reset RPC changes its delete order.
+CREATE OR REPLACE FUNCTION public.pos_storno_booking_reset_guard()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.pos_stornos LIMIT 1) THEN
+    RAISE EXCEPTION 'Buchungs-Reset gesperrt: Stornobelege müssen dauerhaft archiviert bleiben.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pos_storno_booking_reset_guard() FROM PUBLIC, anon;
+DROP TRIGGER IF EXISTS pos_storno_booking_reset_guard_trigger ON public.pos_booking_resets;
+CREATE TRIGGER pos_storno_booking_reset_guard_trigger
+  BEFORE INSERT ON public.pos_booking_resets
+  FOR EACH ROW EXECUTE FUNCTION public.pos_storno_booking_reset_guard();
