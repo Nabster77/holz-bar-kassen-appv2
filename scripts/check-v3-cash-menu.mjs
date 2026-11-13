@@ -21,10 +21,15 @@ assert(header.indexOf("aria-label={currentStaff ? 'Mitarbeiter abmelden'") <
   'Login/logout control is immediately left of green Cloud buttons');
 assert(pos.includes('loginRequest: number') && pos.includes('loginRequest={cashierLoginRequest}') === false);
 assert(app.includes('loginRequest={cashierLoginRequest}'));
-assert(pos.includes('if (!currentStaff) setShowOpenDialog(true)'),
+assert(app.includes('if (!store.activeSession || !currentStaff) setCashierLoginRequest((n) => n + 1)'), 'Home tile reopens cashier login');
+assert(pos.includes('if (!activeSession || !currentStaff) setShowOpenDialog(true)'),
   'Header login must open existing protected login dialog');
-assert(!toolbar.includes('onClick={() => setShowOpenDialog(true)}'),
+assert(!toolbar.includes('>Mitarbeiter anmelden</button>'),
   'No additional employee login button in POS strip');
+assert(toolbar.includes('Oben Anmelden wählen'),
+  'Cashier login is delegated to the shared header control');
+assert(toolbar.includes('Kasse eröffnen'),
+  'Opening an unstarted register remains possible for an authenticated cashier');
 assert(!toolbar.includes('onClick={() => void requestDailyClose()}'),
   'Day close must live in menu only');
 assert(!toolbar.includes('Tagesabschluss'));
