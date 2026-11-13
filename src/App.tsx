@@ -9,7 +9,7 @@ import { prepareStorno, prepareFinalCloseStornoSnapshot } from '@/lib/stornoRule
 import { submitStornoOnline } from '@/lib/stornoCloud';
 import { loadCloudStornos } from '@/lib/stornoCloud';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
-import type { Transaction } from '@/types';
+import type { CashSession, Transaction } from '@/types';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { useStaffDirectory } from '@/hooks/useStaffDirectory';
 import { StaffLoginDialog } from '@/components/StaffLoginDialog';
@@ -35,7 +35,7 @@ import { InstallPrompt } from '@/components/InstallPrompt';
 import { SyncToast } from '@/components/SyncToast';
 import { SyncDialog } from '@/components/SyncDialog';
 import { CatalogConflictDialog } from '@/components/CatalogConflictDialog';
-import { rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
+import { knownBookingReset, rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
 import { discardEntriesBeforeGeneration } from '@/lib/outbox';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
@@ -538,7 +538,37 @@ export default function App() {
               store.addTransaction({ ...tx, cashSessionId: store.activeSession.id, employeeId: currentStaff.id, employeeName: currentStaff.name });
               if (store.activeSession) store.recordStaffActivity(store.activeSession.id, { id: `activity-${Date.now().toString(36)}`, type: 'sale', staffId: currentStaff.id, staffName: currentStaff.name, timestamp: tx.timestamp, amount: tx.total });
             }}
-            onOpenCash={(location, balance) => currentStaff && store.openCashSession(location, balance, currentStaff)}
+            onOpenCash={async (location, balance) => {
+              if (!currentStaff) return false;
+              // Offline openings stay local until reconnection. If another
+              // device opened the same till while offline, the database must
+              // reject the collision rather than silently merge cash books.
+              if (testMode || !online) {
+                store.openCashSession(location, balance, currentStaff);
+                return true;
+              }
+              if (!supabase) throw new Error('Die V3-Cloud ist nicht konfiguriert.');
+              // Check the relevant till before creating another session.
+              // An unfinished till remains open across midnight.
+              const { data, error } = await supabase.from('pos_cash_sessions')
+                .select('data')
+                .eq('booking_generation', knownBookingReset().generation)
+                .eq('location', location)
+                .eq('data->>closed', 'false');
+              if (error) throw new Error(`Kassenstatus konnte nicht geprüft werden: ${error.message}`);
+              const existing = (data ?? []).map((item) => item.data as CashSession)
+                .find((session) => !session.closed && !session.discarded && !session.closedAt &&
+                  !session.dailyCloseFinalizedAt && !session.dailyCloseSnapshot);
+              if (existing) {
+                // Adopt the confirmed cloud session in local state without
+                // modifying either cloud cash register or its history.
+                store.mergeCloudData({ generation: knownBookingReset().generation,
+                  transactions: [], cashSessions: [existing], newestTransactionTimestamp: null });
+                throw new Error(`In ${location} ist bereits eine Kasse geöffnet. Sie wird übernommen. Bitte mit deinem Mitarbeiterkonto erneut anmelden, statt eine zweite Kasse zu eröffnen.`);
+              }
+              store.openCashSession(location, balance, currentStaff);
+              return true;
+            }}
             onCorrectOpening={(amt, reason) => {
               if (store.activeSession && currentStaff) store.correctOpeningBalance(store.activeSession.id, amt, reason, currentStaff);
             }}
