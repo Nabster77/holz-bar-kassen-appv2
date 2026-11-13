@@ -65,7 +65,7 @@ export function ProductTile({
         </span>
       )}
       {product.isPfandArticle && (
-        <span className="absolute bottom-[29%] left-1.5 z-10 rounded-full bg-teal-600/95 px-1.5 py-0.5 text-[10px] font-bold text-white">
+        <span className="absolute bottom-[43%] left-1.5 z-10 rounded-full bg-teal-600/95 px-1.5 py-0.5 text-[10px] font-bold text-white">
           Pfand
         </span>
       )}
