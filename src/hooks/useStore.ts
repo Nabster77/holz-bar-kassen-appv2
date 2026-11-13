@@ -161,8 +161,6 @@ export function useStore() {
   }, []);
 
   // Cash session management
-  const today = formatDateISO(Date.now());
-
   // An open till survives midnight: it remains active until an actual
   // daily close, independently for Friedrichshafen and Bregenz.
   // Only the newest session per location may be resumed.
