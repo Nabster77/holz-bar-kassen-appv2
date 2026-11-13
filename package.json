@@ -27,7 +27,7 @@
     "test:staff-proof": "node --experimental-strip-types scripts/check-storno-staff-proof.mjs",
     "test:session-linkage": "node --experimental-strip-types scripts/check-session-linkage.mjs",
     "test:midnight-sessions": "node --experimental-strip-types scripts/check-v3-midnight-sessions.mjs",
-    "test:reset-guard-v3": "node --experimental-strip-types scripts/check-v3-booking-reset-guard.mjs",
+    "test:reset-guard-v3": "node --import tsx scripts/check-v3-booking-reset-guard.mjs",
     "test:product-images": "node scripts/check-v3-product-images.mjs",
     "test:cart-actions": "node scripts/check-v3-cart-actions.mjs",
     "test:cloud-takeover": "node scripts/check-v3-cloud-takeover.mjs",
