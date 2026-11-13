@@ -1,5 +1,7 @@
 import type { Category, CashSession, Location, StaffActivity, StaffLoginInterval, Transaction } from '@/types';
 import { sessionTransactions } from '@/lib/sessionTransactions';
+import { projectFinancialTransactions } from '@/lib/stornoReportProjection';
+import type { StornoRecord } from '@/lib/stornoRules';
 import { buildJournalFileName } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type CashAuditRecord, type JournalReportData, type StaffTimeRecord } from '@/lib/journalPdf';
 import { endOfDay, startOfDay } from '@/lib/format';
@@ -34,18 +36,21 @@ export function buildDailyReport(
   sessions: CashSession[] = [],
   exportedByName?: string,
   allTransactions: Transaction[] = transactions,
+  stornos: readonly StornoRecord[] = [],
 ): JournalReportData {
   const day = new Date(date + 'T00:00:00');
   return {
     headerLabel: `Tagesübersicht ${loc} — ${day.toLocaleDateString('de-DE')}`,
     location: loc,
-    transactions,
+    transactions: projectFinancialTransactions(transactions, stornos, startOfDay(day.getTime()), endOfDay(day.getTime()) + 1),
+    stornos: stornos.filter((storno) => storno.location === loc && storno.timestamp >= startOfDay(day.getTime()) && storno.timestamp <= endOfDay(day.getTime())),
     categories,
     fileName: buildJournalFileName('daily', startOfDay(day.getTime()), endOfDay(day.getTime()), loc),
     reportPeriodStart: startOfDay(day.getTime()),
     exportedByName,
     cashAuditRecords: cashAuditRecordsFromSessions(sessions),
-    yearlyPfandOverview: calculateYearlyPfandOverview(allTransactions, day.getFullYear(), loc),
+    yearlyPfandOverview: calculateYearlyPfandOverview(
+      projectFinancialTransactions(allTransactions, stornos), day.getFullYear(), loc),
   };
 }
 
@@ -91,9 +96,13 @@ function staffTimesFromSession(session: CashSession, closedAt: number): StaffTim
     .sort((a, b) => a.loginAt - b.loginAt);
 }
 
-export function closedSessionReport(session: CashSession, transactions: Transaction[], categories: Category[], exportedByName?: string): JournalReportData {
+export function closedSessionReport(session: CashSession, transactions: Transaction[], categories: Category[], exportedByName?: string, allStornos: readonly StornoRecord[] = []): JournalReportData {
   const snapshot = session.dailyCloseSnapshot;
-  const reportTransactions = snapshot?.transactions ?? sessionTransactions(transactions, session);
+  const originalTransactions = snapshot?.transactions ?? sessionTransactions(transactions, session);
+  // A final close reproduces the stored immutable storno snapshot. Older
+  // receipts never disappear because the Bonliste displays only five.
+  const sessionStornos = snapshot?.stornos ?? allStornos.filter((entry) => entry.cashSessionId === session.id);
+  const reportTransactions = projectFinancialTransactions(originalTransactions, sessionStornos);
   const finalizedAt = snapshot?.finalizedAt ?? session.closedAt ?? Date.now();
   const [year] = session.date.split('-');
   const closingWithdrawalAmount = session.closingWithdrawalAmount ?? session.entries.filter((entry) => entry.isClosingWithdrawal).reduce((sum, entry) => sum + entry.amount, 0);
@@ -114,7 +123,8 @@ export function closedSessionReport(session: CashSession, transactions: Transact
   const openingCorrectionTotal = session.corrections.reduce((sum, correction) => sum + correction.newAmount - correction.oldAmount, 0);
   const balanceBeforeWithdrawal = Math.round((session.openingBalance + cashTurnover + deposits - normalWithdrawals) * 100) / 100;
   return {
-    ...buildDailyReport(session.location, session.date, reportTransactions, categories, [session], exportedByName ?? snapshot?.finalizedByName),
+    ...buildDailyReport(session.location, session.date, originalTransactions, categories, [session], exportedByName ?? snapshot?.finalizedByName,
+      transactions, sessionStornos),
     headerLabel: `${session.location} · ${new Date(session.openedAt).toLocaleDateString('de-DE')} · ${new Date(finalizedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
     documentTitle: 'Tagesabschluss',
     documentStatus: 'Endgültig abgeschlossen',
@@ -124,9 +134,14 @@ export function closedSessionReport(session: CashSession, transactions: Transact
     // An archived daily close must not change when later transactions add
     // more yearly deposit movements; freeze the year-to-date scope at close.
     yearlyPfandOverview: calculateYearlyPfandOverview(
-      transactions.filter((transaction) => transaction.timestamp <= finalizedAt),
+      projectFinancialTransactions(
+        transactions.filter((transaction) => transaction.timestamp <= finalizedAt),
+        allStornos.filter((storno) => storno.timestamp <= finalizedAt),
+      ),
       Number(year), session.location,
     ),
+    transactions: reportTransactions,
+    stornos: sessionStornos,
     dailyCloseCash: {
       openingBalance: session.openingBalance,
       cashSales,
