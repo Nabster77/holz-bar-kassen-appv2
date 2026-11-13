@@ -77,9 +77,38 @@ assert.equal(Number(bar.rows[0].cash_effect_cents),-850);
 assert.equal(Number(bar.rows[0].card_effect_cents),0);
 await assert.rejects(db.exec("UPDATE public.pos_stornos SET reason='xyz'"),/nicht geändert/);
 await assert.rejects(db.exec("DELETE FROM public.pos_stornos"),/nicht geändert/);
+// Even an admin cannot close the day with missing storno evidence.
 const closed={...cashSession,closed:true,closedAt:now,dailyCloseFinalizedAt:now,
  dailyCloseSnapshot:{transactions:receipts,stornos:[],finalizedAt:now}};
-await db.query('UPDATE public.pos_cash_sessions SET data=$2::jsonb WHERE id=$1',[sessionId,JSON.stringify(closed)]);
+await assert.rejects(
+  db.query('UPDATE public.pos_cash_sessions SET data=$2::jsonb WHERE id=$1',
+    [sessionId,JSON.stringify(closed)]),
+  /enthält nicht alle bestätigten Stornobelege/,
+);
+// Nor may a reset delete an original receipt or session with storno evidence.
+await assert.rejects(db.query('DELETE FROM public.pos_transactions WHERE id=$1',['bon-1']),/darf nicht gelöscht/);
+await assert.rejects(db.query('DELETE FROM public.pos_cash_sessions WHERE id=$1',[sessionId]),/darf nicht gelöscht/);
+// SQL stores UTC timestamp while the finalized snapshot stores JS milliseconds.
+// The close's audit guard verifies all booked fields, including the original.
+const decodeRow = row=>({
+  id:row.id,originalTransactionId:row.original_transaction_id,
+  cashSessionId:row.cash_session_id,location:row.location,
+  employeeId:row.employee_id,employeeName:row.employee_name,
+  reason:row.reason,paymentMethod:row.payment_method,
+  timestamp:new Date(row.recorded_at).getTime(),
+  grossAmount:Number(row.gross_amount_cents)/100,
+  cashEffect:Number(row.cash_effect_cents)/100,
+  cardEffect:Number(row.card_effect_cents)/100,
+  originalSnapshot:row.original_receipt_snapshot,
+});
+const storedStornos=(await db.query('SELECT * FROM public.pos_stornos ORDER BY recorded_at')).rows;
+const verifiedClose={...closed,dailyCloseSnapshot:{
+  ...closed.dailyCloseSnapshot,stornos:storedStornos.map(decodeRow),
+}};
+await db.query('UPDATE public.pos_cash_sessions SET data=$2::jsonb WHERE id=$1',
+  [sessionId,JSON.stringify(verifiedClose)]);
 await assert.rejects(rpc(['1675225c-eb5c-4d6a-ab1e-1166e17991d9','bon-3']),/abgeschlossen/);
+assert.equal((await db.query("SELECT count(*)::int as count FROM public.pos_transactions")).rows[0].count,6);
+assert.equal((await db.query("SELECT count(*)::int as count FROM public.pos_stornos")).rows[0].count,2);
 await db.close();
-console.log('STORNO-SQL: PGlite DDL/RLS, Fünferfenster, Bar/Karte, Doppelstorno, Idempotenz, Unveränderlichkeit und geschlossener Tag geprüft.');
+console.log('STORNO-SQL: PGlite DDL/RLS, Fünferfenster, Bar/Karte, Doppelstorno, Idempotenz, Unveränderlichkeit, Reset-Sperre und vollständiger Abschluss-Snapshot geprüft.');
