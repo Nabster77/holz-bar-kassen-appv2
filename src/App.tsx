@@ -16,6 +16,9 @@ import { CloudPasswordPanel } from '@/components/Admin/CloudPasswordPanel';
 import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
 import { changeManagerPassword, loadManagerCredential, restoreManagerCredential, type ManagerCredential } from '@/lib/managerAuth';
 import { supabase } from '@/lib/supabaseClient';
+import { fetchCatalogRows } from '@/lib/catalogCloud';
+import { pfandCloudMatches } from '@/lib/pfandValidation';
+import type { PfandSettings } from '@/types';
 import type { Location, StaffUser } from '@/types';
 import { POSScreen } from '@/components/POS/POSScreen';
 import { WoodmoHome } from '@/components/WoodmoHome';
@@ -96,6 +99,37 @@ export default function App() {
     catalog.syncCatalog,
     store.applyCloudBookingReset,
   );
+
+  /** Explicit admin save with truthful read-after-write proof in V3 cloud. */
+  async function savePfandAndVerify(settings: PfandSettings): Promise<'cloud' | 'local'> {
+    // Update only the V3 local catalog; the existing catalog engine handles its
+    // versioning, conflict detection, offline queue and cloud write.
+    store.updatePfandSettings(settings);
+    if (testMode) return 'local';
+
+    // React must commit the updated store before the engine snapshots it.
+    // Wait past the existing 700 ms catalog debounce, then synchronize and
+    // compare against a fresh server read. Never report success based on state.
+    let problem = 'Cloud hat die eingegebenen Pfandwerte noch nicht bestätigt.';
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, attempt === 0 ? 900 : 550));
+      const result = await catalog.syncCatalog(false);
+      if (!result.ok) {
+        problem = result.error || problem;
+        // Conflict dialogs and offline errors need explicit resolution, not
+        // another blind write attempt.
+        break;
+      }
+      try {
+        if (pfandCloudMatches(await fetchCatalogRows(), settings)) return 'cloud';
+        problem = 'Abgleich durchgeführt, aber der Pfandwert stimmt noch nicht mit der Cloud überein.';
+      } catch (error) {
+        problem = error instanceof Error ? error.message : 'Cloud-Rücklesen fehlgeschlagen.';
+        break;
+      }
+    }
+    throw new Error(problem);
+  }
 
   // Any PDF export on this device can request reconfiguration. This includes
   // journal exports from another computer restoring a cloud booking history.
@@ -481,7 +515,7 @@ export default function App() {
               onResetAllData={resetBookings}
               onDeviceSetup={() => setDeviceSetupOpen(true)}
               pfandSettings={store.pfandSettings}
-              onUpdatePfandSettings={store.updatePfandSettings}
+              onUpdatePfandSettings={savePfandAndVerify}
               getProductPfand={store.getProductPfand}
               staffUsers={staff.users}
               staffOnline={online}
