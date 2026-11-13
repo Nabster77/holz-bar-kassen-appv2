@@ -8,6 +8,8 @@ import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
 import { renderPdfHtml } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type YearlyPfandOverview } from '@/lib/journalPdf';
 import { sessionTransactions } from '@/lib/sessionTransactions';
+import { projectFinancialTransactions } from '@/lib/stornoReportProjection';
+import type { StornoRecord } from '@/lib/stornoRules';
 import type { CashSession, StaffActivity, StaffLoginInterval, StaffUser, Transaction } from '@/types';
 
 const DENOMINATIONS: { label: string; value: number }[] = [
@@ -29,7 +31,7 @@ const DENOMINATIONS: { label: string; value: number }[] = [
 const COINS = DENOMINATIONS.filter((denomination) => denomination.value < 1);
 const NOTES = DENOMINATIONS.filter((denomination) => denomination.value >= 1);
 
-type MovementKind = 'Pfandausgabe' | 'Bareinnahme' | 'Karteneinnahme' | 'Einlage' | 'Ausgabe' | 'Korrektur';
+type MovementKind = 'Pfandausgabe' | 'Bareinnahme' | 'Karteneinnahme' | 'Storno' | 'Einlage' | 'Ausgabe' | 'Korrektur';
 
 interface MovementRecord {
   id: string;
@@ -46,6 +48,16 @@ interface MovementRecord {
  * "Pfandausgabe" never contains a sold article or an incoming deposit.
  */
 function transactionMovementRecords(transaction: Transaction): MovementRecord[] {
+  if ('isStornoProjection' in transaction && transaction.isStornoProjection === true) {
+    return [{
+      id: transaction.id,
+      kind: 'Storno',
+      timestamp: transaction.timestamp,
+      employeeName: transaction.employeeName,
+      amount: transaction.total,
+      details: `Originalbon: ${transaction.stornoOriginalId} · Grund: ${transaction.stornoReason}`,
+    }];
+  }
   const records: MovementRecord[] = [];
   const returnedDepositItems = transaction.items.filter((item) => item.isPfandRetoure);
   const soldItems = transaction.items.filter((item) => !item.isPfandRetoure);
@@ -77,19 +89,20 @@ function transactionMovementRecords(transaction: Transaction): MovementRecord[] 
   return records;
 }
 
-const MOVEMENT_ORDER: MovementKind[] = ['Pfandausgabe', 'Bareinnahme', 'Karteneinnahme', 'Einlage', 'Ausgabe', 'Korrektur'];
+const MOVEMENT_ORDER: MovementKind[] = ['Pfandausgabe', 'Bareinnahme', 'Karteneinnahme', 'Storno', 'Einlage', 'Ausgabe', 'Korrektur'];
 
 function movementColor(kind: MovementKind): string { return movementStyle(kind).badge; }
 
 interface Props {
   session: CashSession;
   transactions: Transaction[];
+  stornos?: StornoRecord[];
   currentStaff: StaffUser | null;
   onClose: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
   onCancel: () => void;
 }
 
-export function DailyCloseDialog({ session, transactions, currentStaff, onClose, onCancel }: Props) {
+export function DailyCloseDialog({ session, transactions, stornos = [], currentStaff, onClose, onCancel }: Props) {
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [manualBalance, setManualBalance] = useState('');
   const [useCounting, setUseCounting] = useState(true);
@@ -101,12 +114,19 @@ export function DailyCloseDialog({ session, transactions, currentStaff, onClose,
   const [expandedMovementGroups, setExpandedMovementGroups] = useState<Partial<Record<MovementKind, boolean>>>({});
 
   const sessionTx = useMemo(
-    () => sessionTransactions(transactions, session),
-    [transactions, session],
+    () => projectFinancialTransactions(
+      sessionTransactions(transactions, session),
+      stornos.filter((entry) => entry.cashSessionId === session.id),
+      session.openedAt,
+      Infinity,
+    ),
+    [transactions, session, stornos],
   );
   const yearlyPfandOverview = useMemo(
-    () => calculateYearlyPfandOverview(transactions, new Date(session.openedAt).getFullYear(), session.location),
-    [transactions, session.openedAt, session.location],
+    () => calculateYearlyPfandOverview(
+      projectFinancialTransactions(transactions, stornos),
+      new Date(session.openedAt).getFullYear(), session.location),
+    [transactions, stornos, session.openedAt, session.location],
   );
 
   // Sales turnover never includes deposits. Deposits are neither taxable nor
