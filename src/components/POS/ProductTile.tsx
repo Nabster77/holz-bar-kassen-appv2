@@ -34,9 +34,9 @@ export function ProductTile({
 
   const inner = (
     <>
-      <div className="relative flex h-24 items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-700/50 lg:h-28">
+      <div className="relative flex h-28 items-center justify-center overflow-hidden bg-gray-50 p-2 dark:bg-gray-700/50 lg:h-32">
         {product.imageUrl ? (
-          <img src={publicAssetUrl(product.imageUrl)} alt={product.name} className="h-full w-full object-cover" draggable={false} />
+          <img src={publicAssetUrl(product.imageUrl)} alt={product.name} className="h-full w-full object-contain" draggable={false} loading="lazy" />
         ) : (
           <Package className="h-10 w-10 text-gray-300 dark:text-gray-500" />
         )}
