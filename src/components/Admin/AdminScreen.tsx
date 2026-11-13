@@ -61,10 +61,11 @@ interface Props {
   menuOpen: boolean;
   onCloseMenu: () => void;
   onOpenJournal: () => void;
+  onAdminSectionChange: (section: string) => void;
   onShotDraftDirtyChange?: (dirty: boolean) => void;
 }
 
-type AdminDataProps = Omit<Props, 'menuOpen' | 'onCloseMenu' | 'onOpenJournal' | 'onShotDraftDirtyChange'>;
+type AdminDataProps = Omit<Props, 'menuOpen' | 'onCloseMenu' | 'onOpenJournal' | 'onAdminSectionChange' | 'onShotDraftDirtyChange'>;
 
 const COLOR_OPTIONS = [
   { label: 'Blau', value: 'from-cyan-500 to-blue-600' },
@@ -87,8 +88,22 @@ const COLOR_OPTIONS = [
 
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
-export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, menuOpen, onCloseMenu, onOpenJournal, onShotDraftDirtyChange, ...props }: Props) {
+const ADMIN_SECTION_TITLES = {
+  sessions: 'Kassen-Übersicht',
+  categories: 'Warengruppen',
+  products: 'Artikel',
+  shots: 'SCHUSS',
+  staff: 'Benutzer',
+} as const;
+
+
+export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, menuOpen, onCloseMenu, onOpenJournal, onAdminSectionChange, onShotDraftDirtyChange, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
+  // Always publish the active administration section, including the initial
+  // overview and after a return from Journal/Home. The header lives in App.
+  useEffect(() => {
+    onAdminSectionChange(ADMIN_SECTION_TITLES[tab]);
+  }, [tab, onAdminSectionChange]);
   const [shotDraftDirty, setShotDraftDirty] = useState(false);
   const canLeaveShots = () => {
     if (tab !== 'shots' || !shotDraftDirty) return true;
