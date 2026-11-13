@@ -792,6 +792,7 @@ export default function App() {
           adminUnlocked ? (
             <JournalScreen
               transactions={store.transactions}
+              stornos={stornoLedger.records}
               categories={store.categories}
               cashSessions={store.cashSessions}
               defaultLocation={store.selectedLocation}
