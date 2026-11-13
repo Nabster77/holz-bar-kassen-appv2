@@ -17,6 +17,22 @@ export interface SubmitStorno {
   reason: string;
 }
 
+/** No productive Storno button before both the Edge service and the
+ * protected ledger are reachable with the currently signed-in Cloud user.
+ * A missing function, 401, 404, or unexpected payload all fail closed.
+ */
+export async function verifyStornoService(): Promise<void> {
+  if (!supabase || !navigator.onLine) throw new Error('Storno-Dienst benötigt eine Cloud-Verbindung.');
+  const { data, error } = await supabase.functions.invoke('woodmo-v3-storno', {
+    body: { action: 'health' },
+  });
+  if (error || !data || typeof data !== 'object' || Array.isArray(data) ||
+      (data as { ready?: unknown; version?: unknown }).ready !== true ||
+      (data as { version?: unknown }).version !== 'woodmo-v3-storno-health-1') {
+    throw new Error('Storno-Serverdienst nicht verfügbar oder nicht freigegeben. Bis zur Einrichtung nur Test-Storno im Testmodus.');
+  }
+}
+
 export async function loadCloudStornos(): Promise<StornoRecord[]> {
   if (!supabase || !navigator.onLine) throw new Error('Stornojournal benötigt eine Cloud-Verbindung.');
   const result: StornoRecord[] = [];
