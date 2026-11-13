@@ -36,7 +36,8 @@ import { SyncToast } from '@/components/SyncToast';
 import { SyncDialog } from '@/components/SyncDialog';
 import { CatalogConflictDialog } from '@/components/CatalogConflictDialog';
 import { knownBookingReset, rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
-import { discardEntriesBeforeGeneration } from '@/lib/outbox';
+import { discardEntriesBeforeGeneration, readPendingOutbox, removeQueuedUnusedCashSession } from '@/lib/outbox';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
 import { issueDailyCloseReceipt } from '@/lib/dailyCloseReceipt';
@@ -174,6 +175,73 @@ export default function App() {
       return { ok: false, error: readableSyncError(cause) };
     }
   }, [staff.sync, syncNow]);
+
+  /** One-time, explicitly approved recovery for a duplicate *unused*
+   * local opening. The original cloud cash register and its sales survive.
+   * All local evidence is archived before removing the duplicate outbox row. */
+  async function recoverUnusedLocalCashConflict(): Promise<string> {
+    if (!online || !supabase || testMode) throw new Error('Kassenübernahme benötigt die angemeldete V3-Cloud im aktiven Modus.');
+    const generation = knownBookingReset().generation;
+    const { data, error } = await supabase.from('pos_cash_sessions')
+      .select('id,location,data')
+      .eq('booking_generation', generation);
+    if (error) throw new Error('Cloud-Kassensitzungen konnten nicht geprüft werden: ' + error.message);
+    const remoteActive = (data ?? []).map((row) => row.data as CashSession).filter((session) =>
+      !session.closed && !session.discarded && !session.closedAt &&
+      !session.dailyCloseFinalizedAt && !session.dailyCloseSnapshot);
+    const conflicts = store.cashSessions.filter((local) => !local.closed && !local.discarded &&
+      !local.closedAt && !local.dailyCloseFinalizedAt && !local.dailyCloseSnapshot &&
+      remoteActive.some((remote) => remote.location === local.location && remote.id !== local.id));
+    if (conflicts.length !== 1) throw new Error(
+      conflicts.length === 0 ? 'Keine doppelte offene Kasse gefunden. Bitte Synchronisierung erneut prüfen.'
+        : 'Mehrere lokale Kassenkonflikte erkannt. Automatische Übernahme ist gesperrt.');
+    const local = conflicts[0];
+    const remote = remoteActive.find((session) => session.location === local.location && session.id !== local.id)!;
+    if (store.cashSessions.some((session) => session.location === local.location &&
+      session.id !== local.id && session.id !== remote.id &&
+      !session.closed && !session.discarded && !session.closedAt)) {
+      throw new Error('Mehrere offene lokale Kassensitzungen. Automatische Übernahme gesperrt.');
+    }
+    if (sessionTransactions(store.transactions, local).length ||
+        local.entries.length || local.corrections.length || local.dailyCloseSnapshot ||
+        (local.closingWithdrawalAmount ?? 0) !== 0 ||
+        (local.activities ?? []).some((entry) => !['cash_opened', 'login', 'logout'].includes(entry.type))) {
+      throw new Error('Die lokale Kasse hat bereits Buchungen oder Kassenbewegungen. Keine automatische Übernahme! Die Daten bleiben erhalten.');
+    }
+    const pending = await readPendingOutbox();
+    const pendingSales = pending.filter((entry) =>
+      entry.table === 'pos_transactions' && (
+        (entry.row.data as Transaction | undefined)?.cashSessionId === local.id ||
+        ((entry.row.data as Transaction | undefined)?.location === local.location &&
+          !(entry.row.data as Transaction | undefined)?.cashSessionId &&
+          Number((entry.row.data as Transaction | undefined)?.timestamp) >= local.openedAt)));
+    if (pendingSales.length) throw new Error('Noch nicht hochgeladene lokale Verkäufe vorhanden. Übernahme gesperrt.');
+
+    const agree = window.confirm(
+      `In ${local.location} ist bereits die Cloud-Kasse ${remote.id} geöffnet ` +
+      `(Anfangsbestand ${remote.openingBalance.toFixed(2)} €).\n\n` +
+      `Die zweite lokale Öffnung ${local.id} (Anfangsbestand ${local.openingBalance.toFixed(2)} €) ` +
+      'hat keine Verkäufe oder Bargeldbewegungen.\n\n' +
+      'Soll diese unbenutzte lokale Öffnung zuerst vollständig lokal archiviert und dann die vorhandene Cloud-Kasse übernommen werden? ' +
+      'Die Cloud-Buchungen bleiben unverändert.');
+    if (!agree) throw new Error('Kassenübernahme abgebrochen. Keine Daten verändert.');
+
+    const archiveKey = `woodmo_v3_conflict_archive_${Date.now()}_${crypto.randomUUID()}`;
+    const archive = JSON.stringify({ archivedAt: new Date().toISOString(), generation,
+      localSession: local, remoteSession: remote, pendingOutbox: pending,
+      localTransactions: store.transactions });
+    try {
+      localStorage.setItem(archiveKey, archive);
+      if (localStorage.getItem(archiveKey) !== archive) throw new Error('Archiv konnte nicht verifiziert werden.');
+    } catch (cause) {
+      throw new Error('Sichere lokale Archivierung gescheitert. Keine Kassensitzung wurde entfernt: ' +
+        (cause instanceof Error ? cause.message : String(cause)));
+    }
+    await removeQueuedUnusedCashSession(local.id, local.location, local.openedAt);
+    store.adoptCloudCashSession(local.id, remote);
+    return `Unbenutzte lokale Öffnung gesichert und Cloud-Kasse ${remote.id} übernommen. ` +
+      'Bitte Synchronisierung erneut starten. Das lokale Archiv bleibt gespeichert.';
+  }
 
   // The store reads test-mode at module init; switching requires a reload.
   function applyModeChange() {
@@ -844,7 +912,7 @@ export default function App() {
         )}
       </main>
       {syncedAt !== null && <SyncToast key={syncedAt} onClose={closeSyncToast} />}
-      {syncOpen && <SyncDialog syncNow={syncEverything} onClose={() => setSyncOpen(false)} />}
+      {syncOpen && <SyncDialog syncNow={syncEverything} onRecoverCashConflict={recoverUnusedLocalCashConflict} onClose={() => setSyncOpen(false)} />}
       {catalog.conflict && <CatalogConflictDialog onChoose={catalog.resolveConflict} />}
       {staffAdminLoginOpen && (
         <StaffLoginDialog
