@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { StornoRecord } from '@/lib/stornoRules';
-import { loadCloudStornos } from '@/lib/stornoCloud';
+import { loadCloudStornos, verifyStornoService } from '@/lib/stornoCloud';
 
 export type StornoCloudState = 'test' | 'loading' | 'ready' | 'offline' | 'unavailable' | 'error';
 
@@ -15,6 +15,8 @@ export function useStornoLedger(testMode: boolean, online: boolean) {
   const [records, setRecords] = useState<StornoRecord[]>([]);
   const [status, setStatus] = useState<StornoCloudState>(testMode ? 'test' : 'loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [serviceReady, setServiceReady] = useState(false);
+  const [serviceError, setServiceError] = useState('');
 
   const refresh = useCallback(async (): Promise<StornoRecord[]> => {
     if (testMode) {
@@ -43,9 +45,25 @@ export function useStornoLedger(testMode: boolean, online: boolean) {
     if (testMode) {
       setRecords([]);
       setStatus('test');
+      setServiceReady(false);
+      setServiceError('');
       return;
     }
-    if (!online) { setStatus('offline'); return; }
+    if (!online) {
+      setStatus('offline');
+      setServiceReady(false);
+      setServiceError('Cloud ist offline.');
+      return;
+    }
+    // A read-only ledger and a deployable Storno writer are different states:
+    // normal day closure only needs the first; live Storno needs BOTH.
+    setServiceReady(false);
+    void verifyStornoService()
+      .then(() => { setServiceReady(true); setServiceError(''); })
+      .catch((error) => {
+        setServiceReady(false);
+        setServiceError(error instanceof Error ? error.message : 'Storno-Dienst fehlt.');
+      });
     // Freshly retrieved cloud records are authoritative, not local guesses.
     void loadCloudStornos()
       .then((rows) => { setRecords(rows); setStatus('ready'); setErrorMessage(''); })
@@ -59,6 +77,12 @@ export function useStornoLedger(testMode: boolean, online: boolean) {
   useEffect(() => {
     if (testMode || !online) return;
     const id = window.setInterval(() => {
+      void verifyStornoService()
+        .then(() => { setServiceReady(true); setServiceError(''); })
+        .catch((error) => {
+          setServiceReady(false);
+          setServiceError(error instanceof Error ? error.message : 'Storno-Dienst fehlt.');
+        });
       void loadCloudStornos()
         .then((rows) => { setRecords(rows); setStatus('ready'); setErrorMessage(''); })
         .catch((error) => {
@@ -75,5 +99,5 @@ export function useStornoLedger(testMode: boolean, online: boolean) {
     setRecords((current) => [...current, item]);
   }, [testMode]);
 
-  return { records, status, errorMessage, refresh, addSimulatedRecord };
+  return { records, status, errorMessage, serviceReady, serviceError, refresh, addSimulatedRecord };
 }
