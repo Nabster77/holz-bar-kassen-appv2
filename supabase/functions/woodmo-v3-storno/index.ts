@@ -39,6 +39,7 @@ type StornoRequest = {
   employeeId?: unknown;
   employeePassword?: unknown;
   reason?: unknown;
+  action?: unknown;
 };
 
 Deno.serve(async (request) => {
@@ -68,6 +69,26 @@ Deno.serve(async (request) => {
     input = parsed as StornoRequest;
   } catch {
     return reply(400, { error: 'Ungültiger Stornoantrag.' });
+  }
+
+  if (input.action === 'health') {
+    // The readiness handshake authenticates the real Supabase cloud account
+    // and proves this precise Edge version can reach the protected ledger.
+    // It never performs a sale, a storno or any business-data mutation.
+    const account = createClient(url, publicKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: proof, error: authError } = await account.auth.getUser(token);
+    if (authError || proof.user?.email?.toLowerCase() !== 'admin@kasse.local') {
+      return reply(403, { error: 'Cloud-Konto für Storno nicht freigeschaltet.' });
+    }
+    const service = createClient(url, secretKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { error: probeError } = await service.from('pos_stornos')
+      .select('id').limit(1);
+    if (probeError) return reply(503, { error: 'Stornojournal nicht erreichbar.' });
+    return reply(200, { ready: true, version: 'woodmo-v3-storno-health-1' });
   }
 
   const id = typeof input.stornoId === 'string' ? input.stornoId : '';
