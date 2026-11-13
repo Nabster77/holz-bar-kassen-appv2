@@ -39,3 +39,15 @@ Die V3-Testcloud enthielt eine offene Friedrichshafen-Sitzung vom 13.11.2026; de
 4. Bar/Karte/Einlage/Entnahme/Pfand/Kassenbestand (nie negativ); Offline-Verkäufe, Neustart, Reconnect, zweites Gerät und korrekte IDs/Beträge.
 5. Kollision eines zweiten offline geöffneten Standortes → nicht verlustbehaftet und nicht als erfolgreich synchronisiert darstellen.
 6. Storno, Rückrechnung, Berichte, Tagesabschluss und Export/Import/Reset gesondert abnehmen.
+
+## Nachtrag: 14.11.2026 – Behandlung des vorhandenen Konflikts
+- Die V3-Cloud enthält eine offene Friedrichshafener Sitzung mit 200,00 EUR Anfangsbestand und eine zugehörige Buchung über 19,00 EUR. Diese Cloud-Belege werden ausdrücklich **nicht gelöscht**.
+- Die erneute Synchronisierungsfehlermeldung identifiziert zwei unterschiedliche Sitzungs-IDs (Cloud und lokal). Das ist nach der neuen Kollisionssperre ein korrekt erkannter, noch ungelöster Konflikt.
+- `src/components/SyncDialog.tsx`: Schaltfläche **„Doppelte Kassenöffnung sicher prüfen“** erscheint bei spezifischem Kassensitzungskonflikt.
+- `src/App.tsx`: Abgleich der aktiven Cloud-Sitzung, konservative Prüfung aller lokalen Verkäufe/Kassenbewegungen und Bestätigung inklusive Anfangsbeständen. Ohne positive Bestätigung wird nichts geändert.
+- `src/lib/outbox.ts`: Nur Warteschlangeneinträge einer nachweislich unbenutzten lokalen Doppelöffnung dürfen nach gesicherter Archivierung selektiv entfernt werden; vorhandene Buchungen/Bewegungen blockieren die Übernahme.
+- `src/hooks/useStore.ts`: Ersetzen ausschließlich dieser unbenutzten lokalen Öffnung durch die originale aktive Cloud-Sitzung.
+- Vor dem selektiven Entfernen wird ein vollständiger Konflikt-Snapshot (`woodmo_v3_conflict_archive_...`) im Browser-LocalStorage gespeichert und lesend verifiziert. Andere Offline-Transaktionen und andere Standorte bleiben unverändert.
+- Wenn die lokale Kasse bereits eigene Verkäufe oder Bargeldbewegungen besitzt, bleibt sie und ihre Queue erhalten; die Übernahme muss dann gesondert manuell geklärt werden. Es gibt keine heimliche Umhängung lokaler Bons oder Änderung von Anfangsbeständen.
+- Nach erfolgreicher Übernahme manuell **„Erneut versuchen“** klicken und die Daten mit dem V3-Cloudstand überprüfen. Funktions-/Echtgerätetest steht noch aus.
+- Der Konflikt-Snapshot ist **kein Ersatz** für ein extern gespeichertes, geprüftes vollständiges Backup; Browserdaten dürfen weiterhin nicht gelöscht werden.
