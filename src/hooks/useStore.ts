@@ -174,17 +174,11 @@ export function useStore() {
   }
   const openSessions = [...latestSessionsByLocation.values()].filter((s) =>
     !s.closed && !s.closedAt && !s.dailyCloseFinalizedAt && !s.dailyCloseSnapshot);
-  // Prefer the explicitly selected location. If only one till is open it
-  // can be resumed even when this browser has no previous location selection.
+  // The selected location is authoritative. Never silently switch from
+  // Bregenz to Friedrichshafen (or vice versa) just because only one is open.
+  // This permits one active till at EACH location independently.
   const activeSession =
-    openSessions.find((s) => s.location === selectedLocation) ??
-    (openSessions.length === 1 ? openSessions[0] : null);
-
-  useEffect(() => {
-    if (activeSession && activeSession.location !== selectedLocation) {
-      setSelectedLocation(activeSession.location);
-    }
-  }, [activeSession, selectedLocation]);
+    openSessions.find((s) => s.location === selectedLocation) ?? null;
 
   const openCashSession = useCallback((location: Location, openingBalance: number, staff?: StaffUser) => {
     if (!Number.isFinite(openingBalance) || openingBalance <= 0) return;
