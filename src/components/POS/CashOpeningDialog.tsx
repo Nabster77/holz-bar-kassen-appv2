@@ -7,7 +7,7 @@ import { formatSecurityQuestion, SECURITY_QUESTIONS } from '@/lib/staffSecurity'
 
 interface Props {
   existingSession?: CashSession | null;
-  onSave: (location: Location, openingBalance: number) => void;
+  onSave: (location: Location, openingBalance: number) => Promise<boolean> | boolean;
   onClose: () => void;
   onEnterAdmin?: (selectedStaff: StaffUser | null) => void;
   defaultLocation?: Location;
@@ -40,6 +40,8 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
   const [resetMode, setResetMode] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffBusy, setStaffBusy] = useState(false);
+  const [openingBusy, setOpeningBusy] = useState(false);
+  const [openingError, setOpeningError] = useState<string | null>(null);
   const selectedStaff = availableStaff.find((user) => user.id === selectedStaffId) ?? null;
   const carriedBalance = existingSession?.openingBalance ?? openingBalanceSuggestions?.[location];
   const hasCarriedBalance = typeof carriedBalance === 'number' && Number.isFinite(carriedBalance) && carriedBalance > 0;
@@ -52,15 +54,18 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
   const firstPassword = Boolean(selectedStaff && !selectedStaff.passwordHash);
   const needsSecuritySetup = Boolean(selectedStaff && !selectedStaff.securityConfigured);
 
-  function handleSave() {
-    if (existingSession) {
-      // A successful re-login resumes the existing cash session. Only an
-      // explicit "Zur Startseite" click should call onClose and navigate Home.
-      if (selectedStaff && staffAuthenticated) onSave(location, parsedOpeningBalance);
-      return;
+  async function handleSave() {
+    if (openingBusy || !selectedStaff || !staffAuthenticated) return;
+    if (!existingSession && !canOpenWithBalance) return;
+    setOpeningBusy(true);
+    setOpeningError(null);
+    try {
+      await onSave(location, parsedOpeningBalance);
+    } catch (error) {
+      setOpeningError(error instanceof Error ? error.message : 'Kassenöffnung fehlgeschlagen. Bitte Cloudzustand prüfen.');
+    } finally {
+      setOpeningBusy(false);
     }
-    if (!canOpenWithBalance || !selectedStaff || !staffAuthenticated) return;
-    onSave(location, parsedOpeningBalance);
   }
 
   function chooseStaff(id: string) {
@@ -117,11 +122,12 @@ export function CashOpeningDialog({ existingSession, onSave, onClose, onEnterAdm
       {selectedStaff && staffAuthenticated && <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm font-semibold text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200"><Check className="mr-1 inline h-4 w-4" /> {selectedStaff.name} ist angemeldet.</p>}</div>
       <fieldset disabled={!!existingSession} className="space-y-4 landscape:grid landscape:grid-cols-2 landscape:items-start landscape:gap-3 landscape:space-y-0 disabled:opacity-60">
       <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><MapPin className="h-4 w-4" /> Standort</label><div className="grid grid-cols-2 gap-2">{LOCATIONS.map((entry) => <button key={entry} onClick={() => { setLocation(entry); setBalance(formatSuggestedBalance(openingBalanceSuggestions?.[entry])); }} className={`rounded-xl py-3 landscape:py-1.5 text-sm font-bold transition active:scale-95 ${location === entry ? 'bg-blue-600 text-white shadow-md' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>{entry}</button>)}</div></div>
-      <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><Euro className="h-4 w-4" /> Kassen-Anfangsbestand (€)</label>{hasCarriedBalance ? <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 landscape:py-2 text-lg font-bold text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">{formatSuggestedBalance(carriedBalance)} €<span className="mt-1 block text-xs font-normal">Vorhandener Bestand wird automatisch übernommen.</span></p> : <input value={balance} onChange={(event) => setBalance(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.repeat && !event.nativeEvent.isComposing) { event.preventDefault(); handleSave(); } }} placeholder="z.B. 150,00" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 landscape:py-1.5 text-base text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />}</div>
+      <div><label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300"><Euro className="h-4 w-4" /> Kassen-Anfangsbestand (€)</label>{hasCarriedBalance ? <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 landscape:py-2 text-lg font-bold text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">{formatSuggestedBalance(carriedBalance)} €<span className="mt-1 block text-xs font-normal">Vorhandener Bestand wird automatisch übernommen.</span></p> : <input value={balance} onChange={(event) => setBalance(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.repeat && !event.nativeEvent.isComposing) { event.preventDefault(); void handleSave(); } }} placeholder="z.B. 150,00" inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 landscape:py-1.5 text-base text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />}</div>
       </fieldset>
       {!existingSession && !canOpenWithBalance && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-400">Bitte einen Anfangsbestand über 0,00 € eingeben. Ohne positiven Anfangsbestand kann die Kasse nicht eröffnet werden.</p>}
       {existingSession && <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Die Kasse in {existingSession.location} ist bereits geöffnet. Der bestehende Anfangsbestand bleibt erhalten.</p>}
-      <button onClick={handleSave} disabled={(!existingSession && !canOpenWithBalance) || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 landscape:py-2 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> {existingSession ? 'Kasse weiterführen' : 'Kasse eröffnen'}</button>
+      {openingError && <p role="alert" className="text-sm font-semibold text-red-600 dark:text-red-300">{openingError}</p>}
+      <button onClick={() => void handleSave()} disabled={openingBusy || (!existingSession && !canOpenWithBalance) || !staffAuthenticated} className="w-full rounded-xl bg-blue-600 py-3.5 landscape:py-2 text-base font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"><Check className="mr-1.5 inline h-5 w-5" /> {existingSession ? 'Kasse weiterführen' : 'Kasse eröffnen'}</button>
       {onEnterAdmin && selectedStaff?.role !== 'employee' && <button onClick={() => onEnterAdmin(selectedStaff)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 py-2.5 landscape:py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:bg-gray-700"><Settings className="h-4 w-4" /> Verwaltung öffnen</button>}
       <button type="button" onClick={onClose}
         className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
