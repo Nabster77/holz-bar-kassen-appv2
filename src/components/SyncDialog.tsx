@@ -6,12 +6,14 @@ type Status = 'syncing' | 'success' | 'error';
 
 interface Props {
   syncNow: () => Promise<SyncResult>;
+  onRecoverCashConflict?: () => Promise<string>;
   onClose: () => void;
 }
 
-export function SyncDialog({ syncNow, onClose }: Props) {
+export function SyncDialog({ syncNow, onRecoverCashConflict, onClose }: Props) {
   const [status, setStatus] = useState<Status>('syncing');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   function applyResult(result: SyncResult) {
     setStatus(result.ok ? 'success' : 'error');
@@ -76,6 +78,26 @@ export function SyncDialog({ syncNow, onClose }: Props) {
                 {errorMessage && <p className="break-words text-xs text-red-600 dark:text-red-400">Fehlermeldung: {errorMessage}</p>}
               </div>
             </div>
+            {onRecoverCashConflict && errorMessage?.includes('Kassenkonflikt in') && (
+              <button
+                type="button"
+                disabled={recovering}
+                onClick={() => {
+                  if (recovering) return;
+                  setRecovering(true);
+                  onRecoverCashConflict()
+                    .then((message) => { setStatus('error'); setErrorMessage(message); })
+                    .catch((error) => {
+                      setStatus('error');
+                      setErrorMessage(error instanceof Error ? error.message : 'Kassenübernahme fehlgeschlagen.');
+                    })
+                    .finally(() => setRecovering(false));
+                }}
+                className="w-full rounded-xl border border-amber-500 p-2 text-sm font-bold text-amber-800 dark:text-amber-200 disabled:opacity-50"
+              >
+                {recovering ? 'Kassenkonflikt wird geprüft …' : 'Doppelte Kassenöffnung sicher prüfen'}
+              </button>
+            )}
             <button
               onClick={() => {
                 setStatus('syncing');
