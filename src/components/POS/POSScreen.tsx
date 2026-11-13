@@ -10,12 +10,15 @@ import { CashCorrectionDialog } from './CashCorrectionDialog';
 import { DailyCloseDialog } from './DailyCloseDialog';
 import { ShotSelectionDialog } from './ShotSelectionDialog';
 import { PfandRetoureDialog } from './PfandRetoureDialog';
+import { BonlisteDialog } from './BonlisteDialog';
+import type { StornoRecord } from '@/lib/stornoRules';
+import type { StornoCloudState } from '@/hooks/useStornoLedger';
 import { DynamicIcon } from '@/components/DynamicIcon';
 import { formatDateLong } from '@/lib/format';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import {
-  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro, Recycle,
+  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro, Recycle, ClipboardList,
 } from 'lucide-react';
 
 type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | 'correction' | 'close' | null;
@@ -31,6 +34,11 @@ interface Props {
   onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure?: boolean) => void;
   onCloseCash: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
   transactions: Transaction[];
+  stornos: StornoRecord[];
+  stornoStatus: StornoCloudState;
+  stornoError?: string;
+  testMode: boolean;
+  onCommitStorno: (receipt: Transaction, reason: string, password: string, id: string) => Promise<StornoRecord>;
   onMoveProduct?: (sourceId: string, targetId: string) => void;
   headerAction?: HeaderAction;
   onHeaderActionConsumed?: () => void;
@@ -65,7 +73,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 
 export function POSScreen({
   categories, products, shotOptions, activeSession, onCheckout,
-  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onMoveProduct,
+  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, stornos, stornoStatus, stornoError, testMode, onCommitStorno, onMoveProduct,
   headerAction, onHeaderActionConsumed, loginRequest, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, onHome, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
@@ -91,6 +99,7 @@ export function POSScreen({
   const [shotProduct, setShotProduct] = useState<Product | null>(null);
   const [shotCartIndex, setShotCartIndex] = useState<number | null>(null);
   const [showPfandRetoure, setShowPfandRetoure] = useState(false);
+  const [showBonliste, setShowBonliste] = useState(false);
   const [priceEntryProduct, setPriceEntryProduct] = useState<Product | null>(null);
   const [dragMode, setDragMode] = useState(false);
   const [sortMode, setSortMode] = useState<'manual' | 'asc' | 'desc'>('manual');
@@ -103,8 +112,10 @@ export function POSScreen({
       .filter(tx => tx.paymentMethod === 'cash')
       .reduce((sum, tx) => sum + tx.total, 0);
     const entries = activeSession.entries.reduce((sum, entry) => sum + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
-    return Math.round((activeSession.openingBalance + cashSales + entries) * 100) / 100;
-  }, [activeSession, transactions]);
+    const stornoCash = stornos.filter((entry) => entry.cashSessionId === activeSession.id)
+      .reduce((sum, entry) => sum + entry.cashEffect, 0);
+    return Math.round((activeSession.openingBalance + cashSales + entries + stornoCash) * 100) / 100;
+  }, [activeSession, transactions, stornos]);
 
   const requestDailyClose = useCallback(async () => {
     if (!activeSession) return;
@@ -368,6 +379,13 @@ export function POSScreen({
               <Recycle className="h-4 w-4" />
               <span>Pfand-Retoure</span>
             </button>
+            <button type="button" onClick={() => setShowBonliste(true)}
+              disabled={!activeSession || !currentStaff}
+              title="Letzte fünf Einzelbons anzeigen und begründet stornieren"
+              className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-sky-500/70 bg-sky-700 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+              <ClipboardList className="h-4 w-4" />
+              <span>Bonliste</span>
+            </button>
           </div>
 
           {/* Product grid */}
@@ -460,6 +478,21 @@ export function POSScreen({
       )}
       {cashEntryType && activeSession && (
         <CashEntryDialog session={activeSession} currentCashBalance={currentCashBalance} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
+      )}
+      {showBonliste && activeSession && currentStaff && (
+        <BonlisteDialog
+          session={activeSession}
+          transactions={transactions}
+          stornos={stornos}
+          staff={currentStaff}
+          currentCashBalance={currentCashBalance}
+          online={online}
+          testMode={testMode}
+          cloudReady={stornoStatus === 'ready'}
+          cloudError={stornoError}
+          onClose={() => setShowBonliste(false)}
+          onCommit={onCommitStorno}
+        />
       )}
       {showPfandRetoure && activeSession && currentStaff && (
         <PfandRetoureDialog
