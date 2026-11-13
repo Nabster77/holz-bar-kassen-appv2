@@ -1,4 +1,5 @@
 import type { Category, CashSession, Location, StaffActivity, StaffLoginInterval, Transaction } from '@/types';
+import { sessionTransactions } from '@/lib/sessionTransactions';
 import { projectFinancialTransactions } from '@/lib/stornoReportProjection';
 import type { StornoRecord } from '@/lib/stornoRules';
 import { buildJournalFileName } from '@/lib/journalPdfFile';
