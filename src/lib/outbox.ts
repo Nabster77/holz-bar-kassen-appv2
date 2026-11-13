@@ -98,7 +98,52 @@ export async function flushOutbox(): Promise<number> {
     rows.set(entry.row.id, entry.row);
   }
 
-  for (const [table, rows] of latestByTable) {
+  // Never upload a new active till if the cloud already holds a different
+  // active till at that location. Prevent partial uploads of sales first.
+  // Conflicting offline records remain queued for explicit reconciliation.
+  const queuedSessions = [...(latestByTable.get('pos_cash_sessions')?.values() ?? [])];
+  const active = (row: OutboxEntry['row']) => {
+    const session = row.data as Record<string, unknown> | undefined;
+    return session && session.closed !== true && session.discarded !== true &&
+      !session.closedAt && !session.dailyCloseFinalizedAt && !session.dailyCloseSnapshot;
+  };
+  const openingSessions = queuedSessions.filter(active);
+  if (openingSessions.length) {
+    const locations = [...new Set(openingSessions.map((row) => String(row.location)))];
+    const generation = openingSessions[0].booking_generation;
+    if (openingSessions.some((row) => row.booking_generation !== generation)) {
+      throw new Error('Unterschiedliche Buchungs-Generationen in der Offline-Warteschlange. Reset-Abgleich erforderlich.');
+    }
+    const { data: cloudSessions, error: readError } = await supabase
+      .from('pos_cash_sessions')
+      .select('id,location,data')
+      .eq('booking_generation', generation)
+      .in('location', locations)
+      .eq('data->>closed', 'false');
+    if (readError) throw readError;
+    for (const opening of openingSessions) {
+      const otherLocal = openingSessions.find((row) => row.id !== opening.id && row.location === opening.location);
+      if (otherLocal) {
+        throw new Error(`Zwei verschiedene lokale Kassenöffnungen für ${opening.location}. Keine Daten wurden verworfen.`);
+      }
+      const otherCloud = (cloudSessions ?? []).find((row) =>
+        row.id !== opening.id && active({ id: row.id, booking_generation: generation, location: row.location, data: row.data }));
+      if (otherCloud) {
+        // A queued close of the old cloud till can legitimately precede the
+        // new opening. The close is uploaded first, then the new opening.
+        const queuedClose = queuedSessions.find((row) => row.id === otherCloud.id && !active(row));
+        if (!queuedClose) {
+          throw new Error(`Kassenkonflikt in ${opening.location}: Cloud-Kasse ${otherCloud.id} ist noch offen. Die neue lokale Kasse ${opening.id} bleibt offline gespeichert. Bitte nicht löschen; bestehenden Kassenstatus abgleichen.`);
+        }
+      }
+    }
+  }
+
+  // Sessions must be acknowledged before their sales (and before a new
+  // session can be safely used on another device).
+  for (const table of ['pos_cash_sessions', 'pos_transactions'] as const) {
+    const rows = latestByTable.get(table);
+    if (!rows?.size) continue;
     const { error } = await supabase.from(table).upsert([...rows.values()], { onConflict: 'id' });
     if (error) throw error;
   }
