@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const engine=readFileSync('src/lib/catalogEngine.ts','utf8');
+const hook=readFileSync('src/hooks/useCatalogSync.ts','utf8');
+const store=readFileSync('src/hooks/useStore.ts','utf8');
+assert.match(engine,/if \(choice === 'local'\) \{/,'Only local takeover may enqueue current local catalog');
+assert.match(engine,/deps\.applyRows\(rows, new Set\(Object\.keys\(state\.pending\)\), choice === 'cloud'\)/);
+assert.match(hook,/replaceLocal\?: boolean/);
+assert.match(hook,/applyRef\.current\(rows, skipKeys, replaceLocal\)/);
+assert.match(store,/if \(replaceLocal\) \{/);
+assert.match(store,/setProducts\(\[\.\.\.remoteProducts\.values\(\)\]/);
+assert.match(store,/setCategories\(normalizeCategories\(\[\.\.\.remoteCategories\.values\(\)\]/);
+assert.match(store,/\.filter\(\(r\) => !r\.deleted\)/);
+assert.match(engine,/if \(rows\.length > 0 && differsFromCloud/);
+console.log('CLOUD-TAKEOVER: Auswahl Cloud ersetzt Demo-Katalog, lokale Seedartikel werden nicht vorgemerkt oder hochgeladen.');
