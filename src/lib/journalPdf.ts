@@ -1,5 +1,7 @@
 import { movementBadgeHTML } from '@/lib/movementStyle';
 import type { Category, Transaction, Location } from '@/types';
+import type { StornoRecord } from '@/lib/stornoRules';
+import type { StornoJournalTransaction } from '@/lib/stornoReportProjection';
 import { formatCurrency, formatDate, formatTime } from '@/lib/format';
 import { isTaxFreeItem, getTaxByRate } from '@/lib/tax';
 import { escapeHtml } from '@/lib/escapeHtml';
@@ -8,6 +10,8 @@ export interface JournalReportData {
   headerLabel: string;
   location: string;
   transactions: Transaction[];
+  /** Full auditable reversal evidence, separate from report-only negative projections. */
+  stornos?: StornoRecord[];
   categories: Category[];
   fileName: string;
   /** Date the report covers, independently of the date it is exported. */
@@ -78,6 +82,7 @@ interface LocationStats {
   pfandReturned: number;
   pfandSaldo: number;
   count: number;
+  stornoCount: number;
   taxByRate: Record<number, number>;
 }
 
@@ -87,15 +92,18 @@ const LOCATION_META: Record<Location, { sub: string; color: string; bar: string 
 };
 
 function computeStats(txs: Transaction[]): LocationStats {
-  let total = 0, totalNet = 0, pfandCollected = 0, pfandReturned = 0, count = 0;
+  let total = 0, totalNet = 0, pfandCollected = 0, pfandReturned = 0, count = 0, stornoCount = 0;
   const taxByRate: Record<number, number> = {};
   for (const t of txs) {
     total += t.subtotal;
     totalNet += t.totalNet;
-    count++;
+    const reversing = (t as Partial<StornoJournalTransaction>).isStornoProjection === true;
+    if (reversing) stornoCount++;
+    else count++;
     for (const item of t.items) {
       if (item.isPfandRetoure) {
-        pfandReturned += Math.abs(item.pfand);
+        const amount = Math.abs(item.pfand || item.price * item.quantity);
+        pfandReturned += reversing ? -amount : amount;
       } else {
         pfandCollected += item.pfand;
       }
@@ -105,7 +113,7 @@ function computeStats(txs: Transaction[]): LocationStats {
     }
   }
   const totalTax = Object.values(taxByRate).reduce((s, v) => s + v, 0);
-  return { total, totalNet, totalTax, pfandCollected, pfandReturned, pfandSaldo: pfandCollected - pfandReturned, count, taxByRate };
+  return { total, totalNet, totalTax, pfandCollected, pfandReturned, pfandSaldo: pfandCollected - pfandReturned, count, stornoCount, taxByRate };
 }
 
 /**
@@ -124,9 +132,11 @@ export function calculateYearlyPfandOverview(
   for (const transaction of transactions) {
     if (new Date(transaction.timestamp).getFullYear() !== year) continue;
     if (location !== 'all' && transaction.location !== location) continue;
+    const reversing = (transaction as Partial<StornoJournalTransaction>).isStornoProjection === true;
     for (const item of transaction.items) {
       if (item.isPfandRetoure) {
-        pfandReturned += Math.abs(item.pfand || item.price * item.quantity);
+        const amount = Math.abs(item.pfand || item.price * item.quantity);
+        pfandReturned += reversing ? -amount : amount;
       } else {
         pfandCollected += item.pfand;
       }
@@ -221,9 +231,12 @@ function transactionRows(txs: Transaction[]): string {
   return [...txs].sort((a, b) => a.timestamp - b.timestamp)
     .map((tx, i) => {
       const txTax = [...getTaxByRate(tx).values()].reduce((s, v) => s + v, 0);
-      const isPfandPayout = tx.total < 0 && tx.items.some((item) => item.isPfandRetoure);
-      const kind = isPfandPayout ? 'Pfandausgabe' : tx.paymentMethod === 'cash' ? 'Bareinnahme' : 'Karteneinnahme';
-      const articles = tx.items.map((item) => `${item.quantity}× ${item.isPfandRetoure ? 'Pfand-Retoure' : item.name}`).join(', ');
+      const reversing = (tx as Partial<StornoJournalTransaction>).isStornoProjection === true;
+      const isPfandPayout = !reversing && tx.total < 0 && tx.items.some((item) => item.isPfandRetoure);
+      const kind = reversing ? 'Storno' : isPfandPayout ? 'Pfandausgabe' : tx.paymentMethod === 'cash' ? 'Bareinnahme' : 'Karteneinnahme';
+      const articles = reversing
+        ? `Originalbon ${String((tx as StornoJournalTransaction).stornoOriginalId)} · Grund: ${String((tx as StornoJournalTransaction).stornoReason)}`
+        : tx.items.map((item) => `${item.quantity}× ${item.isPfandRetoure ? 'Pfand-Retoure' : item.name}`).join(', ');
       return `<tr><td>${i + 1}</td><td>${formatDate(tx.timestamp)}</td><td>${formatTime(tx.timestamp)}</td><td>${escapeHtml(tx.employeeName ?? '—')}</td><td>${movementBadgeHTML(kind)}</td><td>${escapeHtml(articles)}</td><td style="text-align:right">${formatCurrency(tx.total)}</td><td style="text-align:right">${formatCurrency(txTax)}</td></tr>`;
     })
     .join('');
@@ -325,9 +338,33 @@ function summaryCards(s: LocationStats, accentColor: string): string {
     <div class="summary-card pfand"><div class="label">Pfand eingenommen</div><div class="value">${formatCurrency(s.pfandCollected)}</div></div>
     <div class="summary-card pfand"><div class="label">Pfand retourniert</div><div class="value">${formatCurrency(s.pfandReturned)}</div></div>
     <div class="summary-card pfand"><div class="label">${pfandSaldoLabel(s.pfandSaldo)}</div><div class="value">${pfandSaldoDisplay(s.pfandSaldo)}</div></div>
-    <div class="summary-card count"><div class="label">Verkäufe</div><div class="value">${s.count}</div></div>
+    <div class="summary-card count"><div class="label">Verkäufe / Stornos</div><div class="value">${s.count} / ${s.stornoCount}</div></div>
     <div class="summary-card"><div class="label">MwSt nach Satz</div><div class="value" style="font-size:11px">${taxSummaryLine}</div></div>
   </div>`;
+}
+
+/** Additional immutable documentary table – original and reversal are never
+ * silently merged into one history row. Financial totals above use the signed
+ * projections exactly once; this section only adds context, no arithmetic.
+ */
+function stornoAuditSection(stornos: readonly StornoRecord[]): string {
+  if (!stornos.length) return '';
+  const ordered = [...stornos].sort((a,b)=>a.timestamp-b.timestamp || a.id.localeCompare(b.id));
+  const rows = ordered.map((row) => `<tr>
+    <td>${formatDate(row.timestamp)}<div>${formatTime(row.timestamp)}</div></td>
+    <td>${escapeHtml(row.location)}</td>
+    <td style="overflow-wrap:anywhere">${escapeHtml(row.id)}</td>
+    <td style="overflow-wrap:anywhere">${escapeHtml(row.originalTransactionId)}</td>
+    <td>${escapeHtml(row.employeeName)}</td>
+    <td>${escapeHtml(row.reason)}</td>
+    <td>${row.paymentMethod === 'cash' ? 'Bar' : 'Karte'}</td>
+    <td style="text-align:right">${formatCurrency(-row.grossAmount)}</td>
+  </tr>`).join('');
+  return `<section class="report-table-section table-block">
+    <h2>Stornobelege (${stornos.length}) – unveränderliche Gegenbuchungen</h2>
+    <p class="audit-note">Der Originalbon bleibt gespeichert. Eine Kartengutschrift erfolgt gesondert am Terminal; dieser Bericht ist kein Terminalnachweis.</p>
+    <table class="transaction-table"><thead><tr><th>Datum</th><th>Standort</th><th>Storno-ID</th><th>Originalbon</th><th>Mitarbeiter</th><th>Grund</th><th>Zahlung</th><th style="text-align:right">Betrag</th></tr></thead>
+    <tbody>${rows}</tbody></table></section>`;
 }
 
 function dailyCloseCashSection(cash?: JournalReportData['dailyCloseCash']): string {
@@ -435,7 +472,7 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
         <div class="summary-card pfand"><div class="label">Pfand eingenommen</div><div class="value">${formatCurrency(stats.pfandCollected)}</div></div>
         <div class="summary-card pfand"><div class="label">Pfand retourniert</div><div class="value">${formatCurrency(stats.pfandReturned)}</div></div>
         <div class="summary-card pfand"><div class="label">${pfandSaldoLabel(stats.pfandSaldo)}</div><div class="value">${pfandSaldoDisplay(stats.pfandSaldo)}</div></div>
-        <div class="summary-card count"><div class="label">Verkäufe</div><div class="value">${stats.count}</div></div>
+        <div class="summary-card count"><div class="label">Verkäufe / Stornos</div><div class="value">${stats.count} / ${stats.stornoCount}</div></div>
         <div class="summary-card"><div class="label">MwSt nach Satz</div><div class="value" style="font-size:11px">${taxSummaryLine}</div></div>
       </div>
       <h2>Mehrwertsteuer-Klassen</h2>
@@ -453,7 +490,7 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
 }
 
 export function buildJournalHTML(data: JournalReportData): string {
-  const { headerLabel, location, transactions, categories, fileName, exportedByName, cashAuditRecords = [], staffTimeRecords = [], documentTitle = 'Kassenjournal', documentStatus, receiptNumber, dailyCloseCash, yearlyPfandOverview } = data;
+  const { headerLabel, location, transactions, stornos = [], categories, fileName, exportedByName, cashAuditRecords = [], staffTimeRecords = [], documentTitle = 'Kassenjournal', documentStatus, receiptNumber, dailyCloseCash, yearlyPfandOverview } = data;
   const generatedAt = new Date().toLocaleString('de-DE');
   const generatedTime = new Date().toLocaleTimeString('de-DE');
   const isBregenzReport = location.toLowerCase().includes('bregenz');
@@ -499,6 +536,8 @@ export function buildJournalHTML(data: JournalReportData): string {
     const loc = transactions[0]?.location ?? (location.includes('Bregenz') ? 'Bregenz' : 'Friedrichshafen');
     body = locationSection(loc, transactions, categories, cashAuditRecords.filter((record) => record.location === loc), staffTimeRecords.filter((record) => record.location === loc), dailyCloseCash);
   }
+
+  body += stornoAuditSection(stornos);
 
   const printTitle = fileName.replace(/\.pdf$/i, '');
   return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
