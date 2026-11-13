@@ -163,24 +163,24 @@ export function useStore() {
   // Cash session management
   const today = formatDateISO(Date.now());
 
-  // Only the latest session at each location may be resumed. Older open
-  // records from a restore must not reappear after a newer daily close.
-  const latestSessionsToday = new Map<Location, CashSession>();
-  for (const session of cashSessions.filter((s) => s.date === today && !s.discarded)) {
-    const latest = latestSessionsToday.get(session.location);
+  // An open till survives midnight: it remains active until an actual
+  // daily close, independently for Friedrichshafen and Bregenz.
+  // Only the newest session per location may be resumed.
+  const latestSessionsByLocation = new Map<Location, CashSession>();
+  for (const session of cashSessions.filter((s) => !s.discarded)) {
+    const latest = latestSessionsByLocation.get(session.location);
     if (!latest || session.openedAt > latest.openedAt ||
         (session.openedAt === latest.openedAt && session.closed)) {
-      latestSessionsToday.set(session.location, session);
+      latestSessionsByLocation.set(session.location, session);
     }
   }
-  const openSessionsToday = [...latestSessionsToday.values()].filter((s) =>
+  const openSessions = [...latestSessionsByLocation.values()].filter((s) =>
     !s.closed && !s.closedAt && !s.dailyCloseFinalizedAt && !s.dailyCloseSnapshot);
-  // Resume the selected till first.  A newly opened browser/device may not
-  // have a stored selection yet; when exactly one till is open today, it is
-  // unambiguous and should be resumed automatically.
+  // Prefer the explicitly selected location. If only one till is open it
+  // can be resumed even when this browser has no previous location selection.
   const activeSession =
-    openSessionsToday.find((s) => s.location === selectedLocation) ??
-    (openSessionsToday.length === 1 ? openSessionsToday[0] : null);
+    openSessions.find((s) => s.location === selectedLocation) ??
+    (openSessions.length === 1 ? openSessions[0] : null);
 
   useEffect(() => {
     if (activeSession && activeSession.location !== selectedLocation) {
@@ -207,7 +207,7 @@ export function useStore() {
       staffLoginIntervals: staff ? [{ id: uid('staff-login'), staffId: staff.id, staffName: staff.name, loginAt: openedAt }] : [],
     };
     setCashSessions((ss) => {
-      const latest = ss.filter(s => s.date === session.date && s.location === location && !s.discarded)
+      const latest = ss.filter(s => s.location === location && !s.discarded)
         .sort((a, b) => b.openedAt - a.openedAt)[0];
       if (latest && !latest.closed && !latest.closedAt && !latest.dailyCloseSnapshot && !latest.dailyCloseFinalizedAt) return ss;
       return [...ss, session];
