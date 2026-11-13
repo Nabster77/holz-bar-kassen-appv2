@@ -1,0 +1,44 @@
+name: WOODMO V3 - Node 22 und Node 26 Kompatibilitaet (KEIN Deployment)
+on:
+  push:
+    branches: [woodmo-v3-node26-pruefung]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kompatibilitaet:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22', '26']
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node aktivieren
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Versionen
+        run: node --version && npm --version
+        shell: bash
+      - name: Pakete reproduzierbar installieren
+        run: npm ci
+        shell: bash
+      - name: TypeScript pruefen
+        run: npm run typecheck
+        shell: bash
+      - name: Alle Tests
+        run: npm test
+        shell: bash
+      - name: Browser-Build pruefen
+        run: npm run build
+        shell: bash
+      - name: Lint
+        run: npm run lint
+        shell: bash
