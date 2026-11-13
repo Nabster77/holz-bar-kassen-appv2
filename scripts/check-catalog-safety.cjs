@@ -55,7 +55,8 @@ async function main() {
   bookingReset:{fetchLatestBookingReset:async()=>null,rememberBookingReset:()=>{}},
   cloudPull:{fetchCloudData:async()=>({transactions:[],cashSessions:[]})},
   outbox:{discardEntriesBeforeGeneration:async()=>{},enqueueEntries:async()=>{},flushOutbox:async()=>0},
-  staffDirectory:{fetchAllStaffRows:async()=>[],pushStaffUser:async()=>{}}
+  staffDirectory:{fetchAllStaffRows:async()=>[],pushStaffUser:async()=>{}},
+  stornoCloud:{loadCloudStornos:async()=>[]}
  });
  const restore=restoreLoader('backupRecovery').restoreBackupSafely;
  const backup={exportedAt:'2026-11-10T10:00:00Z',data:{shotOptions:[{id:'rum',name:'Rum',price:5,locationPrices:{Bregenz:6}}],catalogVersions:{'setting:schuss-options':{updatedAt:300}}}};
