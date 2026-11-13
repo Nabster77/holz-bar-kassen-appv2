@@ -40,7 +40,7 @@ function errorMessage(error: unknown): string {
 
 export interface CatalogEngineDeps {
   getLocal: () => LocalCatalog;
-  applyRows: (rows: CatalogRow[], skipKeys: Set<string>) => void;
+  applyRows: (rows: CatalogRow[], skipKeys: Set<string>, replaceLocal?: boolean) => void;
   setConflict: (rows: CatalogRow[] | null) => void;
   isEnabled: () => boolean;
 }
@@ -73,13 +73,17 @@ export function createCatalogEngine(deps: CatalogEngineDeps): CatalogEngine {
     state.synced = Object.fromEntries(rows.map((r) => [keyOf(r.kind, r.id), rowToEntry(r)]));
     state.pending = {};
     const local = buildLocalEntries(deps.getLocal(), Date.now());
-    for (const [key, entry] of local) {
-      const remote = state.synced[key];
-      if (!remote || (choice === 'local' && remote.json !== entry.json)) state.pending[key] = entry;
+    // CLOUD TAKEOVER must not enqueue demo/local-only entries for upload.
+    // 'Cloud übernehmen' means a true authoritative copy, not a merge.
+    if (choice === 'local') {
+      for (const [key, entry] of local) {
+        const remote = state.synced[key];
+        if (!remote || remote.json !== entry.json) state.pending[key] = entry;
+      }
     }
     state.initialized = true;
     persist();
-    if (rows.length > 0) deps.applyRows(rows, new Set(Object.keys(state.pending)));
+    if (rows.length > 0) deps.applyRows(rows, new Set(Object.keys(state.pending)), choice === 'cloud');
   }
 
   async function pushPending() {
