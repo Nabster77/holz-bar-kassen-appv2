@@ -480,6 +480,21 @@ function showPdfExportError(error: unknown): void {
   alert(error instanceof Error ? error.message : 'Der lokale PDF-Export ist fehlgeschlagen.');
 }
 
+/** Export an independently formatted audit document through the same local
+ * PDF archive setup as the journal. The HTML is generated in-app, never sent to
+ * Supabase or a third-party PDF service.
+ */
+export async function exportAuditDocumentPdf(data: JournalReportData, html: string): Promise<boolean> {
+  try {
+    const blob = await renderPdfHtml(html);
+    await saveManualPdfToConfiguredArchive(data, blob);
+    return true;
+  } catch (error) {
+    showPdfExportError(error);
+    return false;
+  }
+}
+
 export async function exportJournalPdf(data: JournalReportData): Promise<void> {
   try {
     const blob = await renderJournalPdf(data);
