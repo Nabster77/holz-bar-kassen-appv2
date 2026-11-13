@@ -5,6 +5,11 @@ import { useTheme } from '@/hooks/useTheme';
 import { useStore } from '@/hooks/useStore';
 import { useCloudSync } from '@/hooks/useCloudSync';
 import { useCatalogSync } from '@/hooks/useCatalogSync';
+import { useStornoLedger } from '@/hooks/useStornoLedger';
+import { prepareStorno, prepareFinalCloseStornoSnapshot } from '@/lib/stornoRules';
+import { submitStornoOnline } from '@/lib/stornoCloud';
+import { verifyStaffPassword } from '@/lib/staffDirectory';
+import type { Transaction } from '@/types';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { useStaffDirectory } from '@/hooks/useStaffDirectory';
 import { StaffLoginDialog } from '@/components/StaffLoginDialog';
@@ -102,6 +107,7 @@ export default function App() {
     catalog.syncCatalog,
     store.applyCloudBookingReset,
   );
+  const stornoLedger = useStornoLedger(testMode, online);
 
   /** Explicit admin save with truthful read-after-write proof in V3 cloud. */
   async function savePfandAndVerify(settings: PfandSettings): Promise<'cloud' | 'local'> {
@@ -275,6 +281,54 @@ export default function App() {
     setLastStaffId(user.id);
     saveJSON(STORAGE_KEYS.lastStaffId, user.id);
     recordStaff('login', user);
+  }
+
+  async function commitBonStorno(receipt: Transaction, reason: string, password: string, stornoId: string) {
+    const session = store.activeSession;
+    const employee = currentStaff;
+    if (!session || !employee || session.closed) throw new Error('Kasse oder Mitarbeiter nicht mehr aktiv.');
+    if (receipt.location !== session.location || receipt.cashSessionId && receipt.cashSessionId !== session.id) {
+      throw new Error('Originalbon gehört nicht zu dieser aktiven Kassensitzung.');
+    }
+    // The five most recent ORIGINAL receipts determine eligibility. This is
+    // calculated independently in the client for immediate user feedback; the
+    // database RPC repeats every check atomically.
+    const currentCash = Math.round((session.openingBalance +
+      store.transactions.filter((tx) => tx.paymentMethod === 'cash' && tx.location === session.location &&
+        tx.timestamp >= session.openedAt && (!tx.cashSessionId || tx.cashSessionId === session.id))
+        .reduce((sum, tx) => sum + tx.total, 0) +
+      session.entries.reduce((sum, row) => sum + (row.type === 'deposit' ? row.amount : -row.amount), 0) +
+      stornoLedger.records.filter((entry) => entry.cashSessionId === session.id)
+        .reduce((sum, entry) => sum + entry.cashEffect, 0)) * 100) / 100;
+    const record = prepareStorno({
+      receipt, session, previousStornos: stornoLedger.records,
+      allTransactions: store.transactions, reason, employeeId: employee.id,
+      employeeName: employee.name, currentCashBalance: currentCash,
+      now: Date.now(), stornoId,
+    });
+    if (!(await verifyStaffPassword(employee, password))) {
+      throw new Error('Persönliches Mitarbeiterpasswort ist nicht korrekt.');
+    }
+    if (testMode) {
+      stornoLedger.addSimulatedRecord(record);
+      return record;
+    }
+    if (!online || stornoLedger.status !== 'ready') {
+      throw new Error('Storno nicht möglich, solange das Stornojournal nicht vollständig mit der Cloud verbunden ist.');
+    }
+    const synced = await syncEverything();
+    if (!synced.ok) throw new Error(synced.error || 'Offene Buchungen erst mit der Cloud synchronisieren.');
+    // No offline storno outbox. The service validates personal credentials,
+    // generation, original, last-five, cash coverage and duplicates under lock.
+    const posted = await submitStornoOnline({
+      stornoId, originalTransactionId: receipt.id, cashSessionId: session.id,
+      employeeId: employee.id, employeePassword: password, reason: reason.trim(),
+    });
+    const verified = await stornoLedger.refresh();
+    if (!verified.some((entry) => entry.id === posted.id && entry.originalTransactionId === receipt.id)) {
+      throw new Error('Storno wurde gesendet, aber Cloud-Nachweis fehlt. Bitte Journal prüfen; keine neue Storno-ID verwenden.');
+    }
+    return posted;
   }
 
   async function discardUnusedSession() {
@@ -503,6 +557,9 @@ export default function App() {
               if (!online || !navigator.onLine) {
                 return { ok: false, error: 'Beleg konnte nicht erstellt werden, da keine Internetverbindung besteht. Bitte Internetverbindung prüfen und erneut versuchen.' };
               }
+              if (stornoLedger.status !== 'ready') {
+                return { ok: false, error: 'Stornojournal nicht sicher synchronisiert. Vor endgültigem Tagesabschluss zuerst Cloud und Stornobelege prüfen.' };
+              }
               const finalizedAt = Date.now();
               const finalizedIntervals = (session.staffLoginIntervals ?? []).map((interval) => interval.logoutAt ? interval : { ...interval, logoutAt: finalizedAt });
               try {
@@ -511,9 +568,15 @@ export default function App() {
                 // A final close without the cloud-wide, immutable receipt
                 // number is not allowed. The RPC is idempotent per session.
                 const receipt = await issueDailyCloseReceipt(session.id, currentStaff.name, session.location, finalizedAt);
-                const frozenTransactions = sessionTransactions(store.transactions, session, finalizedAt);
+                // Freeze ALL receipts and reversals of this session. Last-five
+                // selection is NOT a retention limit. The server will refuse a
+                // closed session whose storno list no longer matches the DB.
+                const verifiedStornos = await stornoLedger.refresh();
+                const frozen = prepareFinalCloseStornoSnapshot(
+                  store.transactions, verifiedStornos, session, finalizedAt,
+                );
                 const snapshot = {
-                  transactions: frozenTransactions.map((tx) => structuredClone(tx)),
+                  ...frozen,
                   finalizedAt, finalizedById: currentStaff.id, finalizedByName: currentStaff.name,
                   staffLoginIntervals: finalizedIntervals,
                 };
@@ -538,6 +601,11 @@ export default function App() {
                 return { ok: false, error: `Tagesabschluss konnte nicht sicher bestätigt werden: ${readableSyncError(error)} Bitte vor weiteren Buchungen den Cloud-Status prüfen und erneut synchronisieren; keine zweite Abschlussbuchung erzwingen.` };
               }
             }}
+            stornos={stornoLedger.records}
+            stornoStatus={stornoLedger.status}
+            stornoError={stornoLedger.errorMessage}
+            testMode={testMode}
+            onCommitStorno={commitBonStorno}
             onMoveProduct={(sourceId, targetId) => store.moveProductTo(sourceId, targetId)}
             headerAction={headerAction}
             onHeaderActionConsumed={() => setHeaderAction(null)}
