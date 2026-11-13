@@ -37,6 +37,7 @@ interface Props {
   stornos: StornoRecord[];
   stornoStatus: StornoCloudState;
   stornoError?: string;
+  stornoServiceReady: boolean;
   testMode: boolean;
   onCommitStorno: (receipt: Transaction, reason: string, password: string, id: string) => Promise<StornoRecord>;
   onMoveProduct?: (sourceId: string, targetId: string) => void;
@@ -73,7 +74,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 
 export function POSScreen({
   categories, products, shotOptions, activeSession, onCheckout,
-  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, stornos, stornoStatus, stornoError, testMode, onCommitStorno, onMoveProduct,
+  onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, stornos, stornoStatus, stornoError, stornoServiceReady, testMode, onCommitStorno, onMoveProduct,
   headerAction, onHeaderActionConsumed, loginRequest, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, onHome, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
@@ -488,7 +489,7 @@ export function POSScreen({
           currentCashBalance={currentCashBalance}
           online={online}
           testMode={testMode}
-          cloudReady={stornoStatus === 'ready'}
+          cloudReady={stornoStatus === 'ready' && stornoServiceReady}
           cloudError={stornoError}
           onClose={() => setShowBonliste(false)}
           onCommit={onCommitStorno}
