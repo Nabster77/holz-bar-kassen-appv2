@@ -543,7 +543,7 @@ export default function App() {
               if (store.activeSession && currentStaff) store.correctOpeningBalance(store.activeSession.id, amt, reason, currentStaff);
             }}
             onCashEntry={(type, amt, reason, isPfandRetoure = false) => {
-              if (store.activeSession && currentStaff) store.addCashEntry(store.activeSession.id, type, amt, reason, isPfandRetoure, currentStaff);
+              if (store.activeSession && currentStaff) store.addCashEntry(store.activeSession.id, type, amt, reason, isPfandRetoure, currentStaff, stornoLedger.records);
             }}
             onCloseCash={async (bal, closingWithdrawalAmount) => {
               const session = store.activeSession;
@@ -551,7 +551,7 @@ export default function App() {
               if (testMode) {
                 // Test mode is a simulation only: no Cloud receipt number,
                 // final Cloud write, or official persisted close/PDF.
-                store.closeCashSession(session.id, bal, currentStaff, closingWithdrawalAmount);
+                store.closeCashSession(session.id, bal, currentStaff, closingWithdrawalAmount, undefined, stornoLedger.records);
                 return { ok: true };
               }
               if (!online || !navigator.onLine) {
