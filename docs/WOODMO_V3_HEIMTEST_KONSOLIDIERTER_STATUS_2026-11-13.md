@@ -15,7 +15,7 @@
 
 ## 2. Offene Punkte, nicht als fertig darstellen
 
-1. **Storno Edge `woodmo-v3-storno` noch nicht deployt.** Automatischer Deploymentversuch wurde durch eine Tool-Sicherheitsprüfung blockiert. Nicht umgehen, Schreiboperationen direkt vom Browser bleiben verboten. Echte Live-Stornos nicht freigeben. Testmodus-Simulation ohne Cloudbuchung ist erlaubt.
+1. **Storno Edge `woodmo-v3-storno` am 13.11.2026 auf der getrennten V3-Test-Cloud erfolgreich bereitgestellt.** Status ACTIVE, Version 1, JWT-Prüfung eingeschaltet. RLS und server-exklusiver RPC-Zugriff verifiziert: `authenticated`/`anon` dürfen kein Storno schreiben oder die Storno-RPC direkt aufrufen. **Noch offen:** echte Ende-zu-Ende-Prüfung mit autorisiertem Cloudkonto und Mitarbeiterpasswort; bis dahin keine Produktivfreigabe. Testmodus-Simulation ohne Cloudbuchung weiterhin möglich.
 2. **Automatisches Backup 1/2:** Integritäts-/Delta-/Ordner-/Regelbausteine vorhanden; echter Scheduler, globale Mitarbeiterpräsenz, Android-Dateirechte und vollständiger Restore-Endtest noch offen. Manuelles vollständiges Backup ist nicht dasselbe wie kontinuierliche Sicherung.
 3. Echtgeräte- und Multitablet-Test, echte Karten-Rückerstattung am Terminal, Journal/DE-/AT-Berichtsabnahme, Excel-/ZIP-Bilder Endtest, vollständige Enter-Abnahme aller Dialoge.
 4. Kundenverwaltung ist als späterer Wunsch noch nicht implementiert; separate V3-URL/Hosting/PWA-Praxistest vor Veröffentlichung nicht abgeschlossen.
@@ -30,6 +30,15 @@
 - `.env.local` nur aus sicher verifizierter vorhandener V3-Konfiguration mit URL `https://tulndunkpsynkbbebenf.supabase.co`. Niemals V2-Konfiguration oder Secrets in Text/Protokolle kopieren.
 - Bis Live-Storno-Service bereit ist: Testbuchungen/Stornos ausschließlich im App-**TESTMODUS**. Keine echten Buchungs-Resets.
 - Ein separates Downloadpaket im Chat enthält den Heim-PC-Doppelklick-Starter `WOODMO_V3_HEIM_STARTEN.cmd`, die V3-Konfigprüfung, eine optionale Tablet-LAN-Startdatei und den ausführlichen Testplan.
+
+## 3a. Serverdienst-Verifikationsnachweis (13.11.2026)
+
+- Supabase-Projekt: `tulndunkpsynkbbebenf` (ausschließlich V3).
+- Edge-Funktion `woodmo-v3-storno`: ACTIVE, Version 1, `verify_jwt=true`; die bereitgestellten Quelltexte `index.ts` und `passwordProof.ts` über Supabase wieder ausgelesen.
+- Datenbank `pos_stornos`: existiert, RLS aktiv, normale Browserrollen können weder direkt einfügen noch die RPC `create_pos_storno_v3` ausführen. `service_role` besitzt RPC-Ausführungsrecht.
+- Kein künstlicher Verkaufsbon angelegt: Beim Prüfzeitpunkt 0 Verkäufe, 0 Kassensitzungen und 0 Stornos.
+- GitHub Codeprüfung, Lint/Build, Windows/Linux Node22/26 für vorherigen Branchstand alle grün. Der Browser führt einen authentifizierten Readiness-Handshake gegen `woodmo-v3-storno` durch, bevor Live-Storno freigegeben wird.
+- **Noch nicht nachgewiesen** ist ein authentifizierter vollständiger Lauf vom persönlichen Mitarbeiterpasswort bis zum im Journal rückgelesenen Stornobeleg. Dafür wird später der Heim-PC mit V3-Konfiguration und echten Testbedingungen benötigt. Eine tatsächliche Kartenterminal-Gutschrift ist unabhängig vom Kassensystem.
 
 ## 4. Freigabe
 
