@@ -19,11 +19,20 @@ export interface SubmitStorno {
 
 export async function loadCloudStornos(): Promise<StornoRecord[]> {
   if (!supabase || !navigator.onLine) throw new Error('Stornojournal benötigt eine Cloud-Verbindung.');
-  const { data, error } = await supabase.from('pos_stornos')
-    .select('id,original_transaction_id,cash_session_id,location,recorded_at,employee_id,employee_name,reason,payment_method,gross_amount_cents,cash_effect_cents,card_effect_cents,original_receipt_snapshot')
-    .order('recorded_at', { ascending: true });
-  if (error) throw new Error(`Stornojournal konnte nicht geladen werden: ${error.message}`);
-  return ((data ?? []) as CloudStornoRow[]).map(decodeStornoRow);
+  const result: StornoRecord[] = [];
+  // Supabase returns at most 1000 rows by default. Storno evidence must never
+  // disappear after a busy season: page until the last record is returned.
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.from('pos_stornos')
+      .select('id,original_transaction_id,cash_session_id,location,recorded_at,employee_id,employee_name,reason,payment_method,gross_amount_cents,cash_effect_cents,card_effect_cents,original_receipt_snapshot')
+      .order('recorded_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + 499);
+    if (error) throw new Error(`Stornojournal konnte nicht geladen werden: ${error.message}`);
+    for (const row of (data ?? []) as CloudStornoRow[]) result.push(decodeStornoRow(row));
+    if ((data?.length ?? 0) < 500) break;
+  }
+  return result;
 }
 
 export async function submitStornoOnline(input: SubmitStorno): Promise<StornoRecord> {
