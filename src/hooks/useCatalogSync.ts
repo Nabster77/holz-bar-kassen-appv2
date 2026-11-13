@@ -9,7 +9,7 @@ interface CatalogSyncOptions {
   pfandSettings: PfandSettings;
   shotOptions: ShotOption[];
   testMode: boolean;
-  applyRows: (rows: CatalogRow[], skipKeys: Set<string>) => void;
+  applyRows: (rows: CatalogRow[], skipKeys: Set<string>, replaceLocal?: boolean) => void;
 }
 
 export function useCatalogSync({ categories, products, pfandSettings, shotOptions, testMode, applyRows }: CatalogSyncOptions) {
@@ -28,7 +28,7 @@ export function useCatalogSync({ categories, products, pfandSettings, shotOption
   const [engine] = useState(() =>
     createCatalogEngine({
       getLocal: () => localRef.current,
-      applyRows: (rows, skipKeys) => applyRef.current(rows, skipKeys),
+      applyRows: (rows, skipKeys, replaceLocal) => applyRef.current(rows, skipKeys, replaceLocal),
       setConflict,
       isEnabled: () => !testModeRef.current,
     }),
