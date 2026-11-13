@@ -58,6 +58,10 @@ interface Props {
   onChangeManagerPassword?: (currentPassword: string, nextPassword: string) => Promise<unknown>;
   administratorTools?: ReactNode;
   currentStaff?: StaffUser | null;
+  menuOpen: boolean;
+  onCloseMenu: () => void;
+  onOpenJournal: () => void;
+  onShotDraftDirtyChange?: (dirty: boolean) => void;
 }
 
 const COLOR_OPTIONS = [
@@ -81,100 +85,133 @@ const COLOR_OPTIONS = [
 
 const LOCATIONS: Location[] = ['Friedrichshafen', 'Bregenz'];
 
-export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, ...props }: Props) {
+export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, menuOpen, onCloseMenu, onOpenJournal, onShotDraftDirtyChange, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
   const [shotDraftDirty, setShotDraftDirty] = useState(false);
-  const changeTab = (next: typeof tab) => {
-    if (tab === 'shots' && shotDraftDirty && !window.confirm('Ungespeicherte Schuss-Änderungen verwerfen und Bereich wechseln?')) return;
+  const canLeaveShots = () => {
+    if (tab !== 'shots' || !shotDraftDirty) return true;
+    if (!window.confirm('Ungespeicherte SCHUSS-Änderungen verwerfen und Bereich wechseln?')) return false;
     setShotDraftDirty(false);
-    setTab(next);
+    onShotDraftDirtyChange?.(false);
+    return true;
   };
+  const changeTab = (next: typeof tab) => {
+    if (tab !== next && !canLeaveShots()) return;
+    setTab(next);
+    onCloseMenu();
+  };
+  const openAdminAction = (action: () => void) => {
+    if (!canLeaveShots()) return;
+    onCloseMenu();
+    action();
+  };
+  const adminMenuItem = 'flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-700/50 px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:border-emerald-600/60 hover:bg-emerald-900/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400';
+  const activeAdminMenuItem = 'border-blue-500 bg-blue-600/30 text-white';
+  const adminMenuHeading = 'mb-2 text-[11px] font-bold uppercase tracking-[.12em] text-emerald-300';
   const [showCatalogTransfer, setShowCatalogTransfer] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-2">
-          <button
-            onClick={() => changeTab('sessions')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-              tab === 'sessions' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
-            }`}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-start justify-center bg-black/65 px-3 pb-4 pt-[4.5rem] backdrop-blur-[2px]"
+          onClick={onCloseMenu}
+          onKeyDown={(event) => { if (event.key === 'Escape') onCloseMenu(); }}
+        >
+          <nav
+            role="dialog"
+            aria-modal="true"
+            aria-label="Verwaltungsmenü"
+            onClick={(event) => event.stopPropagation()}
+            className="max-h-full w-full max-w-xl overflow-y-auto rounded-2xl border border-emerald-600/40 bg-[#0c1729] p-4 text-white shadow-2xl"
           >
-            <MonitorDot className="h-4 w-4" /> Kassen-Übersicht
-          </button>
-          <button
-            onClick={() => changeTab('categories')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-              tab === 'categories' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
-            }`}
-          >
-            <Tag className="h-4 w-4" /> Warengruppen
-          </button>
-          <button
-            onClick={() => changeTab('products')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-              tab === 'products' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
-            }`}
-          >
-            <Package className="h-4 w-4" /> Artikel
-          </button>
-          <button
-            onClick={() => changeTab('shots')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === 'shots' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'}`}
-          ><Wine className="h-4 w-4" /> SCHUSS</button>
-          <button
-            onClick={() => changeTab('staff')}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-              tab === 'staff' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300'
-            }`}
-          >
-            <ShieldCheck className="h-4 w-4" /> Benutzer
-          </button>
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-700 pb-3">
+              <div>
+                <h2 className="text-lg font-bold">Verwaltungsmenü</h2>
+                <p className="text-xs text-slate-400">Wähle den gewünschten Bereich oder eine Aktion.</p>
+              </div>
+              <button type="button" aria-label="Verwaltungsmenü schließen" onClick={onCloseMenu}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-600 text-slate-200 hover:bg-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <section aria-labelledby="woodmo-admin-navigation" className="mb-5">
+              <h3 id="woodmo-admin-navigation" className={adminMenuHeading}>Verwaltungsbereiche</h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="button" aria-current={tab === 'sessions' ? 'page' : undefined} className={`${adminMenuItem} ${tab === 'sessions' ? activeAdminMenuItem : ''}`} onClick={() => changeTab('sessions')}>
+                  <MonitorDot className="h-5 w-5 shrink-0 text-blue-300" /> Kassen-Übersicht
+                </button>
+                <button type="button" aria-current={tab === 'categories' ? 'page' : undefined} className={`${adminMenuItem} ${tab === 'categories' ? activeAdminMenuItem : ''}`} onClick={() => changeTab('categories')}>
+                  <Tag className="h-5 w-5 shrink-0 text-blue-300" /> Warengruppen
+                </button>
+                <button type="button" aria-current={tab === 'products' ? 'page' : undefined} className={`${adminMenuItem} ${tab === 'products' ? activeAdminMenuItem : ''}`} onClick={() => changeTab('products')}>
+                  <Package className="h-5 w-5 shrink-0 text-blue-300" /> Artikel
+                </button>
+                <button type="button" aria-current={tab === 'shots' ? 'page' : undefined} className={`${adminMenuItem} ${tab === 'shots' ? activeAdminMenuItem : ''}`} onClick={() => changeTab('shots')}>
+                  <Wine className="h-5 w-5 shrink-0 text-blue-300" /> SCHUSS
+                </button>
+                <button type="button" aria-current={tab === 'staff' ? 'page' : undefined} className={`${adminMenuItem} ${tab === 'staff' ? activeAdminMenuItem : ''}`} onClick={() => changeTab('staff')}>
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-blue-300" /> Benutzer
+                </button>
+                <button type="button" className={adminMenuItem} onClick={() => openAdminAction(onOpenJournal)}>
+                  <ReceiptIcon className="h-5 w-5 shrink-0 text-blue-300" /> Journal
+                </button>
+              </div>
+            </section>
+
+            <section aria-labelledby="woodmo-app-settings" className="mb-5">
+              <h3 id="woodmo-app-settings" className={adminMenuHeading}>App-Einstellungen</h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {onDeviceSetup && (
+                  <button type="button" className={adminMenuItem} onClick={() => openAdminAction(onDeviceSetup)}>
+                    <Settings className="h-5 w-5 shrink-0 text-emerald-300" /> Setup / PDF-Ordner
+                  </button>
+                )}
+                {onToggleMode && (
+                  <button type="button" className={adminMenuItem} onClick={() => openAdminAction(onToggleMode)}>
+                    {testMode ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" /> : <FlaskConical className="h-5 w-5 shrink-0 text-amber-300" />}
+                    {testMode ? 'Auf aktiven Modus wechseln' : 'Auf Testmodus wechseln'}
+                  </button>
+                )}
+              </div>
+            </section>
+
+            <section aria-labelledby="woodmo-import-export">
+              <h3 id="woodmo-import-export" className={adminMenuHeading}>Import / Export</h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="button" className={adminMenuItem} onClick={() => openAdminAction(() => setShowCatalogTransfer(true))}>
+                  <FileDown className="h-5 w-5 shrink-0 text-cyan-300" /> Excel-Import / Export
+                </button>
+                {onImportBackup && (
+                  <button type="button" className={adminMenuItem} onClick={() => openAdminAction(() => setShowImport(true))}>
+                    <FileUp className="h-5 w-5 shrink-0 text-cyan-300" /> Backup importieren
+                  </button>
+                )}
+                {onExportBackup && (
+                  <button type="button" className={adminMenuItem} onClick={() => openAdminAction(() => { void onExportBackup(); })}>
+                    <Download className="h-5 w-5 shrink-0 text-cyan-300" /> Backup exportieren
+                  </button>
+                )}
+                {onResetAllData && (
+                  <button type="button" className={`${adminMenuItem} border-red-700/60 text-red-300 hover:border-red-500 hover:bg-red-950/40`}
+                    onClick={() => openAdminAction(() => setShowReset(true))}>
+                    <RotateCcw className="h-5 w-5 shrink-0" /> Buchungen zurücksetzen
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">Das Zurücksetzen öffnet weiterhin die vorhandene Sicherheitsbestätigung.</p>
+            </section>
+          </nav>
         </div>
-        <div className="flex items-center gap-2">
-          {onDeviceSetup && (
-            <button type="button" onClick={onDeviceSetup} className="flex min-h-10 items-center gap-2 rounded-xl border border-emerald-400 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/30">
-              <Settings className="h-4 w-4" /> Setup / PDF-Ordner
-            </button>
-          )}
-          {onToggleMode && (
-            <button
-              onClick={onToggleMode}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                testMode
-                  ? 'border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300 dark:hover:bg-green-900/40'
-                  : 'border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40'
-              }`}
-            >
-              {testMode ? <CheckCircle2 className="h-3.5 w-3.5" /> : <FlaskConical className="h-3.5 w-3.5" />}
-              {testMode ? 'Auf aktiven Modus wechseln' : 'Auf Testmodus wechseln'}
-            </button>
-          )}
-          <button className="rounded-xl border border-blue-400 px-3 py-2 text-sm" onClick={() => { if (shotDraftDirty) { window.alert('Bitte zuerst SCHUSS-Änderungen speichern oder verwerfen.'); return; } setShowCatalogTransfer(true); }}>Excel-Import / Export</button>
-          {onImportBackup && (
-            <button
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
-            >
-              <FileUp className="h-3.5 w-3.5" /> Backup importieren
-            </button>
-          )}
-          <button
-            onClick={() => setShowReset(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Buchungen zurücksetzen
-          </button>
-        </div>
-      </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {tab === 'sessions' ? <LiveSessionOverview transactions={props.transactions} cashSessions={props.cashSessions} categories={props.categories} activeSession={props.activeSession} selectedLocation={props.selectedLocation} onSwitchLocation={props.onSwitchLocation} exportedByName={props.currentStaff?.name} />
           : tab === 'categories' ? <CategoryManager {...props} />
             : tab === 'products' ? <ProductManager {...props} testMode={testMode} />
-              : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} onDirtyChange={setShotDraftDirty} />
+              : tab === 'shots' ? <ShotManager shots={props.shotOptions} onChange={props.onUpdateShotOptions} onDirtyChange={(dirty) => { setShotDraftDirty(dirty); onShotDraftDirtyChange?.(dirty); }} />
               : props.onCreateStaff && props.onUpdateStaff && props.onSetStaffPassword && props.onDeleteStaff ? <div className="space-y-4"><StaffManager users={props.staffUsers ?? []} online={props.staffOnline ?? navigator.onLine} onCreate={props.onCreateStaff} onUpdate={props.onUpdateStaff} onSetPassword={props.onSetStaffPassword} onDelete={props.onDeleteStaff} />{props.administratorTools}</div> : null}
       </div>
       {showCatalogTransfer && <CatalogTransferDialog
