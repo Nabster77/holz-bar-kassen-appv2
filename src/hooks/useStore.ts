@@ -1,6 +1,7 @@
 import { canDiscardCashSession } from '@/lib/cashBalanceCarry';
 import { useCallback, useEffect, useState } from 'react';
 import { sessionTransactions } from '@/lib/sessionTransactions';
+import type { StornoRecord } from '@/lib/stornoRules';
 import type { Category, CashSession, CashEntry, CashCorrection, Product, Transaction, Location, PfandSettings, StaffActivity, StaffUser, ShotOption } from '@/types';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { seedCategories, seedProducts, DEFAULT_PFAND_SETTINGS } from '@/lib/seed';
@@ -237,7 +238,7 @@ export function useStore() {
     );
   }, []);
 
-  const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure = false, staff?: StaffUser) => {
+  const addCashEntry = useCallback((sessionId: string, type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure = false, staff?: StaffUser, stornoRecords: readonly StornoRecord[] = []) => {
     if (!Number.isFinite(amount) || amount <= 0 || !reason.trim()) return;
     const session = cashSessions.find(item => item.id === sessionId && !item.closed && !item.discarded);
     if (!session) return;
@@ -245,7 +246,8 @@ export function useStore() {
       .filter(transaction => transaction.paymentMethod === 'cash')
       .reduce((total, transaction) => total + transaction.total, 0);
     const movements = session.entries.reduce((total, entry) => total + (entry.type === 'deposit' ? entry.amount : -entry.amount), 0);
-    const availableCents = Math.round((session.openingBalance + cashTransactions + movements) * 100);
+    const stornoCash = stornoRecords.filter((row) => row.cashSessionId === session.id).reduce((sum, row) => sum + row.cashEffect, 0);
+    const availableCents = Math.round((session.openingBalance + cashTransactions + movements + stornoCash) * 100);
     if (type === 'withdrawal' && Math.round(amount * 100) > availableCents) return;
     const entry: CashEntry = {
       id: uid('entry'),
@@ -272,6 +274,7 @@ export function useStore() {
       receipt: { number: number; location: Location; year: number };
       snapshot: NonNullable<CashSession['dailyCloseSnapshot']>;
     },
+    stornoRecords: readonly StornoRecord[] = [],
   ) => {
     const closedAt = finalization?.closedAt ?? Date.now();
     setCashSessions((ss) =>
@@ -292,7 +295,8 @@ export function useStore() {
         const cashTxTotal = sessionTx.filter((transaction) => transaction.paymentMethod === 'cash').reduce((sum, t) => sum + t.total, 0);
         const deposits = entries.filter((e) => e.type === 'deposit').reduce((sum, e) => sum + e.amount, 0);
         const withdrawals = entries.filter((e) => e.type === 'withdrawal').reduce((sum, e) => sum + e.amount, 0);
-        const expected = Math.round((s.openingBalance + cashTxTotal + deposits - withdrawals) * 100) / 100;
+        const stornoCashTotal = stornoRecords.filter((row) => row.cashSessionId === s.id).reduce((sum, row) => sum + row.cashEffect, 0);
+        const expected = Math.round((s.openingBalance + cashTxTotal + stornoCashTotal + deposits - withdrawals) * 100) / 100;
         return {
           ...s,
           closed: true,
