@@ -506,7 +506,7 @@ export function POSScreen({
         />
       )}
       {showCloseDialog && activeSession && (
-        <DailyCloseDialog session={activeSession} transactions={transactions} currentStaff={currentStaff} onClose={async (bal, closingWithdrawalAmount) => {
+        <DailyCloseDialog session={activeSession} transactions={transactions} stornos={stornos} currentStaff={currentStaff} onClose={async (bal, closingWithdrawalAmount) => {
           const result = await onCloseCash(bal, closingWithdrawalAmount);
           if (result.ok) {
             openDialogAfterConfirmedClose.current = true;
