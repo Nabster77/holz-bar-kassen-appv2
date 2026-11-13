@@ -82,8 +82,8 @@ export function POSScreen({
   useEffect(() => {
     if (loginRequest === previousLoginRequest.current) return;
     previousLoginRequest.current = loginRequest;
-    if (!currentStaff) setShowOpenDialog(true);
-  }, [loginRequest, currentStaff]);
+    if (!activeSession || !currentStaff) setShowOpenDialog(true);
+  }, [loginRequest, activeSession, currentStaff]);
   const openDialogAfterConfirmedClose = useRef(false);
   const [showCorrection, setShowCorrection] = useState(false);
   const [cashEntryType, setCashEntryType] = useState<'deposit' | 'withdrawal' | null>(null);
@@ -266,9 +266,16 @@ export function POSScreen({
         ) : (
           <>
             <span className="text-xs text-slate-500 dark:text-slate-300">Kasse noch nicht eröffnet</span>
-            <span className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-              Oben Anmelden wählen
-            </span>
+            {currentStaff ? (
+              <button type="button" onClick={() => setShowOpenDialog(true)}
+                className="ml-auto min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800">
+                Kasse eröffnen
+              </button>
+            ) : (
+              <span className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                Oben Anmelden wählen
+              </span>
+            )}
           </>
         )}
       </div>
