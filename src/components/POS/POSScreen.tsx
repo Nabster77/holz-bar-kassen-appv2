@@ -365,28 +365,11 @@ export function POSScreen({
             </div>
           </div>
 
-          {/* Search bar */}
-          <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2">
-            <div className="relative min-w-[9rem] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Artikel suchen..."
-                className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-base text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:py-2.5 sm:text-sm" />
-            </div>
-            <button type="button"
-              onClick={() => setShowPfandRetoure(true)}
-              disabled={!activeSession || !currentStaff}
-              title="Pfand-Retoure während des Verkaufs erfassen"
-              className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-teal-500/70 bg-teal-700 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-teal-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
-              <Recycle className="h-4 w-4" />
-              <span>Pfand-Retoure</span>
-            </button>
-            <button type="button" onClick={() => setShowBonliste(true)}
-              disabled={!activeSession || !currentStaff}
-              title="Letzte fünf Einzelbons anzeigen und begründet stornieren"
-              className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-sky-500/70 bg-sky-700 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
-              <ClipboardList className="h-4 w-4" />
-              <span>Bonliste</span>
-            </button>
+          {/* Search bar: sales tools are grouped with the cart header. */}
+          <div className="relative mb-2 shrink-0">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Artikel suchen..."
+              className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-base text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:py-2.5 sm:text-sm" />
           </div>
 
           {/* Product grid */}
@@ -433,17 +416,40 @@ export function POSScreen({
 
         {/* Right: cart */}
         <div className="flex min-h-56 min-w-0 flex-col rounded-2xl border border-emerald-700/20 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:h-full sm:min-h-0">
-          <div className="flex items-center justify-between border-b border-gray-200 p-3 dark:border-gray-700">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <h2 className="font-bold text-gray-900 dark:text-gray-100">Warenkorb</h2>
-              {cartCount > 0 && <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">{cartCount}</span>}
+          <div className="shrink-0 border-b border-gray-200 p-2.5 dark:border-gray-700 sm:p-3">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <ShoppingCart className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
+                <h2 className="font-bold text-gray-900 dark:text-gray-100">Warenkorb</h2>
+                {cartCount > 0 && <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">{cartCount}</span>}
+              </div>
+              {cart.length > 0 && (
+                <button type="button" onClick={clearCart}
+                  className="flex min-h-10 shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">
+                  <Trash2 className="h-3.5 w-3.5" /> Leeren
+                </button>
+              )}
             </div>
-            {cart.length > 0 && (
-              <button onClick={clearCart} className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">
-                <Trash2 className="h-3.5 w-3.5" /> Leeren
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button"
+                onClick={() => setShowPfandRetoure(true)}
+                disabled={!activeSession || !currentStaff}
+                aria-label="Pfand-Retoure erfassen"
+                title="Pfand-Retoure direkt während des Verkaufs erfassen"
+                className="flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-teal-400/70 bg-teal-700 px-2 py-2 text-center text-xs font-bold leading-tight text-white shadow-sm transition hover:bg-teal-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm">
+                <Recycle className="h-4 w-4 shrink-0" />
+                <span>Pfand-Retoure</span>
               </button>
-            )}
+              <button type="button"
+                onClick={() => setShowBonliste(true)}
+                disabled={!activeSession || !currentStaff}
+                aria-label="Bonliste öffnen und Bon stornieren"
+                title="Letzte fünf Originalbons ansehen und Bar- oder Kartenbuchung begründet stornieren"
+                className="flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-sky-400/70 bg-sky-700 px-2 py-2 text-center text-xs font-bold leading-tight text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm">
+                <ClipboardList className="h-4 w-4 shrink-0" />
+                <span>Bonliste / Storno</span>
+              </button>
+            </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1 sm:px-3">
