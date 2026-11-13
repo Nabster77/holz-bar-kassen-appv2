@@ -786,17 +786,24 @@ function TransactionListView({ transactions, sort }: { transactions: Transaction
   return (
     <div className="space-y-2">
       {sorted.map((tx) => {
+        const reversal = (tx as Partial<StornoJournalTransaction>).isStornoProjection === true
+          ? tx as StornoJournalTransaction : null;
         const taxMap = getTaxByRate(tx);
         const taxLine = sortedRateKeys(taxMap).map((r) => `MwSt ${r}%: ${formatCurrency(taxMap.get(r) ?? 0)}`).join(' · ');
         return (
-          <div key={tx.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div key={tx.id} className={`overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-gray-800 ${reversal ? 'border-red-400 dark:border-red-800' : 'border-gray-200 dark:border-gray-700'}`}>
             <button onClick={() => setExpanded(expanded === tx.id ? null : tx.id)} className="flex w-full items-center justify-between p-3 text-left">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-900/30">
                   <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatDate(tx.timestamp)} · {formatTime(tx.timestamp)}</p>
+                  <p className={`text-sm font-semibold ${reversal ? 'text-red-700 dark:text-red-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                    {reversal ? 'STORNO · ' : ''}{formatDate(tx.timestamp)} · {formatTime(tx.timestamp)}
+                  </p>
+                  {reversal && <p className="max-w-sm break-words text-xs font-semibold text-red-700 dark:text-red-300">
+                    Originalbon {reversal.stornoOriginalId} · Grund: {reversal.stornoReason}
+                  </p>}
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {tx.items.length} Artikel · {taxLine || 'keine MwSt'}
                     {tx.totalPfand > 0 && ` · Pfand: ${formatCurrency(tx.totalPfand)}`}
@@ -807,7 +814,7 @@ function TransactionListView({ transactions, sort }: { transactions: Transaction
                 <div className="flex items-center gap-1">
                   {tx.paymentMethod === 'cash' ? <Banknote className="h-4 w-4 text-green-600 dark:text-green-400" /> : <CreditCard className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
                 </div>
-                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatCurrency(tx.total)}</span>
+                <span className={`text-lg font-bold ${reversal ? 'text-red-700 dark:text-red-300' : 'text-gray-900 dark:text-gray-100'}`}>{formatCurrency(tx.total)}</span>
                 {expanded === tx.id ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
               </div>
             </button>
