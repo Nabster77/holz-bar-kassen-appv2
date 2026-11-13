@@ -313,8 +313,8 @@ export default function App() {
       stornoLedger.addSimulatedRecord(record);
       return record;
     }
-    if (!online || stornoLedger.status !== 'ready') {
-      throw new Error('Storno nicht möglich, solange das Stornojournal nicht vollständig mit der Cloud verbunden ist.');
+    if (!online || stornoLedger.status !== 'ready' || !stornoLedger.serviceReady) {
+      throw new Error(stornoLedger.serviceError || 'Storno nicht möglich: Stornojournal oder sicherer Serverdienst nicht freigegeben.');
     }
     const synced = await syncEverything();
     if (!synced.ok) throw new Error(synced.error || 'Offene Buchungen erst mit der Cloud synchronisieren.');
@@ -603,7 +603,8 @@ export default function App() {
             }}
             stornos={stornoLedger.records}
             stornoStatus={stornoLedger.status}
-            stornoError={stornoLedger.errorMessage}
+            stornoError={stornoLedger.errorMessage || stornoLedger.serviceError}
+            stornoServiceReady={stornoLedger.serviceReady}
             testMode={testMode}
             onCommitStorno={commitBonStorno}
             onMoveProduct={(sourceId, targetId) => store.moveProductTo(sourceId, targetId)}
