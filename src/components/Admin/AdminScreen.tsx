@@ -1506,7 +1506,7 @@ function ResetConfirmDialog({ testMode, onExport, onCancel, onConfirm }: { testM
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
           {testMode
             ? 'Im Testmodus können simulierte Buchungen und Sitzungen zurückgesetzt werden, sofern keine Kasse mehr aktiv ist. Artikel, Preise, Warengruppen, Mitarbeiter und ihre Zugangsdaten bleiben erhalten. Die Cloud wird dabei nicht gelöscht.'
-            : 'Im Aktivmodus ist der bisherige vollständige Buchungs-Reset vorsorglich gesperrt: Er würde abgeschlossene Tagesabschlüsse und möglicherweise Buchungen anderer Geräte gefährden. Erst nach Umsetzung eines selektiven Cloud-Resets wird die Funktion wieder freigegeben. Artikel, Preise und Mitarbeiter bleiben unangetastet.'}
+            : 'Im Aktivmodus darf der Administrator den gesamten Buchungsbestand zurücksetzen, auch nach einem Jahreswechsel oder während einer offenen Kasse. Zwingende Voraussetzung ist eine vollständige, dauerhaft gespeicherte und geprüfte Sicherung inklusive Tagesabschlüssen und Stornos. Diese verifizierte Rücksetzung ist noch in Arbeit; bis dahin ist die bisherige unsichere Löschfunktion gesperrt. Artikel, Preise, Bilder und Mitarbeiter bleiben erhalten.'}
         </p>
         {error && (
           <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
