@@ -7,6 +7,7 @@ import { useCatalogSync } from '@/hooks/useCatalogSync';
 import { useStornoLedger } from '@/hooks/useStornoLedger';
 import { prepareStorno, prepareFinalCloseStornoSnapshot } from '@/lib/stornoRules';
 import { submitStornoOnline } from '@/lib/stornoCloud';
+import { loadCloudStornos } from '@/lib/stornoCloud';
 import { verifyStaffPassword } from '@/lib/staffDirectory';
 import type { Transaction } from '@/types';
 import { useAuthUser } from '@/hooks/useAuthUser';
@@ -589,7 +590,7 @@ export default function App() {
                 await persistFinalizedCashSession(closed);
                 store.commitFinalizedSession(closed);
                 try {
-                  await saveJournalPdf(closedSessionReport(closed, store.transactions, store.categories, currentStaff.name));
+                  await saveJournalPdf(closedSessionReport(closed, store.transactions, store.categories, currentStaff.name, verifiedStornos));
                 } catch (pdfError) {
                   console.warn('Kasse abgeschlossen; PDF-Export fehlgeschlagen.', pdfError);
                   alert('Der Tagesabschluss wurde in Supabase bestätigt. Das PDF konnte auf diesem Gerät nicht gespeichert werden. Bitte im Geräte-Setup den Speicherordner prüfen und das PDF im Journal erneut erzeugen. Die Kasse nicht erneut abschließen.');
@@ -673,6 +674,10 @@ export default function App() {
               onExportBackup={async () => {
                 try {
                 const recoveryMetadata = await exportRecoveryMetadata();
+                // Include Cloud-confirmed append-only financial evidence in a
+                // full backup. Test-mode simulated records are never exported
+                // as genuine sales or storno documents.
+                const backedUpStornos = await loadCloudStornos();
                 const coreBackup = store.exportBackup();
                 // A backup represents this installation as a whole. Passwords are
                 // stored only as protected proofs; no readable password is exported.
@@ -682,6 +687,7 @@ export default function App() {
                   data: {
                     ...coreBackup.data,
                     ...recoveryMetadata,
+                    stornos: backedUpStornos,
                     staffUsers: staff.users,
                     managerCredential: loadManagerCredential(),
                     lastStaffId,
@@ -720,6 +726,9 @@ export default function App() {
                   await pauseSyncForRestore();
                   restoreSyncPaused = true;
                   const restored = await restoreBackupSafely(parsed as CompleteBackup);
+                  // The Cloud remains authoritative for immutable storno
+                  // records. Refresh before announcing recovery success.
+                  await stornoLedger.refresh();
                   store.importBackup(restored);
                   staff.replaceLocal(restored.staffUsers);
 
