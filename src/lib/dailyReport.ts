@@ -136,7 +136,9 @@ export function closedSessionReport(session: CashSession, transactions: Transact
     yearlyPfandOverview: calculateYearlyPfandOverview(
       projectFinancialTransactions(
         transactions.filter((transaction) => transaction.timestamp <= finalizedAt),
-        allStornos.filter((storno) => storno.timestamp <= finalizedAt),
+        [...new Map([...allStornos, ...sessionStornos]
+          .filter((storno) => storno.timestamp <= finalizedAt)
+          .map((storno) => [storno.id, storno])).values()],
       ),
       Number(year), session.location,
     ),
