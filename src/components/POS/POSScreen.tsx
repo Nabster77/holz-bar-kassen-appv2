@@ -15,7 +15,7 @@ import { formatDateLong } from '@/lib/format';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import {
-  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro,
+  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro, Recycle,
 } from 'lucide-react';
 
 type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | 'correction' | 'close' | null;
@@ -34,6 +34,7 @@ interface Props {
   onMoveProduct?: (sourceId: string, targetId: string) => void;
   headerAction?: HeaderAction;
   onHeaderActionConsumed?: () => void;
+  loginRequest: number;
   selectedLocation?: Location;
   pfandSettings: PfandSettings;
   staffUsers: StaffUser[];
@@ -65,7 +66,7 @@ const PFAND_RETOURE_PRODUCT: Product = {
 export function POSScreen({
   categories, products, shotOptions, activeSession, onCheckout,
   onOpenCash, onCorrectOpening, onCashEntry, onCloseCash, transactions, onMoveProduct,
-  headerAction, onHeaderActionConsumed, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, onHome, openingBalanceSuggestions,
+  headerAction, onHeaderActionConsumed, loginRequest, selectedLocation, pfandSettings, staffUsers, currentStaff, online, onStaffAuthenticated, onSetInitialCredentials, onConfigureStaffSecurity, onResetStaffPassword, lastStaffId, onDiscardEmptySession, onHome, openingBalanceSuggestions,
 }: Props) {
   const [activeCat, setActiveCat] = useState<string>(categories[0]?.id ?? '');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -75,6 +76,14 @@ export function POSScreen({
   // Danach darf nur ein tatsächlich bestätigter Tagesabschluss ihn erneut öffnen.
   // Kurzzeitige Leerstände während Import oder Cloud-Abgleich sind kein Abschluss.
   const [showOpenDialog, setShowOpenDialog] = useState(() => !activeSession || !currentStaff);
+  // One shared header control handles both logout and return login. Logging
+  // out must not spawn another login button or automatically reopen the modal.
+  const previousLoginRequest = useRef(loginRequest);
+  useEffect(() => {
+    if (loginRequest === previousLoginRequest.current) return;
+    previousLoginRequest.current = loginRequest;
+    if (!currentStaff) setShowOpenDialog(true);
+  }, [loginRequest, currentStaff]);
   const openDialogAfterConfirmedClose = useRef(false);
   const [showCorrection, setShowCorrection] = useState(false);
   const [cashEntryType, setCashEntryType] = useState<'deposit' | 'withdrawal' | null>(null);
@@ -245,25 +254,21 @@ export function POSScreen({
             </span>
             <span className="hidden truncate text-xs text-slate-500 lg:inline dark:text-slate-400">{formatDateLong(activeSession.openedAt)}</span>
             {currentStaff ? (
-              <>
-                <span className="ml-auto hidden truncate text-xs font-medium text-slate-500 min-[850px]:block dark:text-slate-300">{currentStaff.name}</span>
-                <button type="button" onClick={() => void requestDailyClose()}
-                  className="ml-auto flex min-h-9 shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 min-[850px]:ml-0">
-                  <Lock className="h-3.5 w-3.5" /> Tagesabschluss
-                </button>
-              </>
+              <span className="ml-auto min-w-0 truncate text-xs font-medium text-slate-600 dark:text-slate-200">
+                {currentStaff.name}
+              </span>
             ) : (
-              <button type="button" onClick={() => setShowOpenDialog(true)}
-                className="ml-auto min-h-9 rounded-lg bg-amber-100 px-3 text-xs font-bold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Mitarbeiter anmelden</button>
+              <span className="ml-auto text-xs font-semibold text-amber-700 dark:text-amber-300">
+                Nicht angemeldet
+              </span>
             )}
           </>
         ) : (
           <>
             <span className="text-xs text-slate-500 dark:text-slate-300">Kasse noch nicht eröffnet</span>
-            <button type="button" onClick={() => setShowOpenDialog(true)}
-              className="ml-auto min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800">
-              Kasse eröffnen
-            </button>
+            <span className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              Oben Anmelden wählen
+            </span>
           </>
         )}
       </div>
@@ -342,10 +347,20 @@ export function POSScreen({
           </div>
 
           {/* Search bar */}
-          <div className="relative mb-2">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Artikel suchen..."
-              className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-base text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:py-2.5 sm:text-sm" />
+          <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2">
+            <div className="relative min-w-[9rem] flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Artikel suchen..."
+                className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-base text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:py-2.5 sm:text-sm" />
+            </div>
+            <button type="button"
+              onClick={() => setShowPfandRetoure(true)}
+              disabled={!activeSession || !currentStaff}
+              title="Pfand-Retoure während des Verkaufs erfassen"
+              className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-teal-500/70 bg-teal-700 px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-teal-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+              <Recycle className="h-4 w-4" />
+              <span>Pfand-Retoure</span>
+            </button>
           </div>
 
           {/* Product grid */}
@@ -422,7 +437,7 @@ export function POSScreen({
                 disabled={!activeSession || !currentStaff}
                 className={`mt-2 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm font-bold text-white shadow-lg transition active:scale-95 ${activeSession && currentStaff ? 'bg-green-600 hover:bg-green-700' : 'cursor-not-allowed bg-gray-400 dark:bg-gray-600'}`}
               >
-                {activeSession && currentStaff ? 'Bezahlen' : 'Mitarbeiter anmelden'}
+                {activeSession && currentStaff ? 'Bezahlen' : 'Bezahlen (Anmeldung erforderlich)'}
               </button>
             )}
           </div>
@@ -430,7 +445,7 @@ export function POSScreen({
       </div>
 
       {/* Dialogs */}
-      {(showOpenDialog || !activeSession) && (
+      {showOpenDialog && (
         <CashOpeningDialog existingSession={activeSession} onSave={(loc, bal) => { if (!activeSession) onOpenCash(loc, bal); setShowOpenDialog(false); }} onClose={() => { setShowOpenDialog(false); onHome?.(); }} defaultLocation={currentLocation} staffUsers={staffUsers} currentStaff={currentStaff} online={online} lastStaffId={lastStaffId} onStaffAuthenticated={onStaffAuthenticated} onSetInitialCredentials={onSetInitialCredentials} onConfigureSecurity={onConfigureStaffSecurity} onResetStaffPassword={onResetStaffPassword} openingBalanceSuggestions={openingBalanceSuggestions} />
       )}
       {showCorrection && activeSession && (
@@ -439,7 +454,7 @@ export function POSScreen({
       {cashEntryType && activeSession && (
         <CashEntryDialog session={activeSession} currentCashBalance={currentCashBalance} type={cashEntryType} onSave={(amt, reason) => { onCashEntry(cashEntryType, amt, reason); setCashEntryType(null); }} onClose={() => setCashEntryType(null)} />
       )}
-      {showPfandRetoure && activeSession && (
+      {showPfandRetoure && activeSession && currentStaff && (
         <PfandRetoureDialog
           session={activeSession}
           pfandSettings={pfandSettings}
