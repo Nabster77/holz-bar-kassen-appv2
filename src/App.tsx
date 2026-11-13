@@ -1,5 +1,4 @@
 import { canDiscardCashSession, openingBalanceForLocation } from '@/lib/cashBalanceCarry';
-import { sessionTransactions } from '@/lib/sessionTransactions';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useStore } from '@/hooks/useStore';
