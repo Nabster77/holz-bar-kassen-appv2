@@ -2,7 +2,7 @@ name: WOODMO V3 - Codepruefung ohne Deployment
 
 on:
   push:
-    branches: [woodmo-v3.0]
+    branches: [woodmo-v3.0, woodmo-v3-offline-safety-review]
   workflow_dispatch:
 
 permissions:
