@@ -8,7 +8,7 @@ const open = readFileSync('src/components/POS/CashOpeningDialog.tsx','utf8');
 const header = app.slice(app.indexOf('<header className='), app.indexOf('</header>'));
 const menu = app.slice(app.indexOf('aria-label="Kassenmenü"'), app.indexOf('</nav>',app.indexOf('aria-label="Kassenmenü"')));
 const toolbar = pos.slice(pos.indexOf('Small operational strip'),pos.indexOf('Portrait tablet:'));
-const productArea = pos.slice(pos.indexOf('{/* Search bar */}'),pos.indexOf('{/* Product grid */}'));
+const cartActions = pos.slice(pos.indexOf('{/* Right: cart */}'),pos.indexOf('{/* Dialogs */}'));
 
 assert(header.includes('setCashierLoginRequest((n) => n + 1)'),
   'Shared header control triggers staff login');
@@ -36,10 +36,11 @@ assert(!toolbar.includes('Tagesabschluss'));
 assert(pos.includes('{showOpenDialog && (') && !pos.includes('{(showOpenDialog || !activeSession) && ('),
   'Logout must not automatically summon the login modal');
 
-assert(productArea.includes('<span>Pfand-Retoure</span>'),
-  'Deposit return must be a persistent cash sales action beside product search');
-assert(productArea.includes('onClick={() => setShowPfandRetoure(true)}'));
-assert(productArea.includes('disabled={!activeSession || !currentStaff}'));
+assert(cartActions.includes('<span>Pfand-Retoure</span>'),
+  'Deposit return must be a persistent touch action in the cart header');
+assert(cartActions.includes('onClick={() => setShowPfandRetoure(true)}'));
+assert(cartActions.includes('disabled={!activeSession || !currentStaff}'));
+assert(cartActions.includes('Bonliste / Storno'),'Storno button must be visible next to deposit return');
 assert(pos.includes('showPfandRetoure && activeSession && currentStaff'),
   'The old protected deposit-return dialog is only open during authorized sales');
 assert(pos.includes('<PfandRetoureDialog') && pos.includes('addPfandRetoureToCart(amount, count)'),
