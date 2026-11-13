@@ -40,7 +40,7 @@ assert(pos.includes('showPfandRetoure && activeSession && currentStaff'),
 assert(pos.includes('<PfandRetoureDialog') && pos.includes('addPfandRetoureToCart(amount, count)'),
   'Deposit return still enters existing cart accounting path');
 
-assert(menu.indexOf('Startseite') < menu.indexOf('Kasse'),
+assert(menu.indexOf('Startseite') < menu.indexOf('> Kasse'),
   'The centred Startseite button is first in the menu');
 assert(menu.indexOf('> Kasse') < menu.indexOf('> Journal') &&
        menu.indexOf('> Journal') < menu.indexOf('> Verwaltung'),
