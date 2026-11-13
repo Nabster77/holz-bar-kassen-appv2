@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import { stornoAsNegativeTransaction, projectFinancialTransactions } from '../src/lib/stornoReportProjection.ts';
-import { salesLedgerMovements, sumSalesLedger } from '../src/lib/stornoLedger.ts';
-import { buildFinalizedCashSession } from '../src/lib/finalizedCashSession.ts';
-import { calculateYearlyPfandOverview, buildJournalHTML } from '../src/lib/journalPdf.ts';
-import { buildStornoDocumentHTML } from '../src/lib/stornoReceiptPdf.ts';
+import { register } from 'tsx/esm/api';
+import { fileURLToPath } from 'node:url';
+
+const unregister = register({tsconfig: fileURLToPath(new URL('../tsconfig.app.json', import.meta.url))});
+const { stornoAsNegativeTransaction, projectFinancialTransactions } = await import('../src/lib/stornoReportProjection.ts');
+const { salesLedgerMovements, sumSalesLedger } = await import('../src/lib/stornoLedger.ts');
+const { buildFinalizedCashSession } = await import('../src/lib/finalizedCashSession.ts');
+const { calculateYearlyPfandOverview, buildJournalHTML } = await import('../src/lib/journalPdf.ts');
+const { buildStornoDocumentHTML } = await import('../src/lib/stornoReceiptPdf.ts');
 
 const start=Date.parse('2026-11-10T08:00:00Z');
 const next=start+86_400_000;
@@ -77,3 +81,5 @@ for(const token of ['Stornobelege (1)','Originalbon','Falscher Artikel','Storno-
 }
 assert(journal.includes('Verkäufe / Stornos'));
 console.log('STORNO-FINANZTEST: zeitbezogene Bar-/Karten-Gegenbuchung, MwSt, Netto, Pfand, Artikelstatistik, Abschluss und PDF bestanden.');
+
+unregister();
