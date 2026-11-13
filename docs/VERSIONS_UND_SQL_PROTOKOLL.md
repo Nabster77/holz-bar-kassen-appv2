@@ -40,3 +40,5 @@
 | 11.11.2026 | Navigationsmenü und Kassenaktionen (Entwicklung) | `main@dccc003` | `woodmo-entwicklung@5cfb095` | keine | Umsetzung im Entwicklungszweig; Tablet-Test und Veröffentlichung ausstehend |
 
 | 13.11.2026 | Verwaltungsmenü V3: Toolbar durch gruppiertes Menü ersetzt, Home-/Menü-Reihenfolge und Cloud-Logo-Glow | `woodmo-v3.0` vor Umbau | `woodmo-v3.0` (laufende UI-Entwicklung) | **keine** | Nur Entwicklungsbranch; Rollensperre und bestehende Dialoge beibehalten; echte Tablet-Abnahme ausstehend. Umsetzungsprompt: `docs/WOODMO_V3_VERWALTUNGSMENUE_2026-11-13.md` |
+
+| 13.11.2026 | Kassenmenue / Einmal-Anmeldung / Pfand-Retoure direkt in POS | `woodmo-v3.0` | `woodmo-v3.0` (Kassenmenue- und Loginkorrektur) | **keine** | Nur UI und vorhandene Auth-/Kassenaktionen umverdrahtet; keine Cloud-Mutation. Fachliche Abnahme dokumentiert in `docs/WOODMO_V3_KASSENMENUE_LOGIN_PFAND_2026-11-13.md`. |
