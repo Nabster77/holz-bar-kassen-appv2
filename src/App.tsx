@@ -43,7 +43,7 @@ import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle, Recycle,
-  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, LayoutGrid, X, Home, LogOut,
+  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, LayoutGrid, X, Home, LogOut, LogIn, LockKeyhole,
 } from 'lucide-react';
 
 type Tab = 'pos' | 'admin' | 'journal';
@@ -69,6 +69,7 @@ export default function App() {
   const [pdfArchiveWarning, setPdfArchiveWarning] = useState<string | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [headerAction, setHeaderAction] = useState<HeaderAction>(null);
+  const [cashierLoginRequest, setCashierLoginRequest] = useState(0);
   const [testMode] = useState<boolean>(isTestMode());
   const [modeConfirm, setModeConfirm] = useState<null | 'to-test' | 'to-active'>(null);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
@@ -348,6 +349,18 @@ export default function App() {
               </button>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {tab === 'pos' && (
+                <button type="button"
+                  aria-label={currentStaff ? 'Mitarbeiter abmelden' : 'Mitarbeiter anmelden'}
+                  title={currentStaff ? `${currentStaff.name} abmelden` : 'Mitarbeiter anmelden'}
+                  onClick={() => currentStaff ? void handleStaffLogout() : setCashierLoginRequest((n) => n + 1)}
+                  className={`flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 ${currentStaff
+                    ? 'border-red-500/80 bg-red-950/30 text-red-200 hover:bg-red-900/40 focus-visible:outline-red-400'
+                    : 'border-emerald-500/80 bg-emerald-950/30 text-emerald-200 hover:bg-emerald-900/40 focus-visible:outline-emerald-400'}`}>
+                  {currentStaff ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                  <span className="hidden min-[970px]:inline">{currentStaff ? 'Abmelden' : 'Anmelden'}</span>
+                </button>
+              )}
               <button type="button" aria-label="Cloud synchronisieren" title="Cloud synchronisieren"
                 onClick={() => setSyncOpen(true)}
                 className="flex h-10 items-center gap-1 rounded-xl border border-emerald-500/60 px-2 text-emerald-300 hover:bg-emerald-900/30">
@@ -360,13 +373,7 @@ export default function App() {
                 <span className="hidden min-[1100px]:inline">{!online ? 'Offline' : 'Cloud'}</span>
                 <span className="text-[10px]">{testMode ? 'TEST' : 'AKTIV'}</span>
               </span>
-              {tab === 'pos' && currentStaff && (
-                <button type="button" aria-label="Mitarbeiter abmelden" title={`${currentStaff.name} abmelden`}
-                  onClick={() => void handleStaffLogout()}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-500/70 text-red-300 hover:bg-red-900/30">
-                  <LogOut className="h-5 w-5" />
-                </button>
-              )}
+
               <button type="button" aria-label="Darstellung wechseln" title="Hell/Dunkel" onClick={toggle}
                 className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-600 text-slate-100 hover:bg-slate-700 min-[780px]:flex">
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -374,7 +381,9 @@ export default function App() {
             </div>
           </header>
           {menuOpen && (tab !== 'admin' || !adminUnlocked) && (
-            <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/55 px-3 pt-16" onClick={() => setMenuOpen(false)}>
+            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/65 px-3 pb-4 pt-16"
+              onClick={() => setMenuOpen(false)}
+              onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}>
               <nav role="dialog" aria-modal="true" aria-label="Kassenmenü"
                 className="w-full max-w-xl rounded-2xl border border-emerald-700/30 bg-white p-3 shadow-2xl dark:bg-slate-900"
                 onClick={(event) => event.stopPropagation()}>
@@ -383,25 +392,54 @@ export default function App() {
                   <button type="button" aria-label="Menü schließen" onClick={() => setMenuOpen(false)}
                     className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-5 w-5" /></button>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <button type="button" onClick={() => navigateTo('pos')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><ShoppingCart className="h-5 w-5" />Kasse</button>
-                  {store.activeSession && currentStaff && (
-                    <>
-                      <button type="button" onClick={() => chooseCashAction('deposit')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-emerald-50 p-2 text-sm font-bold text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200"><ArrowDownCircle className="h-5 w-5" />Einlage</button>
-                      <button type="button" onClick={() => chooseCashAction('withdrawal')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><ArrowUpCircle className="h-5 w-5" />Ausgabe</button>
-                      <button type="button" onClick={() => chooseCashAction('pfand')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Recycle className="h-5 w-5" />Pfand-Retoure</button>
-                      <button type="button" onClick={() => chooseCashAction('correction')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Settings className="h-5 w-5" />Anfangsbestand</button>
-                      <button type="button" onClick={() => chooseCashAction('close')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Receipt className="h-5 w-5" />Tagesabschluss</button>
-                    </>
-                  )}
+
+                <div className="mb-3 flex justify-center">
+                  <button type="button" onClick={goHome}
+                    className="flex min-h-16 w-full max-w-[12rem] flex-col items-center justify-center gap-1 rounded-xl border border-sky-500/45 bg-sky-100 px-3 py-2 text-sm font-bold text-sky-900 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-100 dark:hover:bg-sky-900/65">
+                    <Home className="h-5 w-5" /> Startseite
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button type="button" onClick={() => navigateTo('pos')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-center text-sm font-bold dark:bg-slate-800">
+                    <ShoppingCart className="h-5 w-5" /> Kasse
+                  </button>
                   {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
                     <>
-                      <button type="button" onClick={() => navigateToProtected('admin')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Settings className="h-5 w-5" />Verwaltung</button>
-                      <button type="button" onClick={() => navigateToProtected('journal')} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Receipt className="h-5 w-5" />Journal</button>
+                      <button type="button" onClick={() => navigateToProtected('journal')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-center text-sm font-bold dark:bg-slate-800">
+                        <Receipt className="h-5 w-5" /> Journal
+                      </button>
+                      <button type="button" onClick={() => navigateToProtected('admin')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-center text-sm font-bold dark:bg-slate-800">
+                        <Settings className="h-5 w-5" /> Verwaltung
+                      </button>
                     </>
                   )}
-                  <button type="button" onClick={goHome} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-sm font-bold dark:bg-slate-800"><Home className="h-5 w-5" />Startseite</button>
                 </div>
+
+                {store.activeSession && currentStaff && (
+                  <>
+                    <h3 className="mt-4 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Kassenbewegungen</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button type="button" onClick={() => chooseCashAction('deposit')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-emerald-50 p-2 text-center text-xs font-bold text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">
+                        <ArrowDownCircle className="h-5 w-5" /> Einlage
+                      </button>
+                      <button type="button" onClick={() => chooseCashAction('withdrawal')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-center text-xs font-bold dark:bg-slate-800">
+                        <ArrowUpCircle className="h-5 w-5" /> Ausgabe
+                      </button>
+                      <button type="button" onClick={() => chooseCashAction('correction')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-center text-xs font-bold dark:bg-slate-800">
+                        <Settings className="h-5 w-5" /> Bestandskorrektur
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => chooseCashAction('close')}
+                      className="mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50">
+                      <LockKeyhole className="h-6 w-6 shrink-0" />
+                      <span className="flex flex-col items-start gap-0.5">
+                        <span>Tagesabschluss</span>
+                        <span className="text-xs font-normal">Nach Bestätigung unwiderruflich</span>
+                      </span>
+                    </button>
+                  </>
+                )}
               </nav>
             </div>
           )}
@@ -498,6 +536,7 @@ export default function App() {
             onMoveProduct={(sourceId, targetId) => store.moveProductTo(sourceId, targetId)}
             headerAction={headerAction}
             onHeaderActionConsumed={() => setHeaderAction(null)}
+            loginRequest={cashierLoginRequest}
             selectedLocation={store.selectedLocation}
             pfandSettings={store.pfandSettings}
             staffUsers={staff.users}
