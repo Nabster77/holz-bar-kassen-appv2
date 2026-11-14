@@ -34,7 +34,7 @@ export async function verifyStornoService(): Promise<void> {
   }
 }
 
-export async function loadCloudStornos(): Promise<StornoRecord[]> {
+export async function loadCloudStornos(generation = knownBookingReset().generation): Promise<StornoRecord[]> {
   if (!supabase || !navigator.onLine) throw new Error('Stornojournal benötigt eine Cloud-Verbindung.');
   const result: StornoRecord[] = [];
   // Supabase returns at most 1000 rows by default. Storno evidence must never
@@ -42,7 +42,7 @@ export async function loadCloudStornos(): Promise<StornoRecord[]> {
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await supabase.from('pos_stornos')
       .select('id,original_transaction_id,cash_session_id,location,recorded_at,employee_id,employee_name,reason,payment_method,gross_amount_cents,cash_effect_cents,card_effect_cents,original_receipt_snapshot')
-      .eq('booking_generation', knownBookingReset().generation)
+      .eq('booking_generation', generation)
       .order('recorded_at', { ascending: true })
       .order('id', { ascending: true })
       .range(offset, offset + 499);
