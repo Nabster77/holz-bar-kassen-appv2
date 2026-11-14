@@ -427,13 +427,23 @@ export function useStore() {
     setCashSessions((ss) => {
       const cloudById = new Map(cloud.cashSessions.map((s) => [s.id, s]));
       const localIds = new Set(ss.map((s) => s.id));
+      const pending = new Set(cloud.pendingSessionIds ?? []);
       let changed = false;
       const merged = ss.map((s) => {
         const remote = cloudById.get(s.id);
-        if (!remote || !remote.closed) return s;
-        // A previously closed session can still gain its central receipt
-        // number on another device. Never let the older local copy hide it.
+        if (!remote || pending.has(s.id)) return s;
         if (s.closed && !remote.dailyCloseReceiptNumber) return s;
+        // Never erase local cash movements that have not reached the cloud,
+        // even when enqueueing the corresponding outbox entry is still pending.
+        const containsAll = (local: Array<{id: string}> | undefined, server: Array<{id: string}> | undefined) => {
+          const ids = new Set((server ?? []).map(item => item.id));
+          return (local ?? []).every(item => ids.has(item.id));
+        };
+        if (!containsAll(s.entries, remote.entries) ||
+            !containsAll(s.corrections, remote.corrections) ||
+            !containsAll(s.activities, remote.activities) ||
+            !containsAll(s.staffLoginIntervals, remote.staffLoginIntervals)) return s;
+        if (JSON.stringify(remote) === JSON.stringify(s)) return s;
         changed = true;
         return remote;
       });
