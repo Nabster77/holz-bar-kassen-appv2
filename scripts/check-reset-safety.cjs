@@ -9,7 +9,8 @@ const start = app.indexOf('  async function resetBookings() {');
 const end = app.indexOf('  function navigateTo(', start);
 assert.ok(start >= 0 && end > start, 'Buchungs-Reset muss vorhanden sein');
 const body = app.slice(start, end);
-assert.match(body, /resetCloudBookings\(\)/, 'Cloud-Reset bleibt erhalten');
+assert.match(body, /resetCloudBookings\(adminPassword\)/, 'Cloud-Reset verlangt einen gesonderten Administratornachweis');
+assert.match(body, /unfinished/, 'Unabgeschlossene Kassen werden vor dem Reset geprüft');
 assert.match(body, /discardEntriesBeforeGeneration\(/, 'Offline-Altbuchungen bleiben gesperrt');
 assert.match(body, /store\.resetAllData\(\)/, 'Lokale Buchungen werden neutralisiert');
 for (const disallowed of [
