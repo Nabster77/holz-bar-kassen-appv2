@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CashSession, Transaction } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
-import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, readPendingOutbox, type OutboxEntry } from '@/lib/outbox';
+import { quarantineEntriesBeforeGeneration, enqueueEntries, flushOutbox, readPendingOutbox, type OutboxEntry } from '@/lib/outbox';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { markCloudSyncVerified } from '@/lib/backupCheckpoint';
 import { fetchCloudData, type CloudData } from '@/lib/cloudPull';
@@ -102,6 +102,10 @@ export function useCloudSync(
   const offlineSinceRef = useRef(false);
   const snapshotRef = useRef<Snapshot | null>(null);
   const newestPulledRef = useRef<number | null>(null);
+  // The latest React state is used when a cloud reset arrives during a sync.
+  // A closure captured before the network request may omit recently entered sales.
+  const financialSnapshotRef = useRef({ transactions, cashSessions });
+  financialSnapshotRef.current = { transactions, cashSessions };
   const restorePausedRef = useRef(false);
   const rebaseAfterRestoreRef = useRef(false);
   const onReconnectSyncedRef = useRef(onReconnectSynced);
@@ -127,11 +131,16 @@ export function useCloudSync(
         // Restored bookings retain their original dates but belong to the
         // current generation. Reapplying the cutoff would remove them on
         // every sync, only for the following pull to add them again.
+        if (generationChanged) {
+          // Complete local state and ALL old queued writes are durably archived
+          // BEFORE React state or the known generation is changed. If browser
+          // storage fails, abort sync and keep old records visible.
+          await quarantineEntriesBeforeGeneration(
+            latestReset.generation, financialSnapshotRef.current,
+          );
+        }
         if (generationChanged || latestReset.resetAt > known.resetAt) {
           applyCloudBookingReset(latestReset.resetAt, generationChanged);
-        }
-        if (generationChanged) {
-          await discardEntriesBeforeGeneration(latestReset.generation);
         }
         if (generationChanged || latestReset.resetAt > known.resetAt) {
           rememberBookingReset(latestReset);
