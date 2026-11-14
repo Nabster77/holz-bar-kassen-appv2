@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { knownBookingReset } from './bookingReset';
 import type { StornoRecord } from './stornoRules';
 import { decodeStornoRow, type CloudStornoRow } from './stornoCodec';
 
@@ -41,6 +42,7 @@ export async function loadCloudStornos(): Promise<StornoRecord[]> {
   for (let offset = 0; ; offset += 500) {
     const { data, error } = await supabase.from('pos_stornos')
       .select('id,original_transaction_id,cash_session_id,location,recorded_at,employee_id,employee_name,reason,payment_method,gross_amount_cents,cash_effect_cents,card_effect_cents,original_receipt_snapshot')
+      .eq('booking_generation', knownBookingReset().generation)
       .order('recorded_at', { ascending: true })
       .order('id', { ascending: true })
       .range(offset, offset + 499);
