@@ -42,7 +42,7 @@ interface Props {
   onDeleteProduct: (id: string) => void;
   onReorderProduct?: (id: string, direction: 'up' | 'down') => void;
   onMoveProductTo?: (sourceId: string, targetId: string) => void;
-  onResetAllData?: () => Promise<void>;
+  onResetAllData?: (adminPassword: string) => Promise<void>;
   onDeviceSetup?: () => void;
   testMode?: boolean;
   onToggleMode?: () => void;
@@ -256,7 +256,7 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
           openSessionCount={props.cashSessions.filter((session) => !session.closed && !session.discarded && !session.dailyCloseFinalizedAt).length}
           testMode={testMode}
           onCancel={() => setShowReset(false)}
-          onConfirm={async () => { await onResetAllData?.(); setShowReset(false); }}
+          onConfirm={async (adminPassword) => { await onResetAllData?.(adminPassword); setShowReset(false); }}
         />
       )}
       {showImport && onImportBackup && (
@@ -1484,7 +1484,7 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
 function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, stornoCount, sessionCount, openSessionCount, testMode }: {
   onExport?: () => void | Promise<void>;
   onCancel: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: (adminPassword: string) => Promise<void>;
   transactionCount: number;
   stornoCount: number;
   sessionCount: number;
@@ -1493,14 +1493,15 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, s
 }) {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   async function confirm() {
-    if (!confirmed || busy) return;
+    if (!confirmed || busy || (!testMode && (!adminPassword.trim() || openSessionCount > 0))) return;
     setBusy(true);
     setError(null);
     try {
-      await onConfirm();
+      await onConfirm(adminPassword);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
       // A network failure after the Cloud RPC can leave the reset already
@@ -1529,7 +1530,7 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, s
           <p className="font-bold">Aktuell betroffen:</p>
           <p>{transactionCount} Originalbuchung(en), {stornoCount} bestätigte Stornobeleg(e), {sessionCount} Kassensitzung(en), davon {openSessionCount} noch geöffnet.</p>
           {openSessionCount > 0 && (
-            <p className="mt-2 font-semibold">Achtung: Auch die {openSessionCount} offene(n) Kasse(n) mit ihren Anfangsbeständen werden aus dem aktiven Kassenbetrieb entfernt.</p>
+            <p className="mt-2 font-semibold">{testMode ? 'Testkassen werden nur lokal verworfen.' : 'Reset im Aktivmodus gesperrt: Bitte zuerst alle offenen Kassen endgültig abschließen.'} Es sind noch {openSessionCount} Kasse(n) geöffnet.</p>
           )}
           {stornoCount > 0 && (
             <p className="mt-2">Bestätigte Stornos sind keine „offenen“ Vorgänge. Ihre Originalbons und Stornonachweise bleiben in der Cloud unveränderlich archiviert.</p>
@@ -1550,7 +1551,7 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, s
         <label className="mb-4 flex cursor-pointer items-start gap-2 rounded-xl border border-slate-300 p-3 text-sm text-gray-800 dark:border-slate-600 dark:text-gray-100">
           <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-red-600" checked={confirmed}
             onChange={(event) => setConfirmed(event.target.checked)} disabled={busy} />
-          <span>Ich habe verstanden, dass die aktuelle Kasse einschließlich Anfangsbestand zurückgesetzt wird und historische Stornobelege nur archiviert, nicht gelöscht werden.</span>
+          <span>Ich habe verstanden, dass ein Reset nur nach Abschluss aller Kassen zulässig ist; historische Buchungen und Stornos bleiben archiviert.</span>
         </label>
         <div className="flex flex-col gap-2">
           {onExport && (
@@ -1564,7 +1565,18 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, s
               <Download className="h-4 w-4" /> Zuerst als Backup sichern
             </button>
           )}
-          <button type="button" onClick={confirm} disabled={busy || !confirmed}
+          {!testMode && (
+            <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
+              Verwaltungs-Passwort für Cloud-Reset (erneut bestätigen)
+              <input type="password" autoComplete="off" value={adminPassword}
+                onChange={(event) => setAdminPassword(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void confirm(); } }}
+                disabled={busy || openSessionCount > 0}
+                className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                placeholder="Passwort eingeben" />
+            </label>
+          )}
+          <button type="button" onClick={confirm} disabled={busy || !confirmed || (!testMode && (!adminPassword.trim() || openSessionCount > 0))}
             className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 active:scale-95 disabled:opacity-50">
             <RotateCcw className="h-4 w-4" /> {busy ? 'Reset wird geprüft …' : 'Ja, aktuelle Buchungen zurücksetzen'}
           </button>
