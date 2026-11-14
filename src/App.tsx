@@ -279,7 +279,7 @@ export default function App() {
     window.location.reload();
   }
 
-  async function resetBookings() {
+  async function resetBookings(adminPassword: string) {
     // In test mode only ephemeral local test bookings are cleared.
     // Active mode must prove Cloud sync and storno visibility BEFORE
     // committing a new generation; never discard unsent financial entries.
@@ -296,7 +296,17 @@ export default function App() {
         void stornoLedger.refresh().catch(() => undefined);
         throw new Error('Die Anzahl der Stornobelege hat sich geändert. Bitte den Reset-Dialog schließen und erneut öffnen.');
       }
-      const reset = await resetCloudBookings();
+      // The browser warning is informational; the SQL RPC repeats this
+      // check under financial table locks so concurrent devices cannot race it.
+      const beforeReset = await fetchLatestBookingReset();
+      const snapshot = await fetchCloudData(null, beforeReset?.generation ?? 0);
+      const unfinished = snapshot.cashSessions.filter(session =>
+        !session.discarded && !(session.closed && session.dailyCloseFinalizedAt && session.dailyCloseSnapshot));
+      if (unfinished.length) throw new Error(
+        'Reset gesperrt: ' + unfinished.length +
+        ' Kasse(n) noch offen oder Tagesabschluss nicht endgültig. Bitte zuerst alle Kassen endgültig abschließen.'
+      );
+      const reset = await resetCloudBookings(adminPassword);
       // Drop stale offline writes only AFTER the Cloud has committed the new
       // generation. Archived transactions, sessions and storno evidence stay.
       await discardEntriesBeforeGeneration(reset.generation);
