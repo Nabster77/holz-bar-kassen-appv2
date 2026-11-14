@@ -51,6 +51,7 @@ import { headerDateLong, headerDateShort } from '@/lib/headerDate';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import { requireValidBackupIntegrity } from '@/lib/backupIntegrity';
 import { restoreToCleanGeneration } from '@/lib/restoreToCleanGeneration';
+import { runResetSafetyChecks, type ResetSafetyResult } from '@/lib/resetSafetyChecklist';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle,
@@ -292,6 +293,84 @@ export default function App() {
     setModeConfirm(null);
     // Reload so useStore re-initializes with the new mode's data source.
     window.location.reload();
+  }
+
+  async function checkResetSafety(onProgress: (result: ResetSafetyResult) => void) {
+    // No booking is reset by this read/consistency check. syncNow may upload
+    // this device's already queued transactions, exactly as normal sync does.
+    let cloud: Awaited<ReturnType<typeof fetchCloudData>> | null = null;
+    let stornos: Awaited<ReturnType<typeof loadCloudStornos>> | null = null;
+    return runResetSafetyChecks([
+      {
+        id: 'connection', label: 'Cloud-Verbindung',
+        run: async () => {
+          if (!online || !navigator.onLine || !supabase) {
+            throw new Error('Keine Cloud-Verbindung. Bitte Internetverbindung herstellen.');
+          }
+          await fetchLatestBookingReset();
+          return 'Cloud erreichbar';
+        },
+      },
+      {
+        id: 'sync', label: 'Dieses Gerät synchronisiert',
+        run: async () => {
+          if (!online || !navigator.onLine) throw new Error('Offline: zuerst verbinden.');
+          const result = await syncNow();
+          if (!result.ok) throw new Error(result.error || 'Cloud-Abgleich fehlgeschlagen.');
+          return 'Abgleich bestätigt';
+        },
+      },
+      {
+        id: 'pending', label: 'Lokale Buchungen übertragen',
+        run: async () => {
+          const pending = await readPendingOutbox();
+          if (pending.length) {
+            throw new Error(pending.length + ' Eintrag/Einträge noch nicht synchronisiert.');
+          }
+          return 'Keine ausstehenden Einträge auf diesem Gerät';
+        },
+      },
+      {
+        id: 'ledger', label: 'Cloud-Journal und Stornos geprüft',
+        run: async () => {
+          if (!online || !navigator.onLine) throw new Error('Cloud offline.');
+          const reset = await fetchLatestBookingReset();
+          const generation = reset?.generation ?? 0;
+          [cloud, stornos] = await Promise.all([
+            fetchCloudData(null, generation), loadCloudStornos(generation),
+          ]);
+          requireValidBackupIntegrity({
+            transactions: cloud.transactions,
+            cashSessions: cloud.cashSessions,
+            stornos,
+          }, 'Sicherheitsprüfung');
+          if (stornos.length !== stornoLedger.records.length) {
+            throw new Error('Storno-Anzahl weicht ab. Bitte Journal synchronisieren.');
+          }
+          const localTransactionIds = new Set(cloud.transactions.map(row => row.id));
+          const localSessionIds = new Set(cloud.cashSessions.map(row => row.id));
+          if (store.transactions.some(row => !localTransactionIds.has(row.id)) ||
+              store.cashSessions.some(row => !localSessionIds.has(row.id))) {
+            throw new Error('Lokale Buchungen/Kassensitzungen fehlen noch in der Cloud.');
+          }
+          return cloud.transactions.length + ' Buchungen, ' + stornos.length + ' Stornos geprüft';
+        },
+      },
+      {
+        id: 'closed', label: 'Alle Kassen endgültig abgeschlossen',
+        run: async () => {
+          if (!cloud) throw new Error('Cloud-Journal nicht verfügbar; Abschluss nicht prüfbar.');
+          const unfinished = cloud.cashSessions.filter(session =>
+            !session.discarded && !(session.closed &&
+              session.dailyCloseFinalizedAt && session.dailyCloseSnapshot));
+          if (unfinished.length) {
+            throw new Error(unfinished.length +
+              ' Kasse(n) noch offen/nicht endgültig abgeschlossen. Bitte Tagesabschluss durchführen.');
+          }
+          return 'Keine offene oder unvollständig abgeschlossene Kasse';
+        },
+      },
+    ], onProgress);
   }
 
   async function resetBookings(adminPassword: string) {
@@ -866,6 +945,7 @@ export default function App() {
                 try { await exportResetQuarantine(); }
                 catch (error) { alert(error instanceof Error ? error.message : 'Quarantäne-Export fehlgeschlagen.'); }
               }}
+              onCheckResetSafety={checkResetSafety}
               onResetAllData={resetBookings}
               onDeviceSetup={() => setDeviceSetupOpen(true)}
               pfandSettings={store.pfandSettings}
