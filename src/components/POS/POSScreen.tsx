@@ -14,11 +14,10 @@ import { BonlisteDialog } from './BonlisteDialog';
 import type { StornoRecord } from '@/lib/stornoRules';
 import type { StornoCloudState } from '@/hooks/useStornoLedger';
 import { DynamicIcon } from '@/components/DynamicIcon';
-import { formatDateLong } from '@/lib/format';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import {
-  ShoppingCart, Trash2, Search, Lock, MapPin, Move, Euro, Recycle, ClipboardList,
+  ShoppingCart, Trash2, Search, Lock, Move, Euro, Recycle, ClipboardList,
 } from 'lucide-react';
 
 type HeaderAction = 'deposit' | 'withdrawal' | 'pfand' | 'correction' | 'close' | null;
@@ -256,35 +255,6 @@ export function POSScreen({
 
   return (
     <div className="flex h-full flex-col gap-2 sm:gap-3">
-      {/* Small operational strip; secondary cash actions live in the icon menu. */}
-      <div className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:px-3">
-        {activeSession ? (
-          <>
-            <span className="flex min-w-0 items-center gap-1 text-xs font-bold sm:text-sm">
-              <MapPin className="h-4 w-4 shrink-0 text-emerald-600" />
-              <span className="truncate">{activeSession.location}</span>
-            </span>
-            <span className="hidden truncate text-xs text-slate-500 lg:inline dark:text-slate-400">{formatDateLong(activeSession.openedAt)}</span>
-            {currentStaff ? (
-              <span className="ml-auto min-w-0 truncate text-xs font-medium text-slate-600 dark:text-slate-200">
-                {currentStaff.name}
-              </span>
-            ) : (
-              <span className="ml-auto text-xs font-semibold text-amber-700 dark:text-amber-300">
-                Nicht angemeldet
-              </span>
-            )}
-          </>
-        ) : (
-          <>
-            <span className="text-xs text-slate-500 dark:text-slate-300">Kasse noch nicht eröffnet</span>
-            <span className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-              Über Home → Kasse oder oben neben Menü eröffnen
-            </span>
-          </>
-        )}
-      </div>
-
       {/* Portrait tablet: roughly 65% product area / 35% persistent cart.
           Small phones stack because a 200px-wide cart would be unusable. */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-[minmax(0,1.85fr)_minmax(220px,1fr)] sm:overflow-hidden lg:grid-cols-[minmax(0,2.15fr)_minmax(250px,1fr)] lg:gap-3">
