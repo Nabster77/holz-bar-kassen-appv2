@@ -14,6 +14,7 @@ import { uploadArticleImage } from '@/lib/imageUpload';
 import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, Wine, Recycle, MonitorDot, Settings, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck } from 'lucide-react';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
+import type { StornoRecord } from '@/lib/stornoRules';
 import { parsePfandAmount } from '@/lib/pfandValidation';
 import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
@@ -26,6 +27,7 @@ interface Props {
   categories: Category[];
   products: Product[];
   transactions: Transaction[];
+  stornos: StornoRecord[];
   cashSessions: CashSession[];
   activeSession: CashSession | null;
   selectedLocation: Location;
@@ -248,6 +250,11 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
       {showReset && (
         <ResetConfirmDialog
           onExport={onExportBackup}
+          transactionCount={props.transactions.length}
+          stornoCount={props.stornos.length}
+          sessionCount={props.cashSessions.length}
+          openSessionCount={props.cashSessions.filter((session) => !session.closed && !session.discarded && !session.dailyCloseFinalizedAt).length}
+          testMode={testMode}
           onCancel={() => setShowReset(false)}
           onConfirm={async () => { await onResetAllData?.(); setShowReset(false); }}
         />
@@ -1474,62 +1481,95 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
 
 // ---- Reset / Backup / Import dialogs ----
 
-function ResetConfirmDialog({ onExport, onCancel, onConfirm }: { onExport?: () => void | Promise<void>; onCancel: () => void; onConfirm: () => Promise<void> }) {
+function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, stornoCount, sessionCount, openSessionCount, testMode }: {
+  onExport?: () => void | Promise<void>;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+  transactionCount: number;
+  stornoCount: number;
+  sessionCount: number;
+  openSessionCount: number;
+  testMode: boolean;
+}) {
   const [busy, setBusy] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function confirm() {
+    if (!confirmed || busy) return;
     setBusy(true);
     setError(null);
     try {
       await onConfirm();
-    } catch (e) {
-      const detail = (e as { message?: string })?.message ?? String(e);
-      setError(`Der Reset konnte nicht in der Cloud durchgeführt werden. Es wurde nichts gelöscht. Bitte Internetverbindung prüfen und erneut versuchen. (Technische Meldung: ${detail})`);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      // A network failure after the Cloud RPC can leave the reset already
+      // committed. Never claim that NOTHING happened without server proof.
+      setError(`Die Rücksetzung konnte nicht vollständig bestätigt werden. Bitte den Cloud-Kassenzustand prüfen, bevor Sie erneut klicken. Technische Meldung: ${detail}`);
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
-      <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 sm:p-4" onClick={busy ? undefined : onCancel}>
+      <div role="dialog" aria-modal="true" aria-labelledby="booking-reset-heading"
+        className="max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800"
+        onClick={(event) => event.stopPropagation()}>
         <div className="mb-3 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
             <RotateCcw className="h-6 w-6" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Tagesbuchungen zurücksetzen?</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Buchungen und Kassensitzungen werden zurückgesetzt; Benutzer bleiben erhalten</p>
+            <h3 id="booking-reset-heading" className="text-lg font-bold text-gray-900 dark:text-gray-100">Tagesbuchungen zurücksetzen?</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{testMode ? 'Nur lokale Testbuchungen' : 'Neue leere Buchungsgeneration in der V3-Cloud'}</p>
           </div>
         </div>
-        <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Dadurch werden <strong>alle Transaktionen und Kassensitzungen</strong> (Anfangsbestände, Einlagen, Abschlüsse) entfernt. Die Belegzähler beginnen wieder bei 0; der nächste Tagesabschluss erhält je Standort die Nummer 000001. <strong>Alle Mitarbeiter und Administratoren samt Rollen, persönlichen Passwörtern und Sicherheitsfragen bleiben erhalten.</strong> Benutzer können weiterhin einzeln in der Benutzerverwaltung geändert oder gelöscht werden. Das Passwort für Verwaltung und Journal wird wieder auf <strong>kasse</strong> gesetzt; der Cloud-Hauptzugang wird auf <strong>Admin / 123456</strong> zurückgesetzt.<br /><br />
-          Ihre <strong>Artikel, Warengruppen, Preise, Bilder und sonstigen Katalogdaten bleiben erhalten</strong>. Die Löschung gilt auch in der Cloud. Alle verbundenen Geräte übernehmen den Reset bei der nächsten Synchronisierung. Danach wird die Cloud-Anmeldung beendet; melden Sie sich anschließend wieder mit <strong>Admin / 123456</strong> an.<br /><br />
-          <strong>Empfehlung:</strong> Sichern Sie die Daten zuerst als Backup-Datei, damit Sie sie später jederzeit wieder importieren und auswerten können — auch noch in kommenden Jahren.
-        </p>
+
+        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+          <p className="font-bold">Aktuell betroffen:</p>
+          <p>{transactionCount} Originalbuchung(en), {stornoCount} bestätigte Stornobeleg(e), {sessionCount} Kassensitzung(en), davon {openSessionCount} noch geöffnet.</p>
+          {openSessionCount > 0 && (
+            <p className="mt-2 font-semibold">Achtung: Auch die {openSessionCount} offene(n) Kasse(n) mit ihren Anfangsbeständen werden aus dem aktiven Kassenbetrieb entfernt.</p>
+          )}
+          {stornoCount > 0 && (
+            <p className="mt-2">Bestätigte Stornos sind keine „offenen“ Vorgänge. Ihre Originalbons und Stornonachweise bleiben in der Cloud unveränderlich archiviert.</p>
+          )}
+        </div>
+
+        <div className="mb-3 space-y-2 text-sm text-gray-700 dark:text-gray-200">
+          <p>{testMode
+            ? 'Es werden ausschließlich die lokalen Testbuchungen und Test-Kassensitzungen entfernt.'
+            : 'Der Reset öffnet eine neue leere Buchungsgeneration. Buchungen, Stornos, Kassenöffnungen und Anfangsbestände der bisherigen Generation erscheinen danach nicht mehr in der aktiven Kasse. Die historischen Nachweise werden dabei NICHT physisch aus Supabase gelöscht.'}</p>
+          <p><strong>Erhalten bleiben:</strong> Artikel, Warengruppen, Preise, Bilder, Mitarbeiter, Passwörter, Sicherheitsfragen und die bisherigen Belegzähler. Andere Geräte übernehmen die neue Generation bei der nächsten Synchronisierung.</p>
+          {!testMode && <p className="font-semibold text-rose-700 dark:text-rose-300">Hinweis zum Import: Eine ältere Backup-Datei kann die archivierten Buchungen und Stornos derzeit nicht automatisch als aktive Kassensitzung wiederherstellen. Den Import deshalb erst nach gesonderter Prüfung testen.</p>}
+          <p>Bitte die vorhandene Backup-Datei unverändert aufbewahren und ihren Inhalt kontrollieren.</p>
+        </div>
         {error && (
-          <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-            {error}
-          </p>
+          <p role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{error}</p>
         )}
+        <label className="mb-4 flex cursor-pointer items-start gap-2 rounded-xl border border-slate-300 p-3 text-sm text-gray-800 dark:border-slate-600 dark:text-gray-100">
+          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-red-600" checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)} disabled={busy} />
+          <span>Ich habe verstanden, dass die aktuelle Kasse einschließlich Anfangsbestand zurückgesetzt wird und historische Stornobelege nur archiviert, nicht gelöscht werden.</span>
+        </label>
         <div className="flex flex-col gap-2">
           {onExport && (
-            <button
-              disabled={busy}
-              onClick={async () => { setBusy(true); try { await onExport(); } finally { setBusy(false); } }}
-              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50"
-            >
+            <button type="button" disabled={busy} onClick={async () => {
+              setBusy(true);
+              try { await onExport(); }
+              catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+              finally { setBusy(false); }
+            }}
+              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
               <Download className="h-4 w-4" /> Zuerst als Backup sichern
             </button>
           )}
-          <button
-            onClick={confirm}
-            disabled={busy}
-            className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
-          >
-            <RotateCcw className="h-4 w-4" /> {busy ? 'Wird zurückgesetzt …' : 'Jetzt vollständig zurücksetzen'}
+          <button type="button" onClick={confirm} disabled={busy || !confirmed}
+            className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 active:scale-95 disabled:opacity-50">
+            <RotateCcw className="h-4 w-4" /> {busy ? 'Reset wird geprüft …' : 'Ja, aktuelle Buchungen zurücksetzen'}
           </button>
-          <button onClick={onCancel} disabled={busy} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+          <button type="button" onClick={onCancel} disabled={busy}
+            className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
             Abbrechen
           </button>
         </div>
