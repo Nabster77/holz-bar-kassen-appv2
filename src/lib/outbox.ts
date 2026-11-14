@@ -15,6 +15,10 @@ export interface OutboxEntry {
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+// During a remote generation switch, new queue writes from a late React
+// effect must also be archived. The fence prevents an in-flight checkout from
+// re-adding obsolete receipts after the first quarantine transaction commits.
+let resetFenceGeneration = -1;
 
 function openDb(): Promise<IDBDatabase> {
   dbPromise ??= new Promise((resolve, reject) => {
@@ -27,8 +31,15 @@ function openDb(): Promise<IDBDatabase> {
         request.result.createObjectStore(QUARANTINE_STORE, { keyPath: 'key' });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error(
+      'Offline-Archiv kann nicht geöffnet werden: Bitte andere WOODMO-Tabs auf diesem Gerät schließen und die App neu öffnen.'
+    ));
   });
   return dbPromise;
 }
@@ -44,10 +55,22 @@ function transactionDone(tx: IDBTransaction): Promise<void> {
 export async function enqueueEntries(entries: OutboxEntry[]): Promise<void> {
   if (entries.length === 0) return;
   const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
+  const fence = resetFenceGeneration;
+  const hasStale = entries.some(entry => fence >= 0 && isStaleOutboxEntry(entry, fence));
+  const tx = db.transaction(hasStale ? [STORE, QUARANTINE_STORE] : STORE, 'readwrite');
   const store = tx.objectStore(STORE);
-  for (const entry of entries) store.add(entry);
+  const quarantine = hasStale ? tx.objectStore(QUARANTINE_STORE) : null;
+  const when = Date.now();
+  for (const entry of entries) {
+    if (quarantine && isStaleOutboxEntry(entry, fence)) {
+      quarantine.put({
+        key: 'late:' + crypto.randomUUID(),
+        archivedAt: when, targetGeneration: fence, kind: 'pending-outbox', entry,
+      } satisfies ResetQuarantineEntry);
+    } else store.add(entry);
+  }
   await transactionDone(tx);
+  if (hasStale) window.dispatchEvent(new Event(RESET_QUARANTINE_EVENT));
 }
 
 // A confirmed backup restore replaces the booking snapshot.  Queued changes
@@ -69,6 +92,7 @@ export async function quarantineEntriesBeforeGeneration(
   localSnapshot?: { transactions: readonly unknown[]; cashSessions: readonly unknown[] },
 ): Promise<void> {
   if (!Number.isInteger(generation) || generation < 0) throw new Error('Ungültige Buchungsgeneration.');
+  resetFenceGeneration = Math.max(resetFenceGeneration, generation);
   const db = await openDb();
   const tx = db.transaction([STORE, QUARANTINE_STORE], 'readwrite');
   const outbox = tx.objectStore(STORE);
