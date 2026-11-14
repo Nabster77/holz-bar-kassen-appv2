@@ -87,6 +87,19 @@ try {
     assert.equal(await generation(),2);
   });
   await db.exec(migration);
+  await db.exec(`CREATE FUNCTION public.pos_skip_bookings_before_reset()
+    RETURNS trigger LANGUAGE plpgsql AS $guard$
+    DECLARE active_generation bigint;
+    BEGIN
+      SELECT coalesce(max(id),0) INTO active_generation FROM public.pos_booking_resets;
+      IF NEW.booking_generation<>active_generation THEN
+        RAISE EXCEPTION 'Veraltete Buchungsgeneration';
+      END IF;
+      RETURN NEW;
+    END
+    $guard$;`);
+  await db.exec(readFileSync(
+    'supabase/migrations/20261114071500_complete_booking_generation_guards.sql','utf8'));
   await check('02 Server-Reset bei offener Friedrichshafener Kasse blockiert',async()=>{
     await assert.rejects(rpc(),/Bitte zuerst alle Kassen endgültig abschließen/);
     assert.equal(await generation(),2);
@@ -136,6 +149,34 @@ try {
     await assert.rejects(rpc(),/Cloud-Administrator erforderlich/);
     await db.exec(`UPDATE auth.users SET email='admin@kasse.local' WHERE id='${admin}'`);
     assert((await generation())>2);
+  });
+  await check('10 Eine zweite offene Kasse am selben Standort wird serverseitig blockiert',async()=>{
+    const gen=await generation();
+    await db.query(`INSERT INTO public.pos_cash_sessions(id,location,booking_generation,date,data)
+      VALUES ('FN-new','Friedrichshafen',$1,'2026-11-14',
+      '{"id":"FN-new","closed":false,"openingBalance":100,"openedAt":1794624500000}')`,[gen]);
+    await assert.rejects(db.query(`INSERT INTO public.pos_cash_sessions(id,location,booking_generation,date,data)
+      VALUES ('FN-other','Friedrichshafen',$1,'2026-11-14',
+      '{"id":"FN-other","closed":false,"openingBalance":200,"openedAt":1794624500000}')`,[gen]),
+      /duplicate key value|unique constraint/);
+  });
+  await check('11 Eine offene Kasse in Bregenz bleibt unabhängig möglich',async()=>{
+    const gen=await generation();
+    await db.query(`INSERT INTO public.pos_cash_sessions(id,location,booking_generation,date,data)
+      VALUES ('BR-new','Bregenz',$1,'2026-11-14',
+      '{"id":"BR-new","closed":false,"openingBalance":70,"openedAt":1794624500000}')`,[gen]);
+    assert.equal((await db.query('SELECT count(*)::int n FROM public.pos_cash_sessions WHERE booking_generation=$1',[gen])).rows[0].n,2);
+  });
+  await check('12 Veraltete Uploads werden nicht in archivierte Generation geschrieben',async()=>{
+    await assert.rejects(db.query(`INSERT INTO public.pos_transactions(id,location,booking_generation,timestamp,data)
+      VALUES('outdated','Friedrichshafen',2,1794624650000,'{}')`),/Veraltete Buchungsgeneration/);
+    await assert.rejects(db.query(`UPDATE public.pos_cash_sessions SET data='{"closed":false}'::jsonb
+      WHERE id='FN-open'`),/Veraltete Buchungsgeneration/);
+  });
+  await check('13 Beide Standorte offen: Reset bleibt gesperrt',async()=>{
+    const oldGen=await generation();
+    await assert.rejects(rpc(),/Bitte zuerst alle Kassen endgültig abschließen/);
+    assert.equal(await generation(),oldGen);
   });
   console.log('WOODMO V3 RESET: '+passed+'/'+passed+' SQL-VERHALTENSTESTS BESTANDEN – NUR ISOLIERTE PGLITE.');
 } finally {
