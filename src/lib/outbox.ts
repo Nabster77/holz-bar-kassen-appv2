@@ -1,7 +1,10 @@
 import { supabase } from '@/lib/supabaseClient';
+import { isStaleOutboxEntry, summarizeResetQuarantine, type ResetQuarantineEntry } from '@/lib/resetQuarantine';
 
 const DB_NAME = 'tablet-kasse-sync';
 const STORE = 'outbox';
+const QUARANTINE_STORE = 'resetQuarantine';
+export const RESET_QUARANTINE_EVENT = 'woodmo-reset-quarantine-updated';
 const BATCH_SIZE = 100;
 
 export type CloudTable = 'pos_transactions' | 'pos_cash_sessions';
@@ -15,8 +18,15 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE, { autoIncrement: true });
+    const request = indexedDB.open(DB_NAME, 2);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(STORE)) {
+        request.result.createObjectStore(STORE, { autoIncrement: true });
+      }
+      if (!request.result.objectStoreNames.contains(QUARANTINE_STORE)) {
+        request.result.createObjectStore(QUARANTINE_STORE, { keyPath: 'key' });
+      }
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -49,27 +59,95 @@ export async function clearOutbox(): Promise<void> {
   await transactionDone(tx);
 }
 
-// Removes queued entries from an earlier reset generation. This is deliberately
-// persistent: a reset must also neutralize entries stored while the device was offline.
-export async function discardEntriesBeforeGeneration(generation: number): Promise<void> {
+// An older-generation queue is never silently deleted. Moving records to a
+// durable local archive and deleting their old upload requests happen in ONE
+// IndexedDB transaction; if archiving fails, the queue is unchanged and the
+// generation switch must fail closed. Old records cannot be uploaded into the
+// new generation without a separate administrator recovery procedure.
+export async function quarantineEntriesBeforeGeneration(
+  generation: number,
+  localSnapshot?: { transactions: readonly unknown[]; cashSessions: readonly unknown[] },
+): Promise<void> {
+  if (!Number.isInteger(generation) || generation < 0) throw new Error('Ungültige Buchungsgeneration.');
   const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  const store = tx.objectStore(STORE);
-  const keysRequest = store.getAllKeys();
-  const entriesRequest = store.getAll();
-  await transactionDone(tx);
+  const tx = db.transaction([STORE, QUARANTINE_STORE], 'readwrite');
+  const outbox = tx.objectStore(STORE);
+  const quarantine = tx.objectStore(QUARANTINE_STORE);
+  const archivedAt = Date.now();
 
-  const keys = keysRequest.result;
-  const entries = entriesRequest.result as OutboxEntry[];
-  const deleteTx = db.transaction(STORE, 'readwrite');
-  const deleteStore = deleteTx.objectStore(STORE);
-  entries.forEach((entry, index) => {
-    // Missing generations originate from an older app version and are stale.
-    if (!Number.isInteger(entry.row.booking_generation) || entry.row.booking_generation < generation) {
-      deleteStore.delete(keys[index]);
+  // Protect against a React-state/outbox enqueue race: the complete local
+  // snapshot is additionally retained, even when no pending queue row exists.
+  if (localSnapshot && (localSnapshot.transactions.length || localSnapshot.cashSessions.length)) {
+    const record: ResetQuarantineEntry = {
+      key: 'snapshot:generation-' + generation,
+      archivedAt, targetGeneration: generation, kind: 'local-snapshot',
+      transactions: [...localSnapshot.transactions],
+      cashSessions: [...localSnapshot.cashSessions],
+    };
+    quarantine.put(record);
+  }
+
+  const req = outbox.openCursor();
+  req.onsuccess = () => {
+    const cursor = req.result;
+    if (!cursor) return;
+    const entry = cursor.value as OutboxEntry;
+    if (isStaleOutboxEntry(entry, generation)) {
+      const record: ResetQuarantineEntry = {
+        key: 'outbox:' + String(cursor.primaryKey),
+        archivedAt, targetGeneration: generation,
+        kind: 'pending-outbox', entry,
+      };
+      quarantine.put(record);
+      cursor.delete();
     }
-  });
-  await transactionDone(deleteTx);
+    cursor.continue();
+  };
+  req.onerror = () => tx.abort();
+  await transactionDone(tx);
+  window.dispatchEvent(new Event(RESET_QUARANTINE_EVENT));
+}
+
+// Kept as a compatibility alias for existing reset/restore callers.
+// It now archives stale rows atomically instead of destroying them.
+export async function discardEntriesBeforeGeneration(generation: number): Promise<void> {
+  await quarantineEntriesBeforeGeneration(generation);
+}
+
+export async function readResetQuarantine(): Promise<ResetQuarantineEntry[]> {
+  const db = await openDb();
+  const tx = db.transaction(QUARANTINE_STORE, 'readonly');
+  const request = tx.objectStore(QUARANTINE_STORE).getAll();
+  await transactionDone(tx);
+  return request.result as ResetQuarantineEntry[];
+}
+
+export async function readResetQuarantineSummary() {
+  return summarizeResetQuarantine(await readResetQuarantine());
+}
+
+/** No automatic deletion of quarantined records. The operator can download
+ * the original queued rows and full local snapshots for an audited review. */
+export async function exportResetQuarantine(): Promise<void> {
+  const entries = await readResetQuarantine();
+  if (!entries.length) throw new Error('Keine archivierten Offline-Buchungen gefunden.');
+  const json = JSON.stringify({
+    type: 'woodmo-v3-offline-reset-quarantine',
+    version: 1, exportedAt: new Date().toISOString(),
+    summary: summarizeResetQuarantine(entries),
+    entries,
+  }, null, 2);
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'woodmo-offline-quarantaene-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 
 // Uploads the oldest queued entries and removes them once the cloud has them.
