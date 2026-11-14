@@ -26,10 +26,14 @@ assert(pos.includes('if (!activeSession || !currentStaff) setShowOpenDialog(true
   'Header login must open existing protected login dialog');
 assert(!toolbar.includes('>Mitarbeiter anmelden</button>'),
   'No additional employee login button in POS strip');
-assert(toolbar.includes('Oben Anmelden wählen'),
-  'Cashier login is delegated to the shared header control');
-assert(toolbar.includes('Kasse eröffnen'),
-  'Opening an unstarted register remains possible for an authenticated cashier');
+assert(toolbar.includes('Über Home → Kasse oder oben neben Menü eröffnen'),
+  'POS strip directs opening to Home or the compact header shortcut');
+assert(!toolbar.includes('onClick={() => setShowOpenDialog(true)}'),
+  'Redundant green cash opening button was removed from sales surface');
+assert(header.includes('aria-label="Kasse eröffnen"') &&
+  header.includes("tab === 'pos' && !store.activeSession") &&
+  header.includes('setCashierLoginRequest((request) => request + 1)'),
+  'Compact opening shortcut beside menu appears only without an open till');
 assert(!toolbar.includes('onClick={() => void requestDailyClose()}'),
   'Day close must live in menu only');
 assert(!toolbar.includes('Tagesabschluss'));
