@@ -15,14 +15,28 @@ export function prepareCleanGenerationRestore(
   const transactionIds = new Map(input.transactions.map(row => [row.id, 'recovered-tx-' + makeUuid()]));
   const sessionIds = new Map(input.cashSessions.map(row => [row.id, 'recovered-session-' + makeUuid()]));
   const stornoIds = new Map(input.stornos.map(row => [row.id, makeUuid()]));
-  const mapTransaction = (row: Transaction): Transaction => ({
-    ...row,
-    id: transactionIds.get(row.id) ?? (() => { throw new Error('Originalbon fehlt: ' + row.id); })(),
-    ...(row.cashSessionId ? { cashSessionId: sessionIds.get(row.cashSessionId) ?? (() => {
-      throw new Error('Kassensitzung zum Originalbon fehlt: ' + row.id);
-    })() } : {}),
-    restoreSourceId: row.id,
-  } as Transaction);
+  const mapTransaction = (row: Transaction): Transaction => {
+    // Older WOODMO backups may not yet have a cashSessionId. Resolve exactly
+    // one historic till by location and posting time; reject ambiguous legacy
+    // data instead of crediting a sale to an unrelated register.
+    const sourceSessionId = row.cashSessionId ?? (() => {
+      const matching = input.cashSessions.filter(session =>
+        session.location === row.location && row.timestamp >= session.openedAt &&
+        (session.closedAt == null || row.timestamp <= session.closedAt));
+      if (matching.length !== 1) throw new Error(
+        'Historischer Bon ' + row.id + ' kann keiner eindeutigen Kassensitzung zugeordnet werden.'
+      );
+      return matching[0].id;
+    })();
+    const cashSessionId = sessionIds.get(sourceSessionId);
+    if (!cashSessionId) throw new Error('Kassensitzung zum Originalbon fehlt: ' + row.id);
+    return {
+      ...row,
+      id: transactionIds.get(row.id) ?? (() => { throw new Error('Originalbon fehlt: ' + row.id); })(),
+      cashSessionId,
+      restoreSourceId: row.id,
+    } as Transaction;
+  };
   const transactions = input.transactions.map(mapTransaction);
   const salesById = new Map(transactions.map(row => [row.id, row]));
   const mapStorno = (row: StornoRecord): StornoRecord => {
