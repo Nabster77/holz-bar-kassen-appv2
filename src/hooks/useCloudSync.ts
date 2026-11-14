@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CashSession, Transaction } from '@/types';
 import { supabase } from '@/lib/supabaseClient';
-import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, type OutboxEntry } from '@/lib/outbox';
+import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, readPendingOutbox, type OutboxEntry } from '@/lib/outbox';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { markCloudSyncVerified } from '@/lib/backupCheckpoint';
 import { fetchCloudData, type CloudData } from '@/lib/cloudPull';
@@ -141,11 +141,18 @@ export function useCloudSync(
       }, async () => {
       if (testMode) return;
       const generation = knownBookingReset().generation;
-      const cloud = await fetchCloudData(newestPulledRef.current, generation);
+      // Fetch the *entire* active generation. A timestamp cursor with only a
+      // 60-second overlap misses offline receipts uploaded hours or days late.
+      const cloud = await fetchCloudData(null, generation);
       // A reset may have completed while this request was in flight. Such a
       // response must never be merged back into local state.
       if (cloud.generation !== knownBookingReset().generation) return;
-      mergeCloudData(cloud);
+      // Do not replace a locally changed session that is still awaiting cloud
+      // acknowledgement with an older cloud snapshot.
+      const pending = await readPendingOutbox();
+      const pendingSessionIds = pending.filter(entry => entry.table === 'pos_cash_sessions' &&
+        entry.row.booking_generation === generation).map(entry => entry.row.id);
+      mergeCloudData({ ...cloud, pendingSessionIds });
       if (cloud.newestTransactionTimestamp !== null) {
         newestPulledRef.current = Math.max(newestPulledRef.current ?? 0, cloud.newestTransactionTimestamp);
       }
