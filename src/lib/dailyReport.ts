@@ -6,6 +6,7 @@ import { buildJournalFileName } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type CashAuditRecord, type JournalReportData, type StaffTimeRecord } from '@/lib/journalPdf';
 import { endOfDay, startOfDay } from '@/lib/format';
 import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
+import { verifiedCloseTimestamp } from '@/lib/cashSessionTimes';
 
 export function dayTransactions(transactions: Transaction[], date: string, loc: Location): Transaction[] {
   return transactions.filter((t) => {
@@ -103,7 +104,10 @@ export function closedSessionReport(session: CashSession, transactions: Transact
   // receipts never disappear because the Bonliste displays only five.
   const sessionStornos = snapshot?.stornos ?? allStornos.filter((entry) => entry.cashSessionId === session.id);
   const reportTransactions = projectFinancialTransactions(originalTransactions, sessionStornos);
-  const finalizedAt = snapshot?.finalizedAt ?? session.closedAt ?? Date.now();
+  const finalizedAt = verifiedCloseTimestamp(session);
+  if (!session.closed || finalizedAt === null || finalizedAt < session.openedAt) {
+    throw new Error('Endgültiger Kassenabschluss ohne gültigen Eröffnungs- und Abschlusszeitpunkt. PDF-Erstellung gesperrt.');
+  }
   const [year] = session.date.split('-');
   const closingWithdrawalAmount = session.closingWithdrawalAmount ?? session.entries.filter((entry) => entry.isClosingWithdrawal).reduce((sum, entry) => sum + entry.amount, 0);
   const deposits = session.entries.filter((entry) => entry.type === 'deposit').reduce((sum, entry) => sum + entry.amount, 0);
@@ -128,6 +132,7 @@ export function closedSessionReport(session: CashSession, transactions: Transact
     headerLabel: `${session.location} · ${new Date(session.openedAt).toLocaleDateString('de-DE')} · ${new Date(finalizedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
     documentTitle: 'Tagesabschluss',
     documentStatus: 'Endgültig abgeschlossen',
+    cashSessionPeriod: { openedAt: session.openedAt, closedAt: finalizedAt },
     fileName: `${session.location}_Tagesabschluss_${session.date}_${formattedReceipt ?? session.id}.pdf`,
     receiptNumber: formattedReceipt ?? 'wird bei der nächsten Synchronisierung vergeben',
     staffTimeRecords: staffTimesFromSession(session, finalizedAt),
