@@ -1031,7 +1031,10 @@ export default function App() {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
                 } catch (error) {
+                  // Keep the existing error dialog and propagate failure to the
+                  // reset checklist: a failed download must never become green.
                   alert(error instanceof Error ? error.message : 'Die vollständige Sicherung konnte nicht erstellt werden.');
+                  throw error;
                 }
               }}
               onImportBackup={async (file) => {
