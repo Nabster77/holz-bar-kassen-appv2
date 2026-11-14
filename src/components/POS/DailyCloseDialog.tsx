@@ -1,7 +1,8 @@
 import { movementStyle, movementBadgeHTML, hasNegativeMoney, negativeMoneyClass } from '@/lib/movementStyle';
 import { useMemo, useState, type ReactNode } from 'react';
 import { X, Lock, FileDown, Check, TriangleAlert as AlertTriangle, Calculator, Coins, Banknote, ChevronDown } from 'lucide-react';
-import { formatCurrency, formatDateLong, formatDateGermanFromISO, formatTime } from '@/lib/format';
+import { formatCurrency, formatDateGermanFromISO, formatTime } from '@/lib/format';
+import { formatCashSessionTimestamp, verifiedCloseTimestamp } from '@/lib/cashSessionTimes';
 import { escapeHtml } from '@/lib/escapeHtml';
 import { mergeTaxByRate, sortedRateKeys } from '@/lib/tax';
 import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
@@ -263,8 +264,15 @@ export function DailyCloseDialog({ session, transactions, stornos = [], currentS
 
         <div className="flex-1 overflow-y-auto p-5">
           <div className="mb-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">{formatDateLong(session.openedAt)}</p>
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Standort: {session.location}</p>
+            <p className="mt-1 text-sm font-semibold text-gray-700 dark:text-gray-200">
+              Kasseneröffnung: {formatCashSessionTimestamp(session.openedAt)}
+            </p>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+              Endgültiger Tagesabschluss: {session.closed && verifiedCloseTimestamp(session) !== null
+                ? formatCashSessionTimestamp(verifiedCloseTimestamp(session)!)
+                : 'Noch nicht gebucht'}
+            </p>
             <p className={`mt-1 text-sm font-bold ${session.closed ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
               {session.closed ? 'Endgültig abgeschlossen' : 'Entwurf – noch nicht endgültig abgeschlossen'}
             </p>
@@ -635,8 +643,12 @@ async function generatePDF(
     : pfandBalance < 0
       ? `<div class="sum bold pfand-loss"><span>Pfandverlust</span><span>- ${formatCurrency(Math.abs(pfandBalance))}</span></div>`
       : '<div class="sum bold"><span>Pfandsaldo</span><span>0,00 €</span></div>';
-  const documentTime = session.closedAt ?? Date.now();
   const isFinal = session.closed;
+  const finalTime = verifiedCloseTimestamp(session);
+  if (isFinal && (finalTime === null || finalTime < session.openedAt)) {
+    throw new Error('Tagesabschluss ohne verifizierbaren Abschlusszeitpunkt. PDF nicht erstellt.');
+  }
+  const documentTime = finalTime ?? Date.now();
   const receipt = formatDailyCloseReceiptNumber(session.dailyCloseReceiptNumber, session.dailyCloseReceiptLocation ?? session.location, documentTime, session.dailyCloseReceiptYear);
   // Use the same split representation as the on-screen overview: a mixed
   // sale with a returned deposit is two visible movements, never one false
@@ -673,7 +685,7 @@ async function generatePDF(
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>${escapeHtml(`${session.location}_Tagesabschluss_${session.date.split('-').reverse().join('-')}`)}</title><style>
     *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1e293b;line-height:1.4;font-size:12px;margin:0}h1{font-size:26px;margin:0;text-align:center;color:#1e3a5f}h2{font-size:15px;margin:22px 0 7px;border-bottom:1px solid #cbd5e1;padding-bottom:4px;break-after:avoid;page-break-after:avoid}.heading{text-align:center;margin-bottom:17px}.meta{font-size:15px;font-weight:700;color:#2563eb;margin-top:5px}.staff{font-size:13px;margin-top:4px}.status{display:inline-block;border-radius:5px;padding:4px 8px;font-weight:700;margin-bottom:8px}.draft{background:#fef3c7;color:#92400e}.final{background:#dcfce7;color:#166534}.receipt{font-size:13px;font-weight:700;color:#0f172a;margin-top:5px}.sum{display:flex;justify-content:space-between;padding:4px 0}.bold{font-weight:700;border-top:1px solid #64748b;margin-top:5px;padding-top:7px}.pfand-profit{color:#15803d}.pfand-loss{color:#dc2626}.box{border:1px solid #cbd5e1;border-radius:8px;padding:12px;margin-bottom:14px}.sales{background:#ecfdf5;border-color:#a7f3d0}.sales h2{margin-top:0;color:#047857;border-color:#a7f3d0}table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10.5px}thead{display:table-header-group}th{text-align:left;border-bottom:2px solid #334155;padding:5px 4px}td{padding:4px;border-bottom:1px solid #e2e8f0;vertical-align:top}tr{break-inside:avoid;page-break-inside:avoid}tr:nth-child(even){background:#f8fafc}.report-block{break-inside:avoid;page-break-inside:avoid}.report-block h2{break-after:avoid;page-break-after:avoid}.report-block table{break-inside:avoid;page-break-inside:avoid}.staff-times{break-inside:avoid;page-break-inside:avoid}.staff-times h2{border-bottom:0;margin-bottom:7px;break-after:avoid;page-break-after:avoid}.staff-times table{break-inside:avoid;page-break-inside:avoid}.staff-times tbody tr{break-inside:avoid;page-break-inside:avoid}
   </style></head><body>
-    <div class="heading" data-pdf-page-location="${escapeHtml(session.location)}" data-pdf-page-header="${escapeHtml(`Tagesabschluss · ${session.location} · ${formatDateGermanFromISO(session.date)} · ${formatTime(documentTime)} Uhr`)}"><div class="status ${statusClass}">${status}</div><h1>Tagesabschluss</h1><div class="meta">${escapeHtml(session.location)} · ${formatDateGermanFromISO(session.date)} · ${formatTime(documentTime)} Uhr</div><div class="staff">Mitarbeiter: <strong>${escapeHtml(exportedByName ?? session.closedByName ?? session.openedByName ?? 'Nicht angemeldet')}</strong></div>${receipt ? `<div class="receipt">Belegnummer: ${receipt}</div>` : isFinal ? '<div class="receipt">Belegnummer: wird bei der nächsten Synchronisierung vergeben.</div>' : '<div class="receipt">Belegnummer: wird beim endgültigen Abschluss vergeben.</div>'}</div>
+    <div class="heading" data-pdf-page-location="${escapeHtml(session.location)}" data-pdf-page-header="${escapeHtml(`Tagesabschluss · ${session.location} · ${formatDateGermanFromISO(session.date)} · ${formatTime(documentTime)} Uhr`)}"><div class="status ${statusClass}">${status}</div><h1>Tagesabschluss</h1><div class="meta">${escapeHtml(session.location)} · ${formatDateGermanFromISO(session.date)} · ${formatTime(documentTime)} Uhr</div><div class="staff">Mitarbeiter: <strong>${escapeHtml(exportedByName ?? session.closedByName ?? session.openedByName ?? 'Nicht angemeldet')}</strong></div><div class="box" style="margin-top:10px;text-align:left"><div class="sum"><strong>Kasseneröffnung</strong><strong>${escapeHtml(formatCashSessionTimestamp(session.openedAt))}</strong></div><div class="sum"><strong>Endgültiger Tagesabschluss</strong><strong>${isFinal ? escapeHtml(formatCashSessionTimestamp(documentTime)) : 'Noch nicht gebucht (Entwurf)'}</strong></div></div>${receipt ? `<div class="receipt">Belegnummer: ${receipt}</div>` : isFinal ? '<div class="receipt">Belegnummer: wird bei der nächsten Synchronisierung vergeben.</div>' : '<div class="receipt">Belegnummer: wird beim endgültigen Abschluss vergeben.</div>'}</div>
     <div class="box sales"><h2>Tagesumsatz</h2>
       <div class="sum bold"><span>Brutto-Umsatz (ohne Pfand)</span><span>${formatCurrency(sums.txTotal)}</span></div>
       <div class="sum"><span>davon Barumsatz (ohne Pfand)</span><span>${formatCurrency(sums.cashTxTotal)}</span></div>
