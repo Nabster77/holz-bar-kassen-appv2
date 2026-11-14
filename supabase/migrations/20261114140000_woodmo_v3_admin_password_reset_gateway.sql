@@ -10,7 +10,13 @@ DECLARE
   v_previous bigint;
   v_unfinished bigint;
 BEGIN
-  IF current_setting('request.jwt.claim.role', true) IS DISTINCT FROM 'service_role' THEN
+  -- Current PostgREST (Supabase) only sets request.jwt.claims (JSON); the
+  -- legacy per-claim setting request.jwt.claim.role is usually NULL. Read
+  -- both, exactly like Supabase's own auth.role().
+  IF COALESCE(
+       NULLIF(current_setting('request.jwt.claim.role', true), ''),
+       NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
+     ) IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'Reset gesperrt: Nur serverseitig autorisierter Dienst.'
       USING ERRCODE = '42501';
   END IF;

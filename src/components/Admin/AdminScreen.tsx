@@ -1605,7 +1605,9 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
         : (typeof asCloudError?.message === 'string' && asCloudError.message) ||
           (typeof asCloudError?.details === 'string' && asCloudError.details) ||
           (typeof cause === 'string' ? cause : 'Cloud-Fehler ohne Klartextmeldung. Fehlercode: ' + String(asCloudError?.code ?? 'unbekannt'));
-      setError(/passwort|nicht korrekt/i.test(detail)
+      // Only a genuine rejection counts as a wrong password; "nicht prüfbar" or
+      // "erforderlich" (service unavailable, empty input) must stay visible.
+      setError(/passwort nicht korrekt|passwort ist nicht korrekt/i.test(detail)
         ? 'Falsches Passwort. Es wurde nichts zurückgesetzt.'
         : 'Zurücksetzen nicht bestätigt. Cloud-Kassenstand vor einem neuen Versuch prüfen. ' + detail);
     } finally {

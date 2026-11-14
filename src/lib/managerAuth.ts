@@ -33,11 +33,23 @@ export async function verifyManagerPassword(password: string): Promise<boolean> 
   if (navigator.onLine) {
     if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
     const { data, error } = await supabase.rpc('verify_admin_gate_password', { p_password: password });
-    if (error) throw new Error('Cloud-Passwortprüfung nicht möglich: ' + error.message);
-    if (typeof data !== 'boolean') throw new Error('Unerwartete Cloud-Passwortantwort.');
-    return data;
+    if (!error && typeof data === 'boolean') {
+      // Keep this device's offline verifier in step with the Cloud, so a
+      // password changed on another tablet replaces the old one here too.
+      if (data) {
+        const proof = await createPasswordProof(password);
+        saveJSON<ManagerCredential>(STORAGE_KEYS.managerCredential, { ...proof, changedAt: Date.now() });
+      }
+      return data;
+    }
+    // navigator.onLine can be true without working internet (bar Wi-Fi).
+    // Fall back to the provisioned local verifier instead of locking out.
+    if (!stored) throw new Error('Cloud-Passwortprüfung nicht möglich: ' + (error?.message ?? 'unerwartete Antwort'));
+  } else if (!stored) {
+    // Offline: only an already provisioned local verifier may authorize.
+    throw new Error('Verwaltung ohne eingerichtetes Offline-Passwort benötigt eine Cloud-Verbindung.');
   }
-  // Offline: only an already provisioned local verifier may authorize.
+  // Local verifier (offline, or Cloud unreachable). Narrows `stored` for TypeScript.
   if (!stored) throw new Error('Verwaltung ohne eingerichtetes Offline-Passwort benötigt eine Cloud-Verbindung.');
   return verifyPasswordProof(stored.passwordSalt, stored.passwordHash, password);
 }

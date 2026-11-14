@@ -51,6 +51,11 @@ assert.match(reset, /functions\.invoke\('woodmo-v3-reset'/);
 assert.match(edge, /auth\.getUser\(token\)/);
 assert.match(edge, /authorizedResetPassword/);
 assert.match(sql, /request\.jwt\.claim\.role/);
+// Current Supabase/PostgREST only sets request.jwt.claims (JSON).
+assert.match(sql, /current_setting\('request\.jwt\.claims', true\)[\s\S]*->> 'role'/);
+// "nicht prüfbar" / "erforderlich" must not be shown as a wrong password.
+assert.doesNotMatch(ui, /\/passwort\|nicht korrekt\/i/);
+assert.match(manager, /createPasswordProof\(password\)/);
 assert.match(sql, /pg_advisory_xact_lock/);
 assert.match(sql, /dailyCloseFinalizedAt/);
 assert.match(sql, /FROM PUBLIC, anon, authenticated/);
