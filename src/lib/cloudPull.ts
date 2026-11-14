@@ -11,6 +11,7 @@ export interface CloudData {
   transactions: Transaction[];
   cashSessions: CashSession[];
   newestTransactionTimestamp: number | null;
+  pendingSessionIds?: string[];
 }
 
 function isRecord<T extends { id: string }>(value: unknown): value is T {
