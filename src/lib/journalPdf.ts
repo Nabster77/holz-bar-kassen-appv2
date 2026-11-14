@@ -5,6 +5,7 @@ import type { StornoJournalTransaction } from '@/lib/stornoReportProjection';
 import { formatCurrency, formatDate, formatTime } from '@/lib/format';
 import { isTaxFreeItem, getTaxByRate } from '@/lib/tax';
 import { escapeHtml } from '@/lib/escapeHtml';
+import { formatCashSessionTimestamp } from '@/lib/cashSessionTimes';
 
 export interface JournalReportData {
   headerLabel: string;
@@ -25,6 +26,8 @@ export interface JournalReportData {
   documentTitle?: string;
   documentStatus?: string;
   receiptNumber?: string;
+  /** Real, immutable timestamps of this specific cash session (not PDF generation time). */
+  cashSessionPeriod?: { openedAt: number; closedAt: number };
   /** Running deposit control total for the selected location(s) and calendar year. */
   yearlyPfandOverview?: YearlyPfandOverview;
   /** Cash figures only present on a finalized daily-close document. */
@@ -490,7 +493,7 @@ function combinedSection(transactions: Transaction[], categories: Category[], st
 }
 
 export function buildJournalHTML(data: JournalReportData): string {
-  const { headerLabel, location, transactions, stornos = [], categories, fileName, exportedByName, cashAuditRecords = [], staffTimeRecords = [], documentTitle = 'Kassenjournal', documentStatus, receiptNumber, dailyCloseCash, yearlyPfandOverview } = data;
+  const { headerLabel, location, transactions, stornos = [], categories, fileName, exportedByName, cashAuditRecords = [], staffTimeRecords = [], documentTitle = 'Kassenjournal', documentStatus, receiptNumber, cashSessionPeriod, dailyCloseCash, yearlyPfandOverview } = data;
   const generatedAt = new Date().toLocaleString('de-DE');
   const generatedTime = new Date().toLocaleTimeString('de-DE');
   const isBregenzReport = location.toLowerCase().includes('bregenz');
@@ -553,6 +556,8 @@ export function buildJournalHTML(data: JournalReportData): string {
     .header .report-location, .header .report-time { color: var(--report-accent); }
     .header .report-time::before { content: '·'; color: #94a3b8; margin-right: 14px; }
     .header .report-employee { margin-top: 6px; color: #334155; font-size: 13px; font-weight: 600; }
+    .header .cash-session-period { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 22px; margin-top: 9px; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 700; color: #1e293b; }
+    .header .cash-session-period span { white-space: nowrap; }
     .print-running-header, .print-running-footer { display: none; }
     h2 { font-size: 16px; margin-top: 20px; margin-bottom: 8px; color: #1e3a5f; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
     caption { caption-side: top; text-align: left; font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 8px; color: #1e3a5f; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
@@ -649,6 +654,7 @@ export function buildJournalHTML(data: JournalReportData): string {
       <span class="report-time">${generatedTime} Uhr</span>
     </div>
     <div class="report-employee">Mitarbeiter: ${escapeHtml(exportedByName ?? 'Nicht angemeldet')}${receiptNumber ? ` · Belegnummer: ${escapeHtml(receiptNumber)}` : ''}</div>
+    ${cashSessionPeriod ? `<div class="cash-session-period"><span>Kasseneröffnung: ${escapeHtml(formatCashSessionTimestamp(cashSessionPeriod.openedAt))}</span><span>Endgültiger Tagesabschluss: ${escapeHtml(formatCashSessionTimestamp(cashSessionPeriod.closedAt))}</span></div>` : ''}
   </div>
   ${body}
   ${yearlyPfandOverviewSection(yearlyPfandOverview)}
