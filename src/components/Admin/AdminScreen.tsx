@@ -1541,7 +1541,7 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, s
             ? 'Es werden ausschließlich die lokalen Testbuchungen und Test-Kassensitzungen entfernt.'
             : 'Der Reset öffnet eine neue leere Buchungsgeneration. Buchungen, Stornos, Kassenöffnungen und Anfangsbestände der bisherigen Generation erscheinen danach nicht mehr in der aktiven Kasse. Die historischen Nachweise werden dabei NICHT physisch aus Supabase gelöscht.'}</p>
           <p><strong>Erhalten bleiben:</strong> Artikel, Warengruppen, Preise, Bilder, Mitarbeiter, Passwörter, Sicherheitsfragen und die bisherigen Belegzähler. Andere Geräte übernehmen die neue Generation bei der nächsten Synchronisierung.</p>
-          {!testMode && <p className="font-semibold text-rose-700 dark:text-rose-300">Hinweis zum Import: Eine ältere Backup-Datei kann die archivierten Buchungen und Stornos derzeit nicht automatisch als aktive Kassensitzung wiederherstellen. Den Import deshalb erst nach gesonderter Prüfung testen.</p>}
+          {!testMode && <p className="font-semibold text-rose-700 dark:text-rose-300">Wiederherstellung nach Reset: Eine ältere WOODMO-Sicherungsdatei kann auf eine vollständig leere aktive Kasse zurückgespielt werden, sofern die Cloud-Validierung keine Konflikte meldet. Historische Originale bleiben archiviert. Erst die Sicherungsdatei prüfen, danach zurücksetzen.</p>}
           <p>Bitte die vorhandene Backup-Datei unverändert aufbewahren und ihren Inhalt kontrollieren.</p>
         </div>
         {error && (
@@ -1620,7 +1620,7 @@ function ImportDialog({ onImport, onCancel }: { onImport: (file: File) => void; 
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Wählen oder ziehen Sie eine Backup-Datei (JSON) hierher. Der Import ersetzt keine vorhandenen Buchungen: Er ergänzt Daten nach einer Sicherheitsprüfung. Sind bereits Kassendaten vorhanden, wird eine ausdrückliche Bestätigung verlangt. Verschiedene offene Kassen am selben Standort und Buchungen aus einer vor dem Reset archivierten Generation können nicht automatisch zusammengeführt werden.
+          Wählen oder ziehen Sie eine WOODMO-Backup-Datei (JSON) hierher. Bei vollständig leerer Buchungsgeneration ist auch eine ältere Sicherung vollständig rückspielbar, wenn der Sicherheitscheck besteht. Bei bereits vorhandenen Buchungen erfolgt nur eine konfliktgeprüfte Zusammenführung mit ausdrücklicher Zustimmung; ältere, archivierte Belege werden nicht in eine belegte Kasse gemischt. Für vollständigen Ersatz bitte zuerst neu sichern und die Kassenbuchungen gesondert zurücksetzen.
         </p>
         <div
           onClick={() => inputRef.current?.click()}
