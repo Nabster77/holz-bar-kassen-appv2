@@ -38,7 +38,7 @@ import { SyncToast } from '@/components/SyncToast';
 import { SyncDialog } from '@/components/SyncDialog';
 import { CatalogConflictDialog } from '@/components/CatalogConflictDialog';
 import { knownBookingReset, rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
-import { discardEntriesBeforeGeneration, readPendingOutbox, removeQueuedUnusedCashSession } from '@/lib/outbox';
+import { discardEntriesBeforeGeneration, readPendingOutbox, removeQueuedUnusedCashSession, readResetQuarantineSummary, exportResetQuarantine, RESET_QUARANTINE_EVENT } from '@/lib/outbox';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
@@ -94,6 +94,21 @@ export default function App() {
   const [cashierLoginRequest, setCashierLoginRequest] = useState(0);
   const [testMode] = useState<boolean>(isTestMode());
   const [modeConfirm, setModeConfirm] = useState<null | 'to-test' | 'to-active'>(null);
+  const [resetArchive, setResetArchive] = useState<{
+    pendingReceipts: number; pendingSessions: number; localSnapshots: number;
+    localReceipts: number; archivedEntries: number;
+  } | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => {
+      void readResetQuarantineSummary()
+        .then(summary => { if (mounted) setResetArchive(summary); })
+        .catch(error => console.error('Offline-Quarantäne konnte nicht gelesen werden.', error));
+    };
+    refresh();
+    window.addEventListener(RESET_QUARANTINE_EVENT, refresh);
+    return () => { mounted = false; window.removeEventListener(RESET_QUARANTINE_EVENT, refresh); };
+  }, []);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const closeSyncToast = useCallback(() => setSyncedAt(null), []);
   const [syncOpen, setSyncOpen] = useState(false);
@@ -582,6 +597,21 @@ export default function App() {
               </button>
             </div>
           </header>
+          {resetArchive && resetArchive.archivedEntries > 0 && (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/40 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+              <span>
+                <AlertTriangle className="mr-1 inline h-4 w-4" />
+                Offline-Quarantäne: {resetArchive.pendingReceipts} nicht übertragene Bon-ID(s),
+                {resetArchive.pendingSessions} Kassensitzung(en) und
+                {resetArchive.localSnapshots} lokale Sicherung(en) archiviert.
+                Nicht löschen oder automatisch nachbuchen!
+              </span>
+              <button type="button" onClick={() => navigateToProtected('admin')}
+                className="rounded-lg border border-amber-300/60 px-3 py-1.5 font-bold hover:bg-amber-900">
+                In Verwaltung prüfen
+              </button>
+            </div>
+          )}
           {menuOpen && (tab !== 'admin' || !adminUnlocked) && (
             <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/65 px-3 pb-4 pt-16"
               onClick={() => setMenuOpen(false)}
@@ -831,6 +861,11 @@ export default function App() {
               onDeleteProduct={store.deleteProduct}
               onReorderProduct={store.reorderProduct}
               onMoveProductTo={store.moveProductTo}
+              resetQuarantineCount={resetArchive?.archivedEntries ?? 0}
+              onExportResetQuarantine={async () => {
+                try { await exportResetQuarantine(); }
+                catch (error) { alert(error instanceof Error ? error.message : 'Quarantäne-Export fehlgeschlagen.'); }
+              }}
               onResetAllData={resetBookings}
               onDeviceSetup={() => setDeviceSetupOpen(true)}
               pfandSettings={store.pfandSettings}
