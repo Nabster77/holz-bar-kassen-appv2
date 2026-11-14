@@ -29,7 +29,7 @@ for (const table of ['pos_daily_close_receipts', 'pos_daily_close_receipt_counte
 }
 assert.match(resetBody, /INSERT INTO public\.pos_booking_resets/,
   'Neue Generation verhindert Wiederherstellen alter Offline-Buchungen.');
-assert.match(app, /await resetCloudBookings\(\)/);
+assert.match(app, /await resetCloudBookings\(adminPassword\)/);
 assert.match(app, /store\.resetAllData\(\)/);
 assert.match(receipt, /p_close_date:\s*localDate/,
   'Tagesabschlussnummer muss anhand des lokalen Datums vergeben werden.');
