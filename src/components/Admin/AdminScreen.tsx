@@ -1558,11 +1558,11 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
       // Compare the ledger after export to the safety-checked source. Any
       // intervening cloud change invalidates this backup proof.
       if (!testMode) {
-        if (!onCheck || !report?.backupSignature) throw new Error('Cloud-Sicherheitsnachweis fehlt. Dialog erneut oeffnen.');
+        if (!onCheck || !report?.backupSignature) throw new Error('Cloud-Sicherheitsnachweis fehlt. Dialog erneut öffnen.');
         const verified = await onCheck(setReport);
         setReport(verified);
         if (!verified.resetAllowed || verified.backupSignature !== report.backupSignature) {
-          throw new Error('Seit der Vorpruefung hat sich die Cloud geaendert. Neues Backup erstellen.');
+          throw new Error('Seit der Vorprüfung hat sich die Cloud geändert. Neues Backup erstellen.');
         }
         setExportedSignature(verified.backupSignature ?? null);
       }
@@ -1590,11 +1590,12 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
       // own final lock-and-open-till test even if another device changed state.
       if (!testMode && onCheck) {
         const latest = await onCheck(setReport);
+        setReport(latest);
                 if (!latest.resetAllowed || !latest.backupSignature || latest.backupSignature !== exportedSignature) {
           setSavedBackup(false);
           setBackupRequested(false);
           setExportedSignature(null);
-          throw new Error('Datenstand seit dem Backup geaendert oder Pruefung fehlgeschlagen. Bitte neues Backup erstellen.');
+          throw new Error('Datenstand seit dem Backup geändert oder Prüfung fehlgeschlagen. Bitte neues Backup erstellen.');
         }
       }
       await onConfirm(adminPassword);
@@ -1604,7 +1605,9 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
         : (typeof asCloudError?.message === 'string' && asCloudError.message) ||
           (typeof asCloudError?.details === 'string' && asCloudError.details) ||
           (typeof cause === 'string' ? cause : 'Cloud-Fehler ohne Klartextmeldung. Fehlercode: ' + String(asCloudError?.code ?? 'unbekannt'));
-      setError('Zurücksetzen nicht bestätigt. Cloud-Kassenstand vor einem neuen Versuch prüfen. ' + detail);
+      setError(/passwort|nicht korrekt/i.test(detail)
+        ? 'Falsches Passwort. Es wurde nichts zurückgesetzt.'
+        : 'Zurücksetzen nicht bestätigt. Cloud-Kassenstand vor einem neuen Versuch prüfen. ' + detail);
     } finally {
       setBusy(false);
     }
@@ -1686,9 +1689,9 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
                 disabled={!canBackup || !backupRequested || busy || checking} />
                             Backup-Datei heruntergeladen und sicher aufbewahrt.
             </label>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Dieser Haken wird erst nach einem erfolgreichen Export mit bestaetigtem Cloud-Datenstand freigegeben. Aendern sich Buchungen, muss neu gesichert werden.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Dieser Haken wird erst nach einem erfolgreichen Export mit bestätigtem Cloud-Datenstand freigegeben. Ändern sich Buchungen, muss neu gesichert werden.</p>
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
-              Verwaltungs-Passwort
+              Administrator- oder Verwaltungspasswort
               <input type="password" autoComplete="off" value={adminPassword}
                 onChange={e => setAdminPassword(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void confirm(); } }}

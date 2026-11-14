@@ -1,5 +1,6 @@
 import { createPasswordProof, verifyPasswordProof } from '@/lib/staffDirectory';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
+import { supabase } from '@/lib/supabaseClient';
 
 export interface ManagerCredential {
   passwordSalt: string | null;
@@ -20,16 +21,24 @@ export function managerPasswordWasChanged(): boolean {
 }
 
 export function resetManagerPassword(): void {
-  // `null` is deliberately treated as "not changed" and therefore restores
-  // the built-in initial password `kasse`.
+  // This clears only the local offline verifier, not the Cloud secret.
+  // Only set_admin_gate_password can change the authoritative password.
   saveJSON(STORAGE_KEYS.managerCredential, null);
 }
 
 export async function verifyManagerPassword(password: string): Promise<boolean> {
   const stored = loadJSON<ManagerCredential | null>(STORAGE_KEYS.managerCredential, null);
-  // The management password belongs to this installation, not to the cloud
-  // account. A fresh/reset test profile deliberately starts at "kasse" again.
-  if (!stored) return password === 'kasse';
+  // Online the Cloud is authoritative. Stale local passwords must not work
+  // after a change on another device.
+  if (navigator.onLine) {
+    if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+    const { data, error } = await supabase.rpc('verify_admin_gate_password', { p_password: password });
+    if (error) throw new Error('Cloud-Passwortprüfung nicht möglich: ' + error.message);
+    if (typeof data !== 'boolean') throw new Error('Unerwartete Cloud-Passwortantwort.');
+    return data;
+  }
+  // Offline: only an already provisioned local verifier may authorize.
+  if (!stored) throw new Error('Verwaltung ohne eingerichtetes Offline-Passwort benötigt eine Cloud-Verbindung.');
   return verifyPasswordProof(stored.passwordSalt, stored.passwordHash, password);
 }
 
@@ -38,6 +47,13 @@ export async function changeManagerPassword(currentPassword: string, nextPasswor
   if (!hasAdministrator) throw new Error('Lege zuerst einen aktiven Administrator mit Passwort an.');
   if (!(await verifyManagerPassword(currentPassword))) throw new Error('Das bisherige Verwalter-Passwort ist nicht korrekt.');
   if (nextPassword.length < 6) throw new Error('Das neue Passwort muss mindestens 6 Zeichen haben.');
+  if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+  // Persist local proof only after the server confirms the password change.
   const proof = await createPasswordProof(nextPassword);
+  const { data, error } = await supabase.rpc('set_admin_gate_password', {
+    p_current: currentPassword, p_next: nextPassword,
+  });
+  if (error) throw new Error('Verwaltungspasswort in der Cloud nicht geändert: ' + error.message);
+  if (data !== true) throw new Error('Die Cloud hat die Passwortänderung nicht bestätigt.');
   saveJSON<ManagerCredential>(STORAGE_KEYS.managerCredential, { ...proof, changedAt: Date.now() });
 }

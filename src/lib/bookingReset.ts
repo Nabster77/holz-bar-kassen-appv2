@@ -20,9 +20,25 @@ export function rememberBookingReset(reset: BookingReset): void {
 // Stale offline clients are rejected by generation guards. The catalog and staff are untouched.
 export async function resetCloudBookings(adminPassword: string): Promise<BookingReset> {
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
-  if (!adminPassword.trim()) throw new Error('Für einen Cloud-Reset ist das Verwaltungs-Passwort erforderlich.');
-  const { data, error } = await supabase.rpc('reset_pos_bookings_v3', { p_admin_password: adminPassword });
-  if (error) throw error;
+  if (!adminPassword.trim()) throw new Error('Administrator- oder Verwaltungspasswort erforderlich.');
+  // Server verifies the authoritative management secret or an active administrator.
+  const { data, error } = await supabase.functions.invoke('woodmo-v3-reset', {
+    body: { password: adminPassword },
+  });
+  if (error) {
+    let message = 'Cloud-Reset nicht erreichbar: ' + error.message;
+    const response = (error as { context?: unknown }).context;
+    if (response instanceof Response) {
+      try {
+        const body: unknown = await response.json();
+        if (body && typeof body === 'object' && !Array.isArray(body) &&
+            typeof (body as { error?: unknown }).error === 'string') {
+          message = (body as { error: string }).error;
+        }
+      } catch { /* Keep transport error; never assume a reset succeeded. */ }
+    }
+    throw new Error(message);
+  }
   if (!data || typeof data !== 'object') throw new Error('Unerwartete Antwort der Cloud.');
   const resetAt = Number((data as { reset_at?: unknown }).reset_at);
   const generation = Number((data as { generation?: unknown }).generation);
