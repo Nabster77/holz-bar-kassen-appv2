@@ -150,4 +150,17 @@ check('26 Backup-Import darf Stornos nicht in die Buchungswarteschlange schreibe
   const entries=src.slice(src.indexOf('const bookingEntries:'),src.indexOf('await enqueueEntries(bookingEntries)'));
   assert(!entries.includes('pos_stornos'));
 });
+check('27 Alter Bon im Backup fehlt in der Cloud: keine scheinbar erfolgreiche Teilwiederherstellung',()=>{
+  assert.throws(()=>assess(
+    {transactions:[fnSale],cashSessions:[fnOpened]},empty,
+    4000,1000,{transactions:[],cashSessions:[fnOpened]}),
+    /gesicherte Buchung/);
+});
+check('28 Vorhandene Cloud-Kassensitzung darf nicht mit Backup-Snapshot ueberschrieben werden',()=>{
+  assert.throws(()=>assess(
+    {transactions:[],cashSessions:[fnOpened]},
+    {transactions:[],cashSessions:[fnOpened]},4000,1000,
+    {transactions:[],cashSessions:[fnOpened]}),
+    /würde durch die Sicherung überschrieben/);
+});
 console.log('WOODMO V3 ISOLIERTE SZENARIEN:',passed,'von',passed,'BESTANDEN; KEINE ECHTEN CLOUD-SCHREIBZUGRIFFE.');
