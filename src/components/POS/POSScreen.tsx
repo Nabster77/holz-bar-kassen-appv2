@@ -278,16 +278,9 @@ export function POSScreen({
         ) : (
           <>
             <span className="text-xs text-slate-500 dark:text-slate-300">Kasse noch nicht eröffnet</span>
-            {currentStaff ? (
-              <button type="button" onClick={() => setShowOpenDialog(true)}
-                className="ml-auto min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800">
-                Kasse eröffnen
-              </button>
-            ) : (
-              <span className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                Oben Anmelden wählen
-              </span>
-            )}
+            <span className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              Über Home → Kasse oder oben neben Menü eröffnen
+            </span>
           </>
         )}
       </div>
