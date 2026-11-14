@@ -18,9 +18,10 @@ export function rememberBookingReset(reset: BookingReset): void {
 
 // Opens a fresh V3 booking generation without deleting historic sales, sessions, or stornos.
 // Stale offline clients are rejected by generation guards. The catalog and staff are untouched.
-export async function resetCloudBookings(): Promise<BookingReset> {
+export async function resetCloudBookings(adminPassword: string): Promise<BookingReset> {
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
-  const { data, error } = await supabase.rpc('reset_pos_bookings_v3');
+  if (!adminPassword.trim()) throw new Error('Für einen Cloud-Reset ist das Verwaltungs-Passwort erforderlich.');
+  const { data, error } = await supabase.rpc('reset_pos_bookings_v3', { p_admin_password: adminPassword });
   if (error) throw error;
   if (!data || typeof data !== 'object') throw new Error('Unerwartete Antwort der Cloud.');
   const resetAt = Number((data as { reset_at?: unknown }).reset_at);
