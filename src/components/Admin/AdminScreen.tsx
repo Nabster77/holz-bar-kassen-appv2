@@ -15,6 +15,7 @@ import { publicAssetUrl } from '@/lib/publicAssetUrl';
 import { Plus, Edit3, Trash2, X, Save, Tag, Package, Upload, Loader2, RotateCcw, Wine, Recycle, MonitorDot, Settings, FileDown, Printer, MapPin, TrendingUp, Euro, Receipt as ReceiptIcon, Clock, Check, Info, Calendar, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, Download, FileUp, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { SHOT_CATEGORY_ID } from '@/lib/shotCatalog';
 import type { StornoRecord } from '@/lib/stornoRules';
+import type { ResetSafetyResult } from '@/lib/resetSafetyChecklist';
 import { parsePfandAmount } from '@/lib/pfandValidation';
 import { ShotManager } from '@/components/Admin/ShotManager';
 import { StaffManager } from '@/components/Admin/StaffManager';
@@ -43,6 +44,7 @@ interface Props {
   onReorderProduct?: (id: string, direction: 'up' | 'down') => void;
   onMoveProductTo?: (sourceId: string, targetId: string) => void;
   onResetAllData?: (adminPassword: string) => Promise<void>;
+  onCheckResetSafety?: (progress: (result: ResetSafetyResult) => void) => Promise<ResetSafetyResult>;
   onDeviceSetup?: () => void;
   testMode?: boolean;
   onToggleMode?: () => void;
@@ -101,7 +103,7 @@ const ADMIN_SECTION_TITLES = {
 } as const;
 
 
-export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, resetQuarantineCount = 0, onExportResetQuarantine, menuOpen, onCloseMenu, onOpenJournal, onAdminSectionChange, onShotDraftDirtyChange, ...props }: Props) {
+export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, onCheckResetSafety, resetQuarantineCount = 0, onExportResetQuarantine, menuOpen, onCloseMenu, onOpenJournal, onAdminSectionChange, onShotDraftDirtyChange, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
 
   const [shotDraftDirty, setShotDraftDirty] = useState(false);
@@ -259,6 +261,7 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
       {showReset && (
         <ResetConfirmDialog
           onExport={onExportBackup}
+          onCheck={onCheckResetSafety}
           transactionCount={props.transactions.length}
           stornoCount={props.stornos.length}
           sessionCount={props.cashSessions.length}
@@ -1490,8 +1493,9 @@ function DayInfoDialog({ location, date, categories, transactions, session, onCl
 
 // ---- Reset / Backup / Import dialogs ----
 
-function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, stornoCount, sessionCount, openSessionCount, testMode }: {
+function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactionCount, stornoCount, sessionCount, openSessionCount, testMode }: {
   onExport?: () => void | Promise<void>;
+  onCheck?: (progress: (result: ResetSafetyResult) => void) => Promise<ResetSafetyResult>;
   onCancel: () => void;
   onConfirm: (adminPassword: string) => Promise<void>;
   transactionCount: number;
@@ -1501,96 +1505,179 @@ function ResetConfirmDialog({ onExport, onCancel, onConfirm, transactionCount, s
   testMode: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [report, setReport] = useState<ResetSafetyResult | null>(null);
+  const [savedBackup, setSavedBackup] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const checkRef = useRef(onCheck);
+  checkRef.current = onCheck;
 
-  async function confirm() {
-    if (!confirmed || busy || (!testMode && (!adminPassword.trim() || openSessionCount > 0))) return;
+  async function runCheck() {
+    if (!checkRef.current || testMode) return;
+    setChecking(true);
+    setReport(null);
+    setConfirmed(false);
+    setError(null);
+    try {
+      await checkRef.current(setReport);
+    } catch (cause) {
+      setError('Prüfung fehlgeschlagen: ' + (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // First opening performs a real scan; clicking "Erneut prüfen" reruns it.
+  useEffect(() => {
+    if (!testMode) void checkRef.current?.(setReport).catch(cause =>
+      setError('Prüfung fehlgeschlagen: ' + (cause instanceof Error ? cause.message : String(cause))));
+  }, [testMode]);
+
+  const completed = !!report && report.completed === report.total;
+  const canBackup = testMode || (completed && report.backupAllowed);
+  const canReset = testMode || (completed && report.resetAllowed && savedBackup);
+
+  async function saveBackup() {
+    if (!canBackup || !onExport || busy) return;
     setBusy(true);
     setError(null);
     try {
+      await onExport();
+      // A download request is NOT proof that the file was saved. The user
+      // must expressly tick the confirmation once the file is on disk.
+      setSavedBackup(false);
+    } catch (cause) {
+      setSavedBackup(false);
+      setError('Backup konnte nicht erstellt werden: ' +
+        (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirm() {
+    if (!confirmed || busy || checking || !canReset || (!testMode && !adminPassword.trim())) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Recheck just before the irreversible RPC. The server performs its
+      // own final lock-and-open-till test even if another device changed state.
+      if (!testMode && onCheck) {
+        const latest = await onCheck(setReport);
+        if (!latest.resetAllowed) {
+          setSavedBackup(false);
+          throw new Error('Mindestens eine Sicherheitsprüfung ist nicht mehr grün. Bitte Hinweise abarbeiten.');
+        }
+      }
       await onConfirm(adminPassword);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
-      // A network failure after the Cloud RPC can leave the reset already
-      // committed. Never claim that NOTHING happened without server proof.
-      setError(`Die Rücksetzung konnte nicht vollständig bestätigt werden. Bitte den Cloud-Kassenzustand prüfen, bevor Sie erneut klicken. Technische Meldung: ${detail}`);
+      setError('Zurücksetzen nicht bestätigt. Cloud-Kassenstand vor einem neuen Versuch prüfen. ' + detail);
+    } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 sm:p-4" onClick={busy ? undefined : onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 sm:p-4"
+      onClick={busy || checking ? undefined : onCancel}>
       <div role="dialog" aria-modal="true" aria-labelledby="booking-reset-heading"
         className="max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800"
-        onClick={(event) => event.stopPropagation()}>
+        onClick={event => event.stopPropagation()}>
         <div className="mb-3 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
             <RotateCcw className="h-6 w-6" />
           </div>
           <div>
             <h3 id="booking-reset-heading" className="text-lg font-bold text-gray-900 dark:text-gray-100">Tagesbuchungen zurücksetzen?</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{testMode ? 'Nur lokale Testbuchungen' : 'Neue leere Buchungsgeneration in der V3-Cloud'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {testMode ? 'Nur lokale Testdaten' : 'Historie bleibt archiviert – aktive Kasse wird leer'}
+            </p>
           </div>
         </div>
+        <p className="mb-3 text-sm text-gray-700 dark:text-gray-200">
+          <strong>Achtung:</strong> {transactionCount} Buchungen, {stornoCount} Stornos und
+          {' '}{sessionCount} Kassensitzungen verschwinden aus der aktiven Ansicht.
+          Artikel, Mitarbeiter und Belegzähler bleiben erhalten.
+        </p>
 
-        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-          <p className="font-bold">Aktuell betroffen:</p>
-          <p>{transactionCount} Originalbuchung(en), {stornoCount} bestätigte Stornobeleg(e), {sessionCount} Kassensitzung(en), davon {openSessionCount} noch geöffnet.</p>
-          {openSessionCount > 0 && (
-            <p className="mt-2 font-semibold">{testMode ? 'Testkassen werden nur lokal verworfen.' : 'Reset im Aktivmodus gesperrt: Bitte zuerst alle offenen Kassen endgültig abschließen.'} Es sind noch {openSessionCount} Kasse(n) geöffnet.</p>
-          )}
-          {stornoCount > 0 && (
-            <p className="mt-2">Bestätigte Stornos sind keine „offenen“ Vorgänge. Ihre Originalbons und Stornonachweise bleiben in der Cloud unveränderlich archiviert.</p>
-          )}
-        </div>
-
-        <div className="mb-3 space-y-2 text-sm text-gray-700 dark:text-gray-200">
-          <p>{testMode
-            ? 'Es werden ausschließlich die lokalen Testbuchungen und Test-Kassensitzungen entfernt.'
-            : 'Der Reset öffnet eine neue leere Buchungsgeneration. Buchungen, Stornos, Kassenöffnungen und Anfangsbestände der bisherigen Generation erscheinen danach nicht mehr in der aktiven Kasse. Die historischen Nachweise werden dabei NICHT physisch aus Supabase gelöscht.'}</p>
-          <p><strong>Erhalten bleiben:</strong> Artikel, Warengruppen, Preise, Bilder, Mitarbeiter, Passwörter, Sicherheitsfragen und die bisherigen Belegzähler. Andere Geräte übernehmen die neue Generation bei der nächsten Synchronisierung.</p>
-          {!testMode && <p className="font-semibold text-rose-700 dark:text-rose-300">Wiederherstellung nach Reset: Eine ältere WOODMO-Sicherungsdatei kann auf eine vollständig leere aktive Kasse zurückgespielt werden, sofern die Cloud-Validierung keine Konflikte meldet. Historische Originale bleiben archiviert. Erst die Sicherungsdatei prüfen, danach zurücksetzen.</p>}
-          <p>Bitte die vorhandene Backup-Datei unverändert aufbewahren und ihren Inhalt kontrollieren.</p>
-        </div>
-        {error && (
-          <p role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">{error}</p>
-        )}
-        <label className="mb-4 flex cursor-pointer items-start gap-2 rounded-xl border border-slate-300 p-3 text-sm text-gray-800 dark:border-slate-600 dark:text-gray-100">
-          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-red-600" checked={confirmed}
-            onChange={(event) => setConfirmed(event.target.checked)} disabled={busy} />
-          <span>Ich habe verstanden, dass ein Reset nur nach Abschluss aller Kassen zulässig ist; historische Buchungen und Stornos bleiben archiviert.</span>
-        </label>
-        <div className="flex flex-col gap-2">
-          {onExport && (
-            <button type="button" disabled={busy} onClick={async () => {
-              setBusy(true);
-              try { await onExport(); }
-              catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-              finally { setBusy(false); }
-            }}
-              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-50">
-              <Download className="h-4 w-4" /> Zuerst als Backup sichern
+        {!testMode && (
+          <section className="mb-3 rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" aria-label="Reset-Sicherheitsprüfung">
+            <div className="flex items-center justify-between gap-2">
+              <strong>Sicherheitsprüfung</strong>
+              <span className="font-bold tabular-nums">{report?.percent ?? 0} % geprüft</span>
+            </div>
+            <progress aria-label="Fortschritt der Sicherheitsprüfung"
+              className="mt-2 h-2 w-full accent-amber-500" max={100} value={report?.percent ?? 0} />
+            <ul className="mt-2 space-y-2">
+              {report?.checks.map(item => (
+                <li key={item.id} className="flex items-start gap-2">
+                  {item.ok
+                    ? <CheckCircle2 aria-label="Bestanden" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    : <X aria-label="Blockiert" className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />}
+                  <span><span className="font-semibold">{item.label}</span>
+                    <span className="block text-xs">{item.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {checking && <p role="status" className="mt-2">Prüfung läuft …</p>}
+            {completed && (
+              <p role="status" className="mt-3 font-semibold">
+                {report.resetAllowed
+                  ? 'Alle technischen Reset-Prüfungen bestanden.'
+                  : 'Prüfung abgeschlossen: Rote Punkte zuerst beheben, dann erneut prüfen.'}
+              </p>
+            )}
+            <button type="button" onClick={() => void runCheck()} disabled={busy || checking}
+              className="mt-3 rounded-lg border border-amber-600 px-3 py-1.5 font-semibold disabled:opacity-50">
+              {checking ? 'Wird geprüft …' : 'Erneut prüfen'}
             </button>
-          )}
-          {!testMode && (
+            <p className="mt-2 text-xs">100 % bedeutet: Alle Prüfungen wurden ausgeführt, nicht automatisch bestanden.
+              Offline-Daten anderer Geräte sind von hier nicht vollständig kontrollierbar.</p>
+          </section>
+        )}
+
+        {testMode && openSessionCount > 0 && (
+          <p className="mb-3 text-xs text-amber-700">Im Testmodus werden nur lokale Testdaten entfernt.</p>
+        )}
+        {error && <p role="alert" className="mb-3 rounded-xl border border-red-300 p-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
+        <div className="flex flex-col gap-2">
+          {onExport && <button type="button" disabled={busy || checking || !canBackup}
+            onClick={() => void saveBackup()}
+            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+            <Download className="h-4 w-4" /> Backup als JSON sichern
+          </button>}
+          {!testMode && <>
+            <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+              <input type="checkbox" checked={savedBackup} onChange={e => setSavedBackup(e.target.checked)}
+                disabled={!canBackup || busy || checking} />
+              Backup-Datei heruntergeladen und sicher aufbewahrt.
+            </label>
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
-              Verwaltungs-Passwort für Cloud-Reset (erneut bestätigen)
+              Verwaltungs-Passwort
               <input type="password" autoComplete="off" value={adminPassword}
-                onChange={(event) => setAdminPassword(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void confirm(); } }}
-                disabled={busy || openSessionCount > 0}
+                onChange={e => setAdminPassword(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void confirm(); } }}
+                disabled={!canReset || busy || checking}
                 className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
                 placeholder="Passwort eingeben" />
             </label>
-          )}
-          <button type="button" onClick={confirm} disabled={busy || !confirmed || (!testMode && (!adminPassword.trim() || openSessionCount > 0))}
-            className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 active:scale-95 disabled:opacity-50">
-            <RotateCcw className="h-4 w-4" /> {busy ? 'Reset wird geprüft …' : 'Ja, aktuelle Buchungen zurücksetzen'}
+          </>}
+          <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}
+              disabled={!canReset || busy || checking} />
+            Ich bestätige das unwiderrufliche Zurücksetzen der aktiven Kasse.
+          </label>
+          <button type="button" onClick={() => void confirm()}
+            disabled={busy || checking || !canReset || !confirmed || (!testMode && !adminPassword.trim())}
+            className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+            <RotateCcw className="h-4 w-4" /> {busy ? 'Wird erneut geprüft …' : 'Jetzt zurücksetzen'}
           </button>
-          <button type="button" onClick={onCancel} disabled={busy}
-            className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+          <button type="button" onClick={onCancel} disabled={busy || checking}
+            className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">
             Abbrechen
           </button>
         </div>
