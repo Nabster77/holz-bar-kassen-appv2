@@ -1620,7 +1620,7 @@ function ImportDialog({ onImport, onCancel }: { onImport: (file: File) => void; 
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
-          Wählen oder ziehen Sie eine zuvor gesicherte Backup-Datei (JSON) hierher. Vor dem Import wird die Cloud geprüft: Neuere Cloud-Daten bleiben geschützt.
+          Wählen oder ziehen Sie eine Backup-Datei (JSON) hierher. Der Import ersetzt keine vorhandenen Buchungen: Er ergänzt Daten nach einer Sicherheitsprüfung. Sind bereits Kassendaten vorhanden, wird eine ausdrückliche Bestätigung verlangt. Verschiedene offene Kassen am selben Standort und Buchungen aus einer vor dem Reset archivierten Generation können nicht automatisch zusammengeführt werden.
         </p>
         <div
           onClick={() => inputRef.current?.click()}
