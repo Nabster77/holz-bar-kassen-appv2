@@ -39,6 +39,15 @@ Eine Kasse bleibt so lange geöffnet, **bis ihr endgültiger Tagesabschluss erfo
 - Import weiter mit denselben Regeln: Excel-Vorschau, Konflikte, IDs, Pfand DE/AT, Steuer DE/AT, Preisart, SCHUSS, vorhandene Bilder nur auf ausdrückliche Freigabe ersetzen, ZIP-Unterordner, Umlaute, Bildgrenzen (500 KB, 800 px, ZIP max. 100 MB). Kein automatisches Löschen von Artikeln, die in Excel fehlen. Administrator-Löschungen werden separat über Katalog-Tombstones synchronisiert.
 - Bildexport kann bei CORS/Netzwerkproblemen fehlschlagen; kein stilles Weglassen vorhandener Bildreferenzen.
 
+## Ergänzung 14.11.2026 – kassensitzungsfeste Öffnungs- und Abschlusszeiten
+- Die zusammengefasste Kopfzeile zeigt **heutiges** Datum in Europe/Berlin, lang auf breiten Monitoren, kurz auf schmaleren Displays. Dies darf keine Buchungs- oder Abschlusszeit verändern.
+- Die Kassensitzung speichert ihre absolute Eröffnung dauerhaft als `openedAt`, auch bei Unterbrechungen oder mehrtägiger Öffnung.
+- Der endgültige Abschluss speichert `closedAt`, `dailyCloseFinalizedAt` und die Abschlusszeit im unveränderlichen Snapshot. Keine Verwechslung mit Erstellungsdatum der PDF.
+- `closedSessionReport` setzt die realen `cashSessionPeriod.openedAt/closedAt` für die archivierte Tagesabschluss-PDF. Ohne verifizierbaren Zeitstempel wird keine scheinbar gültige finale PDF generiert.
+- `buildJournalHTML` weist die beiden Zeitpunkte explizit mit vollständigem Datum, Uhrzeit und Sekunden aus.
+- Der `DailyCloseDialog` zeigt Öffnungszeit und einen ehrlichen Status („Noch nicht gebucht“) beim Entwurf. Auch der manuelle PDF-Druck zeigt diese Werte. Erst der endgültige Cloud-Abschluss setzt die reale Abschlusszeit.
+- `scripts/check-report-calculations.cjs` prüft die originale Berichtszeit und den Mehrtagesfall einschließlich Mitternacht. Weitere Prüfung in der Windows-/Tablet-Praxis bleibt nötig.
+
 ## Verifikationspflicht vor Freigabe
 - GitHub CI Typecheck/Tests/Build/Lint auf aktuellem Commit.
 - Auf Notebook online Sync nach Reset; 0/0/0 aktive Generation und 1 neues, separat eröffnetes FH-/Bregenz-Kassenpaar.
