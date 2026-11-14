@@ -470,6 +470,14 @@ export default function App() {
                 <span className="hidden min-[740px]:inline text-xs">Menü</span>
               </button>
             )}
+            {tab === 'pos' && !store.activeSession && (
+              <button type="button" aria-label="Kasse eröffnen" title="Kasse eröffnen"
+                onClick={() => setCashierLoginRequest((request) => request + 1)}
+                className="flex h-10 shrink-0 items-center gap-1 rounded-xl border border-emerald-500/70 bg-emerald-950/30 px-2.5 text-xs font-bold text-emerald-200 hover:bg-emerald-900/50">
+                <LogIn className="h-4 w-4" />
+                <span className="hidden min-[800px]:inline">Kasse eröffnen</span>
+              </button>
+            )}
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {tab === 'pos' && (
                 <button type="button"
