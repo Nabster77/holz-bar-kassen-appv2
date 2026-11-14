@@ -45,11 +45,12 @@ import { buildFinalizedCashSession } from '@/lib/finalizedCashSession';
 import { persistFinalizedCashSession } from '@/lib/finalizedCashCloud';
 import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEYS } from '@/lib/storage';
 import { formatDateISO } from '@/lib/format';
+import { headerDateLong, headerDateShort } from '@/lib/headerDate';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle,
-  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, LayoutGrid, X, Home, LogOut, LogIn, LockKeyhole,
+  FlaskConical, CheckCircle2, AlertTriangle, RefreshCw, Cloud, LayoutGrid, X, Home, LogOut, LogIn, LockKeyhole, MapPin, UserRound,
 } from 'lucide-react';
 
 type Tab = 'pos' | 'admin' | 'journal';
@@ -67,6 +68,17 @@ export default function App() {
   // A cash register remains mounted when navigating Home/Admin/Journal: the
   // active unsaved cart must not disappear merely because its view is hidden.
   const [homeVisible, setHomeVisible] = useState(true);
+  const [headerNow, setHeaderNow] = useState(() => Date.now());
+  // Visible shop date updates even when a cash session stays open for weeks.
+  useEffect(() => {
+    const update = () => setHeaderNow(Date.now());
+    const interval = window.setInterval(update, 60_000);
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', update);
+    };
+  }, []);
   const [posVisited, setPosVisited] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [adminShotDirty, setAdminShotDirty] = useState(false);
@@ -443,7 +455,7 @@ export default function App() {
       {/* Compact toolbar: Home never closes the register or clears its cart. */}
       {!homeVisible && (
         <>
-          <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-2 border-b border-emerald-900/50 bg-[#0d1628] px-2 py-1.5 text-white shadow-sm sm:px-3">
+          <header className="relative z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-emerald-900/50 bg-[#0d1628] px-2 py-1.5 text-white shadow-sm sm:px-3">
             <WoodmoBrand status={!online || catalog.syncStatus === 'error' ? 'error' : !testMode && catalog.syncStatus !== 'saved' ? 'pending' : 'ok'} />
             <h1 className={`min-w-0 shrink-0 truncate text-base font-bold sm:text-lg ${!online ? 'woodmo-heading-offline text-red-400' : 'text-white'}`}
               aria-live="polite">
@@ -478,7 +490,26 @@ export default function App() {
                 <span className="hidden min-[800px]:inline">Kasse eröffnen</span>
               </button>
             )}
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {tab === 'pos' && (
+              <div
+                className="order-3 flex w-full min-w-0 items-center gap-1.5 border-t border-slate-700/50 pt-1 text-xs text-slate-200 min-[700px]:order-none min-[700px]:w-auto min-[700px]:flex-1 min-[700px]:overflow-hidden min-[700px]:border-0 min-[700px]:pt-0"
+                role="status"
+                aria-label={`Standort ${store.activeSession?.location ?? store.selectedLocation}, aktuelles Datum ${headerDateLong(headerNow)}`}
+                title={`${store.activeSession?.location ?? store.selectedLocation} · ${headerDateLong(headerNow)}`}
+              >
+                <MapPin className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                <span className="hidden min-[1500px]:inline min-w-0 truncate whitespace-nowrap font-semibold">
+                  {store.activeSession?.location ?? store.selectedLocation} · {headerDateLong(headerNow)}
+                </span>
+                <span className="hidden min-[1100px]:inline min-[1500px]:hidden min-w-0 truncate whitespace-nowrap font-semibold">
+                  {store.activeSession?.location ?? store.selectedLocation} · {headerDateShort(headerNow)}
+                </span>
+                <span className="min-w-0 truncate whitespace-nowrap font-semibold min-[1100px]:hidden">
+                  {headerDateShort(headerNow)}
+                </span>
+              </div>
+            )}
+            <div className="order-2 ml-auto flex shrink-0 items-center gap-1.5">
               {tab === 'pos' && (
                 <button type="button"
                   aria-label={currentStaff ? 'Mitarbeiter abmelden' : 'Mitarbeiter anmelden'}
@@ -490,6 +521,18 @@ export default function App() {
                   {currentStaff ? <LogOut className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
                   <span className="hidden min-[970px]:inline">{currentStaff ? 'Abmelden' : 'Anmelden'}</span>
                 </button>
+              )}
+              {tab === 'pos' && currentStaff && (
+                <span
+                  className="flex h-10 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/70 bg-sky-950/55 px-2.5 text-xs font-bold text-sky-100 shadow-sm"
+                  role="status"
+                  aria-label={`Angemeldeter Mitarbeiter: ${currentStaff.name}`}
+                  title={`Angemeldeter Mitarbeiter: ${currentStaff.name}`}
+                >
+                  <UserRound className="h-4 w-4 shrink-0 text-sky-300" aria-hidden="true" />
+                  <span className="hidden min-[1200px]:inline text-sky-300">Mitarbeiter:</span>
+                  <span className="min-w-0 truncate">{currentStaff.name}</span>
+                </span>
               )}
               <button type="button" aria-label="Cloud synchronisieren" title="Cloud synchronisieren"
                 onClick={() => setSyncOpen(true)}
