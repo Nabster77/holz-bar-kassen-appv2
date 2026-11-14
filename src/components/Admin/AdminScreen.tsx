@@ -48,6 +48,8 @@ interface Props {
   onToggleMode?: () => void;
   onExportBackup?: () => void | Promise<void>;
   onImportBackup?: (file: File) => void;
+  resetQuarantineCount?: number;
+  onExportResetQuarantine?: () => Promise<void>;
   pfandSettings: PfandSettings;
   onUpdatePfandSettings: (settings: PfandSettings) => Promise<'cloud' | 'local'>;
   getProductPfand: (product: Product, loc: Location) => number;
@@ -99,7 +101,7 @@ const ADMIN_SECTION_TITLES = {
 } as const;
 
 
-export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, menuOpen, onCloseMenu, onOpenJournal, onAdminSectionChange, onShotDraftDirtyChange, ...props }: Props) {
+export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, onToggleMode, onExportBackup, onImportBackup, resetQuarantineCount = 0, onExportResetQuarantine, menuOpen, onCloseMenu, onOpenJournal, onAdminSectionChange, onShotDraftDirtyChange, ...props }: Props) {
   const [tab, setTab] = useState<'sessions' | 'categories' | 'products' | 'shots' | 'staff'>('sessions');
 
   const [shotDraftDirty, setShotDraftDirty] = useState(false);
@@ -222,6 +224,13 @@ export function AdminScreen({ onResetAllData, onDeviceSetup, testMode = false, o
                 {onExportBackup && (
                   <button type="button" className={adminMenuItem} onClick={() => openAdminAction(() => { void onExportBackup(); })}>
                     <Download className="h-5 w-5 shrink-0 text-cyan-300" /> Backup exportieren
+                  </button>
+                )}
+                {onExportResetQuarantine && resetQuarantineCount > 0 && (
+                  <button type="button" className={adminMenuItem}
+                    onClick={() => openAdminAction(() => { void onExportResetQuarantine(); })}>
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-300" />
+                    Offline-Quarantäne sichern ({resetQuarantineCount})
                   </button>
                 )}
                 {onResetAllData && (
