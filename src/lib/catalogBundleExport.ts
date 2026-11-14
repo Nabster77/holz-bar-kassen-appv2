@@ -5,7 +5,8 @@ import { exportWorkbook, normalizeName } from './catalogTransfer';
 type ImageFile = { fileName: string; bytes: Uint8Array };
 
 function safeName(name: string): string {
-  const result = name.trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 130);
+  const result = Array.from(name.trim(), char => char.charCodeAt(0) < 32 ? '_' : char).join('')
+    .replace(/[\\/:*?"<>|]/g, '_').replace(/[. ]+$/g, '').slice(0, 130);
   if (!result) throw new Error('Artikel ohne gültigen Namen kann nicht als Bilddatei exportiert werden.');
   return result;
 }
