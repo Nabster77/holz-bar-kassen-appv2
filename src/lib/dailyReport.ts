@@ -6,7 +6,7 @@ import { buildJournalFileName } from '@/lib/journalPdfFile';
 import { calculateYearlyPfandOverview, type CashAuditRecord, type JournalReportData, type StaffTimeRecord } from '@/lib/journalPdf';
 import { endOfDay, startOfDay } from '@/lib/format';
 import { formatDailyCloseReceiptNumber } from '@/lib/dailyCloseReceipt';
-import { verifiedCloseTimestamp } from '@/lib/cashSessionTimes';
+import { formatCashSessionTimestamp, verifiedCloseTimestamp } from '@/lib/cashSessionTimes';
 
 export function dayTransactions(transactions: Transaction[], date: string, loc: Location): Transaction[] {
   return transactions.filter((t) => {
@@ -129,7 +129,7 @@ export function closedSessionReport(session: CashSession, transactions: Transact
   return {
     ...buildDailyReport(session.location, session.date, originalTransactions, categories, [session], exportedByName ?? snapshot?.finalizedByName,
       transactions, sessionStornos),
-    headerLabel: `${session.location} · ${new Date(session.openedAt).toLocaleDateString('de-DE')} · ${new Date(finalizedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
+    headerLabel: `${session.location} · Abschluss ${formatCashSessionTimestamp(finalizedAt)}`,
     documentTitle: 'Tagesabschluss',
     documentStatus: 'Endgültig abgeschlossen',
     cashSessionPeriod: { openedAt: session.openedAt, closedAt: finalizedAt },
