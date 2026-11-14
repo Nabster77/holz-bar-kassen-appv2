@@ -144,10 +144,12 @@ BEGIN
        v_original->>'paymentMethod'<>v_storno->>'paymentMethod' OR
        v_storno->'originalSnapshot'<>v_original OR
        round((v_original->>'total')::numeric*100)<>round((v_storno->>'grossAmount')::numeric*100) OR
-       round((v_storno->>'cashEffect')::numeric*100) <>
-         CASE WHEN v_storno->>'paymentMethod'='cash' THEN -round((v_original->>'total')::numeric*100) ELSE 0 END OR
-       round((v_storno->>'cardEffect')::numeric*100) <>
-         CASE WHEN v_storno->>'paymentMethod'='card' THEN -round((v_original->>'total')::numeric*100) ELSE 0 END THEN
+       (v_storno->>'paymentMethod'='cash' AND
+          (round((v_storno->>'cashEffect')::numeric*100) <> -round((v_original->>'total')::numeric*100) OR
+           round((v_storno->>'cardEffect')::numeric*100) <> 0)) OR
+       (v_storno->>'paymentMethod'='card' AND
+          (round((v_storno->>'cardEffect')::numeric*100) <> -round((v_original->>'total')::numeric*100) OR
+           round((v_storno->>'cashEffect')::numeric*100) <> 0)) THEN
       RAISE EXCEPTION 'Stornobeleg % passt nicht zum Originalbon.',v_storno->>'id';
     END IF;
     IF EXISTS(SELECT 1 FROM public.pos_stornos WHERE id=(v_storno->>'id')::uuid) THEN
