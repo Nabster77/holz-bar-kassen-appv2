@@ -49,7 +49,7 @@ assert.deepEqual(reportAfterLaterSale.transactions, report.transactions);
 assert.deepEqual(reportAfterLaterSale.yearlyPfandOverview, report.yearlyPfandOverview,
   'Later deposits must not change a finalized historical PDF');
 assert.equal(reportAfterLaterSale.dailyCloseCash.remainingBalance, report.dailyCloseCash.remainingBalance);
-assert.ok(buildJournalHTML(report).includes('data-pdf-page-header="Tagesabschluss · Friedrichshafen · 9.11.2026 · 12:01 Uhr"'));
+assert.ok(buildJournalHTML(report).includes('data-pdf-page-header="Tagesabschluss · Friedrichshafen · Abschluss ' + formatCashSessionTimestamp(session.closedAt) + '"'));
 assert.ok(buildJournalHTML(report).includes('data-pdf-page-location="Friedrichshafen"'));
 assert.equal(report.cashSessionPeriod.openedAt, session.openedAt);
 assert.equal(report.cashSessionPeriod.closedAt, session.closedAt);
