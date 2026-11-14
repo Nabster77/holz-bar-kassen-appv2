@@ -169,7 +169,9 @@ export interface CashSession {
   closedAt?: number;
   closingBalance?: number;
   expectedBalance?: number;
-  difference?: number;
+    difference?: number;
+  /** Required explanation for a counted cash discrepancy at final close. */
+  cashCountDifferenceReason?: string;
   /** Amount physically removed while completing the daily close. */
   closingWithdrawalAmount?: number;
   openedById?: string;

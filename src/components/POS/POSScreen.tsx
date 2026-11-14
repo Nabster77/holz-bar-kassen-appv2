@@ -27,11 +27,11 @@ interface Props {
   categories: Category[];
   products: Product[];
   activeSession: CashSession | null;
-  onCheckout: (tx: Transaction) => void;
+  onCheckout: (tx: Transaction) => Promise<'queued-online' | 'queued-offline' | 'test'>;
   onOpenCash: (location: Location, openingBalance: number) => Promise<boolean>;
   onCorrectOpening: (newAmount: number, reason: string) => void;
   onCashEntry: (type: 'deposit' | 'withdrawal', amount: number, reason: string, isPfandRetoure?: boolean) => void;
-  onCloseCash: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
+  onCloseCash: (closingBalance: number, closingWithdrawalAmount: number, countDifferenceReason?: string) => Promise<{ ok: boolean; error?: string }>;
   transactions: Transaction[];
   stornos: StornoRecord[];
   stornoStatus: StornoCloudState;
@@ -80,6 +80,7 @@ export function POSScreen({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutCommitted, setCheckoutCommitted] = useState(false);
   // Der Dialog wird beim ersten Laden passend zum Sitzungsstatus geöffnet.
   // Danach darf nur ein tatsächlich bestätigter Tagesabschluss ihn erneut öffnen.
   // Kurzzeitige Leerstände während Import oder Cloud-Abgleich sind kein Abschluss.
@@ -248,9 +249,18 @@ export function POSScreen({
 
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
-  function handleCheckoutComplete(tx: Transaction) {
-    onCheckout(tx);
-    setCart([]);
+    async function handleCheckoutComplete(tx: Transaction): Promise<'queued-online' | 'queued-offline' | 'test'> {
+    const result = await onCheckout(tx);
+    setCheckoutCommitted(true);
+    return result;
+  }
+
+  function closeCheckout() {
+    setShowCheckout(false);
+    if (checkoutCommitted) {
+      setCart([]);
+      setCheckoutCommitted(false);
+    }
   }
 
   return (
@@ -476,8 +486,8 @@ export function POSScreen({
         />
       )}
       {showCloseDialog && activeSession && (
-        <DailyCloseDialog session={activeSession} transactions={transactions} stornos={stornos} currentStaff={currentStaff} onClose={async (bal, closingWithdrawalAmount) => {
-          const result = await onCloseCash(bal, closingWithdrawalAmount);
+        <DailyCloseDialog session={activeSession} transactions={transactions} stornos={stornos} currentStaff={currentStaff} onClose={async (bal, closingWithdrawalAmount, reason) => {
+          const result = await onCloseCash(bal, closingWithdrawalAmount, reason);
           if (result.ok) {
             openDialogAfterConfirmedClose.current = true;
             setShowCloseDialog(false);
@@ -499,7 +509,7 @@ export function POSScreen({
         />
       )}
       {showCheckout && cart.length > 0 && (
-        <CheckoutModal items={cart} location={currentLocation} onComplete={handleCheckoutComplete} onCancel={() => setShowCheckout(false)} />
+        <CheckoutModal items={cart} location={currentLocation} onComplete={handleCheckoutComplete} onCancel={closeCheckout} />
       )}
     </div>
   );

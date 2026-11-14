@@ -4,7 +4,8 @@ import { sessionTransactions } from '@/lib/sessionTransactions';
 export interface CloseDetails {
   closedAt: number;
   receipt: { number: number; location: Location; year: number };
-  snapshot: NonNullable<CashSession['dailyCloseSnapshot']>;
+    snapshot: NonNullable<CashSession['dailyCloseSnapshot']>;
+  countDifferenceReason?: string;
 }
 
 /** The exact same finalized object is persisted to Cloud and local state. */
@@ -43,12 +44,17 @@ export function buildFinalizedCashSession(
   const deposits=entries.filter(e=>e.type==='deposit').reduce((sum,e)=>sum+e.amount,0);
   const withdrawals=entries.filter(e=>e.type==='withdrawal').reduce((sum,e)=>sum+e.amount,0);
   const expected=Math.round((session.openingBalance+cashTotal+stornoCashTotal+deposits-withdrawals)*100)/100;
-  if (!Number.isFinite(expected) || expected < 0) throw new Error('Negativer oder ungültiger Kassenbestand.');
+    if (!Number.isFinite(expected) || expected < 0) throw new Error('Negativer oder ungültiger Kassenbestand.');
+  const difference = Math.round((actualBalance - expected) * 100) / 100;
+  if (Math.abs(difference) > 0.01 && !close.countDifferenceReason?.trim()) {
+    throw new Error('Kassenabweichung ohne Begruendung. Tagesabschluss gesperrt.');
+  }
   const intervals=(session.staffLoginIntervals??[]).map(i=>i.logoutAt?i:{...i,logoutAt:close.closedAt});
   return {
     ...session,closed:true,closedAt:close.closedAt,entries,
     closingBalance:expected,expectedBalance:expected,
-    difference:Math.round((actualBalance-expected)*100)/100,
+        difference,
+    cashCountDifferenceReason: Math.abs(difference) > 0.01 ? close.countDifferenceReason?.trim() : undefined,
     closingWithdrawalAmount:withdrawalAmount,
     closedById:staff.id,closedByName:staff.name,
     dailyCloseReceiptNumber:close.receipt.number,

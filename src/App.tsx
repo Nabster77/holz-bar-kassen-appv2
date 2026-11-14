@@ -38,7 +38,7 @@ import { SyncToast } from '@/components/SyncToast';
 import { SyncDialog } from '@/components/SyncDialog';
 import { CatalogConflictDialog } from '@/components/CatalogConflictDialog';
 import { knownBookingReset, rememberBookingReset, resetCloudBookings } from '@/lib/bookingReset';
-import { discardEntriesBeforeGeneration, readPendingOutbox, removeQueuedUnusedCashSession, readResetQuarantineSummary, exportResetQuarantine, RESET_QUARANTINE_EVENT } from '@/lib/outbox';
+import { enqueueEntries, discardEntriesBeforeGeneration, readPendingOutbox, removeQueuedUnusedCashSession, readResetQuarantineSummary, exportResetQuarantine, RESET_QUARANTINE_EVENT } from '@/lib/outbox';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import { saveJournalPdf } from '@/lib/journalPdfFile';
 import { closedSessionReport } from '@/lib/dailyReport';
@@ -298,9 +298,10 @@ export default function App() {
   async function checkResetSafety(onProgress: (result: ResetSafetyResult) => void) {
     // No booking is reset by this read/consistency check. syncNow may upload
     // this device's already queued transactions, exactly as normal sync does.
-    let cloud: Awaited<ReturnType<typeof fetchCloudData>> | null = null;
+        let cloud: Awaited<ReturnType<typeof fetchCloudData>> | null = null;
     let stornos: Awaited<ReturnType<typeof loadCloudStornos>> | null = null;
-    return runResetSafetyChecks([
+    let ledgerSignature: string | undefined;
+    const completedReport = await runResetSafetyChecks([
       {
         id: 'connection', label: 'Cloud-Verbindung',
         run: async () => {
@@ -339,11 +340,18 @@ export default function App() {
           [cloud, stornos] = await Promise.all([
             fetchCloudData(null, generation), loadCloudStornos(generation),
           ]);
-          requireValidBackupIntegrity({
+                    requireValidBackupIntegrity({
             transactions: cloud.transactions,
             cashSessions: cloud.cashSessions,
             stornos,
           }, 'Sicherheitsprüfung');
+          const ledgerBytes = new TextEncoder().encode(JSON.stringify({
+            generation, transactions: [...cloud.transactions].sort((a,b) => a.id.localeCompare(b.id)),
+            cashSessions: [...cloud.cashSessions].sort((a,b) => a.id.localeCompare(b.id)),
+            stornos: [...stornos].sort((a,b) => a.id.localeCompare(b.id)),
+          }));
+          ledgerSignature = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', ledgerBytes)))
+            .map(byte => byte.toString(16).padStart(2, '0')).join('');
           if (stornos.length !== stornoLedger.records.length) {
             throw new Error('Storno-Anzahl weicht ab. Bitte Journal synchronisieren.');
           }
@@ -370,7 +378,8 @@ export default function App() {
           return 'Keine offene oder unvollständig abgeschlossene Kasse';
         },
       },
-    ], onProgress);
+        ], onProgress);
+    return { ...completedReport, backupSignature: completedReport.resetAllowed ? ledgerSignature : undefined };
   }
 
   async function resetBookings(adminPassword: string) {
@@ -785,10 +794,21 @@ export default function App() {
             products={store.products}
             activeSession={store.activeSession}
             transactions={store.transactions}
-            onCheckout={(tx) => {
-              if (!currentStaff || !store.activeSession) return;
-              store.addTransaction({ ...tx, cashSessionId: store.activeSession.id, employeeId: currentStaff.id, employeeName: currentStaff.name });
-              if (store.activeSession) store.recordStaffActivity(store.activeSession.id, { id: `activity-${Date.now().toString(36)}`, type: 'sale', staffId: currentStaff.id, staffName: currentStaff.name, timestamp: tx.timestamp, amount: tx.total });
+            onCheckout={async (tx) => {
+              const session = store.activeSession;
+              const employee = currentStaff;
+              if (!employee || !session || session.closed) throw new Error('Keine aktive Kasse oder Mitarbeiteranmeldung. Buchung nicht ausgefuehrt.');
+              const booked = { ...tx, cashSessionId: session.id, employeeId: employee.id, employeeName: employee.name };
+              // Only a durable IndexedDB receipt may be reported as booked.
+              if (!testMode) {
+                await enqueueEntries([{ table: 'pos_transactions', row: {
+                  id: booked.id, booking_generation: knownBookingReset().generation,
+                  location: booked.location, timestamp: booked.timestamp, data: booked,
+                } }]);
+              }
+              store.addTransaction(booked);
+              store.recordStaffActivity(session.id, { id: `activity-${Date.now().toString(36)}`, type: 'sale', staffId: employee.id, staffName: employee.name, timestamp: tx.timestamp, amount: tx.total });
+              return testMode ? 'test' : online && navigator.onLine ? 'queued-online' : 'queued-offline';
             }}
             onOpenCash={async (location, balance) => {
               if (!currentStaff) return false;
@@ -828,7 +848,7 @@ export default function App() {
             onCashEntry={(type, amt, reason, isPfandRetoure = false) => {
               if (store.activeSession && currentStaff) store.addCashEntry(store.activeSession.id, type, amt, reason, isPfandRetoure, currentStaff, stornoLedger.records);
             }}
-            onCloseCash={async (bal, closingWithdrawalAmount) => {
+            onCloseCash={async (bal, closingWithdrawalAmount, countDifferenceReason) => {
               const session = store.activeSession;
               if (!session || !currentStaff) return { ok: false, error: 'Es ist keine aktive Kasse oder kein angemeldeter Mitarbeiter vorhanden.' };
               if (testMode) {
@@ -865,7 +885,7 @@ export default function App() {
                 };
                 const closed = buildFinalizedCashSession(
                   session, store.transactions, bal, currentStaff, closingWithdrawalAmount,
-                  { closedAt: finalizedAt, receipt, snapshot },
+                  { closedAt: finalizedAt, receipt, snapshot, countDifferenceReason },
                 );
                 // An issued receipt number alone does NOT mean the close is saved.
                 // First store and read back the closed snapshot in Supabase;

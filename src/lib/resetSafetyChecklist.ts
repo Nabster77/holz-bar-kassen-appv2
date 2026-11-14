@@ -10,7 +10,9 @@ export type ResetSafetyResult = {
   total: number;
   percent: number;
   backupAllowed: boolean;
-  resetAllowed: boolean;
+    resetAllowed: boolean;
+  /** SHA-256 of generation, booked transactions, cash sessions, stornos. */
+  backupSignature?: string;
 };
 
 export type ResetSafetyTask = {

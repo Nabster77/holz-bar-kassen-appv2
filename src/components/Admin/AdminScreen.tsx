@@ -1509,17 +1509,35 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
   const [report, setReport] = useState<ResetSafetyResult | null>(null);
   const [savedBackup, setSavedBackup] = useState(false);
   const [backupRequested, setBackupRequested] = useState(false);
+  const [exportedSignature, setExportedSignature] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const checkRef = useRef(onCheck);
   checkRef.current = onCheck;
 
+  async function runCheck() {
+    if (!checkRef.current || testMode) return;
+    setChecking(true);
+    setReport(null);
+    setSavedBackup(false);
+    setBackupRequested(false);
+    setConfirmed(false);
+    setError(null);
+    try {
+      await checkRef.current(setReport);
+    } catch (cause) {
+      setError('Prüfung fehlgeschlagen: ' + (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      setChecking(false);
+    }
+  }
 
-  // The scan runs when the dialog opens; the protected reset repeats all checks immediately before committing.
+  // First opening performs a real scan; clicking "Erneut prüfen" reruns it.
   useEffect(() => {
     if (!testMode) {
-      void checkRef.current?.(setReport)
+            void checkRef.current?.(setReport)
+        .then(result => { if (result) setReport(result); })
         .catch(cause => setError('Prüfung fehlgeschlagen: ' +
           (cause instanceof Error ? cause.message : String(cause))))
         .finally(() => setChecking(false));
@@ -1528,21 +1546,34 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
 
   const completed = !!report && report.completed === report.total;
   const canBackup = testMode || (completed && report.backupAllowed);
-  const canReset = testMode || (completed && report.resetAllowed && savedBackup);
+  const canReset = testMode || (completed && report.resetAllowed && savedBackup && backupRequested &&
+    !!exportedSignature && report.backupSignature === exportedSignature);
 
   async function saveBackup() {
     if (!canBackup || !onExport || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await onExport();
+            await onExport();
+      // Compare the ledger after export to the safety-checked source. Any
+      // intervening cloud change invalidates this backup proof.
+      if (!testMode) {
+        if (!onCheck || !report?.backupSignature) throw new Error('Cloud-Sicherheitsnachweis fehlt. Dialog erneut oeffnen.');
+        const verified = await onCheck(setReport);
+        setReport(verified);
+        if (!verified.resetAllowed || verified.backupSignature !== report.backupSignature) {
+          throw new Error('Seit der Vorpruefung hat sich die Cloud geaendert. Neues Backup erstellen.');
+        }
+        setExportedSignature(verified.backupSignature ?? null);
+      }
       // A download request is NOT proof that the file was saved. The user
       // must expressly tick the confirmation once the file is on disk.
       setBackupRequested(true);
       setSavedBackup(false);
     } catch (cause) {
-      setBackupRequested(false);
+            setBackupRequested(false);
       setSavedBackup(false);
+      setExportedSignature(null);
       setError('Backup konnte nicht erstellt werden: ' +
         (cause instanceof Error ? cause.message : String(cause)));
     } finally {
@@ -1559,14 +1590,20 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
       // own final lock-and-open-till test even if another device changed state.
       if (!testMode && onCheck) {
         const latest = await onCheck(setReport);
-        if (!latest.resetAllowed) {
+                if (!latest.resetAllowed || !latest.backupSignature || latest.backupSignature !== exportedSignature) {
           setSavedBackup(false);
-          throw new Error('Mindestens eine Sicherheitsprüfung ist nicht mehr grün. Bitte Hinweise abarbeiten.');
+          setBackupRequested(false);
+          setExportedSignature(null);
+          throw new Error('Datenstand seit dem Backup geaendert oder Pruefung fehlgeschlagen. Bitte neues Backup erstellen.');
         }
       }
       await onConfirm(adminPassword);
     } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
+            const asCloudError = cause as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown } | null;
+      const detail = cause instanceof Error ? cause.message
+        : (typeof asCloudError?.message === 'string' && asCloudError.message) ||
+          (typeof asCloudError?.details === 'string' && asCloudError.details) ||
+          (typeof cause === 'string' ? cause : 'Cloud-Fehler ohne Klartextmeldung. Fehlercode: ' + String(asCloudError?.code ?? 'unbekannt'));
       setError('Zurücksetzen nicht bestätigt. Cloud-Kassenstand vor einem neuen Versuch prüfen. ' + detail);
     } finally {
       setBusy(false);
@@ -1621,9 +1658,13 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
               <p role="status" className="mt-3 font-semibold">
                 {report.resetAllowed
                   ? 'Alle technischen Reset-Prüfungen bestanden.'
-                  : 'Prüfung abgeschlossen: Rote Punkte außerhalb dieses Fensters beheben. Danach Dialog neu öffnen.'}
+                  : 'Prüfung abgeschlossen: Rote Punkte zuerst beheben, dann erneut prüfen.'}
               </p>
             )}
+            <button type="button" onClick={() => void runCheck()} disabled={busy || checking}
+              className="mt-3 rounded-lg border border-amber-600 px-3 py-1.5 font-semibold disabled:opacity-50">
+              {checking ? 'Wird geprüft …' : 'Erneut prüfen'}
+            </button>
             <p className="mt-2 text-xs">100 % bedeutet: Alle Prüfungen wurden ausgeführt, nicht automatisch bestanden.
               Offline-Daten anderer Geräte sind von hier nicht vollständig kontrollierbar.</p>
           </section>
@@ -1643,8 +1684,9 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
             <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
               <input type="checkbox" checked={savedBackup} onChange={e => setSavedBackup(e.target.checked)}
                 disabled={!canBackup || !backupRequested || busy || checking} />
-              Backup-Datei heruntergeladen und sicher aufbewahrt.
+                            Backup-Datei heruntergeladen und sicher aufbewahrt.
             </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Dieser Haken wird erst nach einem erfolgreichen Export mit bestaetigtem Cloud-Datenstand freigegeben. Aendern sich Buchungen, muss neu gesichert werden.</p>
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
               Verwaltungs-Passwort
               <input type="password" autoComplete="off" value={adminPassword}

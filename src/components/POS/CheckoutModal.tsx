@@ -7,7 +7,7 @@ import { X, Check, Receipt, Banknote, CreditCard, Coins, Recycle, AlertTriangle 
 interface Props {
   items: CartItem[];
   location: Location;
-  onComplete: (tx: Transaction) => void;
+  onComplete: (tx: Transaction) => Promise<'queued-online' | 'queued-offline' | 'test'>;
   onCancel: () => void;
 }
 
@@ -16,6 +16,9 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
   const [givenAmount, setGivenAmount] = useState('');
   const [paid, setPaid] = useState(false);
   const [confirmBooking, setConfirmBooking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedWhere, setSavedWhere] = useState<'queued-online' | 'queued-offline' | 'test' | null>(null);
 
   const grossByRate = new Map<number, number>();
   let totalPfand = 0, pfandRetoure = 0;
@@ -39,7 +42,11 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
   const isPfandOnly = items.every((item) => item.isPfandRetoure);
   const cashPayment = !isPfandOnly && paymentMethod === 'cash';
 
-  function handleConfirm() {
+    async function handleConfirm() {
+    if (saving || paid) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
     const taxByRate: Record<number, number> = {};
     const txItems = items.map((item) => {
       if (item.isPfandRetoure) {
@@ -92,8 +99,16 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
       change: cashPayment ? change : undefined,
       location,
     };
-    onComplete(tx);
+        const result = await onComplete(tx);
+    setSavedWhere(result);
+    setConfirmBooking(false);
     setPaid(true);
+    } catch (cause) {
+      setConfirmBooking(false);
+      setSaveError(cause instanceof Error ? cause.message : 'Die Buchung konnte nicht gesichert werden.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (paid) {
@@ -103,7 +118,14 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
             <Check className="h-12 w-12 text-green-600 dark:text-green-400" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Bezahlung erfolgreich</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{savedWhere === 'test' ? 'Testbuchung erfasst' : 'Buchung lokal gesichert'}</h2>
+          <p role="status" className="text-center text-sm text-gray-600 dark:text-gray-300">
+            {savedWhere === 'test'
+              ? 'Testmodus: Dieser Beleg wird nicht dauerhaft gespeichert.'
+              : savedWhere === 'queued-offline'
+                ? 'Offline-Warteschlange gespeichert. Die Cloud-Uebertragung erfolgt nach Wiederverbindung.'
+                : 'Auf diesem Geraet gespeichert. Die Cloud-Synchronisierung folgt; erst deren Bestaetigung bedeutet Cloud-Speicherung.'}
+          </p>
           <p className={`text-3xl font-bold ${total < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>{formatCurrency(total)}</p>
           {paymentMethod === 'cash' && change > 0 && (
             <p className="text-sm text-gray-500 dark:text-gray-400">Rückgeld: <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(change)}</span></p>
@@ -213,9 +235,10 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
           )}
 
           </>)}
+                    {saveError && <p role="alert" className="rounded-xl border border-red-500 p-2 text-sm text-red-600 dark:text-red-300">Buchung nicht gespeichert: {saveError}</p>}
           <button
             onClick={() => setConfirmBooking(true)}
-            disabled={!isPfandOnly && (!paymentMethod || (paymentMethod === 'cash' && given < total))}
+            disabled={saving || (!isPfandOnly && (!paymentMethod || (paymentMethod === 'cash' && given < total)))}
             className={`sticky bottom-0 w-full rounded-xl py-4 text-lg font-bold text-white shadow-lg transition active:scale-95 disabled:opacity-50 ${isPfandOnly ? 'bg-teal-600 hover:bg-teal-700' : paymentMethod === 'card' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
           >
             {isPfandOnly ? 'Pfandausgabe' : 'Bezahlen bestätigen'}
@@ -224,7 +247,7 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
       </div>
 
       {confirmBooking && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/60 p-4 sm:items-center" onClick={() => setConfirmBooking(false)}>
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/60 p-4 sm:items-center" onClick={() => { if (!saving) setConfirmBooking(false); }}>
           <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex flex-col items-center gap-3 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-900/30">
@@ -270,7 +293,8 @@ export function CheckoutModal({ items, location, onComplete, onCancel }: Props) 
                 Nein, abbrechen
               </button>
               <button
-                onClick={() => { setConfirmBooking(false); handleConfirm(); }}
+                                onClick={() => void handleConfirm()}
+                disabled={saving}
                 className="flex-1 rounded-xl bg-green-600 px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-green-700 active:scale-95"
               >
                 <Check className="mr-1.5 inline h-4 w-4" /> Ja, buchen

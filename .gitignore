@@ -17,3 +17,8 @@ vitest.config.cjs.timestamp-*.mjs
 vitest.config.ts.timestamp-*.mjs
 vitest.config.mts.timestamp-*.mjs
 vitest.config.cts.timestamp-*.mjs
+
+# Lokale WOODMO-Heimtest-Auswertungen – niemals committen
+WOODMO_KORREKTUR_FEHLER.txt
+WOODMO_V3_LOKAL_PRUEFRESULTAT.txt
+WOODMO_TESTBERICHTE/

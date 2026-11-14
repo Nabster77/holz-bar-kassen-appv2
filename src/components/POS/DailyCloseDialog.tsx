@@ -99,13 +99,13 @@ interface Props {
   transactions: Transaction[];
   stornos?: StornoRecord[];
   currentStaff: StaffUser | null;
-  onClose: (closingBalance: number, closingWithdrawalAmount: number) => Promise<{ ok: boolean; error?: string }>;
+  onClose: (closingBalance: number, closingWithdrawalAmount: number, countDifferenceReason?: string) => Promise<{ ok: boolean; error?: string }>;
   onCancel: () => void;
 }
 
 export function DailyCloseDialog({ session, transactions, stornos = [], currentStaff, onClose, onCancel }: Props) {
   const [counts, setCounts] = useState<Record<number, string>>({});
-  const [manualBalance, setManualBalance] = useState('');
+  const [differenceReason, setDifferenceReason] = useState('');
   const [useCounting, setUseCounting] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
@@ -208,10 +208,8 @@ export function DailyCloseDialog({ session, transactions, stornos = [], currentS
   const coinTotal = countValue(COINS);
   const noteTotal = countValue(NOTES);
 
-  const hasInput = useCounting ? Object.values(counts).some((v) => v && v !== '0') : !!manualBalance;
-  const closingBalance = useCounting
-    ? (hasInput ? countedTotal : expected)
-    : (manualBalance ? parseFloat(manualBalance.replace(',', '.')) : expected);
+    const hasInput = useCounting ? Object.values(counts).some((v) => v.trim() !== '') : false;
+  const closingBalance = useCounting && hasInput ? countedTotal : expected;
   const diff = closingBalance - expected;
   const closingWithdrawalAmount = Math.max(0, parseFloat(closingWithdrawalInput.replace(',', '.')) || 0);
   // The next opening balance is always determined from the booked cash
@@ -219,22 +217,32 @@ export function DailyCloseDialog({ session, transactions, stornos = [], currentS
   // accidentally overwrite the mathematical closing balance.
   const remainingCash = Math.round((expected - closingWithdrawalAmount) * 100) / 100;
 
-  function beginClose() {
+    function beginClose() {
     if (isNaN(closingBalance) || closingBalance < 0 || !confirmed) return;
+    if (Math.abs(diff) > 0.01 && !differenceReason.trim()) {
+      setCloseError('Bei einer Kassenabweichung ist eine Begruendung Pflicht.');
+      return;
+    }
     setCloseError(null);
     setWithdrawalStep(true);
   }
 
-  async function handleClose() {
+    async function handleClose() {
     if (isNaN(closingBalance) || closingBalance < 0 || !confirmed) return;
-    if (closingWithdrawalAmount > expected) {
+    if (Math.abs(diff) > 0.01 && !differenceReason.trim()) {
+      setCloseError('Bei einer Kassenabweichung ist eine Begruendung Pflicht.');
+      return;
+    }
+    if (closingWithdrawalAmount > closingBalance || closingWithdrawalAmount > expected) {
       setCloseError('Die Entnahme darf nicht höher sein als der rechnerische Kassenbestand.');
       return;
     }
     setCloseError(null);
     setIsFinalizing(true);
     try {
-      const result = await onClose(Math.round(remainingCash * 100) / 100, Math.round(closingWithdrawalAmount * 100) / 100);
+      const actualRemaining = Math.round((closingBalance - closingWithdrawalAmount) * 100) / 100;
+      const result = await onClose(actualRemaining, Math.round(closingWithdrawalAmount * 100) / 100,
+        Math.abs(diff) > 0.01 ? differenceReason.trim() : undefined);
       if (!result.ok) setCloseError(result.error ?? 'Beleg konnte nicht erstellt werden. Bitte erneut versuchen.');
     } catch {
       setCloseError('Beleg konnte nicht erstellt werden. Bitte Internetverbindung prüfen und erneut versuchen.');
@@ -389,14 +397,10 @@ export function DailyCloseDialog({ session, transactions, stornos = [], currentS
                   <span className="text-base font-bold text-gray-900 dark:text-gray-100"><MoneyAmount value={countedTotal} /></span>
                 </div>
               </div>
-            ) : (
-              <input
-                value={manualBalance}
-                onChange={(e) => setManualBalance(e.target.value)}
-                placeholder={formatCurrency(expected)}
-                inputMode="decimal"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-              />
+                        ) : (
+              <output className="block w-full rounded-xl border border-gray-200 bg-gray-100 px-3 py-2.5 text-sm font-bold text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" aria-label="Rechnerischer Kassenbestand - nicht editierbar">
+                {formatCurrency(expected)}
+              </output>
             )}
           </div>
 
@@ -405,6 +409,15 @@ export function DailyCloseDialog({ session, transactions, stornos = [], currentS
               <AlertTriangle className="h-4 w-4" />
               {diff > 0 ? `Mehrbestand: ${formatCurrency(diff)}` : `Fehlbestand: ${formatCurrency(Math.abs(diff))}`}
             </div>
+          )}
+
+          {useCounting && hasInput && Math.abs(diff) > 0.01 && (
+            <label className="mb-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Begruendung der Kassenabweichung (Pflichtfeld)
+              <textarea value={differenceReason} onChange={event => setDifferenceReason(event.target.value)}
+                rows={2} required placeholder="Warum weicht der gezaehlte Bestand ab?"
+                className="mt-1.5 w-full rounded-xl border border-amber-400 bg-white px-3 py-2.5 text-sm text-gray-900 dark:bg-gray-900 dark:text-gray-100" />
+            </label>
           )}
 
           {hasInput && !isNaN(closingBalance) && Math.abs(diff) <= 0.01 && (
