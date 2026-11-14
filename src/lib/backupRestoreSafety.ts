@@ -50,8 +50,18 @@ export function assessBackupRestore(
       'Bitte zuerst eine gesonderte, geprüfte Archiv-Wiederherstellung einrichten.',
     );
   }
-  const cloudId = new Set(cloud.cashSessions.map(s => s.id));
-  const backupId = new Set(backup.cashSessions.map(s => s.id));
+  const cloudId = new Set([
+    ...cloud.cashSessions.map(s => s.id),
+    ...candidates.cashSessions.map(s => s.id),
+  ]);
+  for (const [index, session] of candidates.cashSessions.entries()) {
+    if (!isOpen(session)) continue;
+    if (candidates.cashSessions.slice(index + 1).some(other =>
+      other.id !== session.id && other.location === session.location && isOpen(other))) {
+      throw new Error('Backup-Import gesperrt: Die Sicherung enthält zwei verschiedene offene Kassen für ' +
+        session.location + '.');
+    }
+  }
   for (const session of candidates.cashSessions) {
     if (!isOpen(session)) continue;
     const conflicting = cloud.cashSessions.find(existing =>
@@ -63,8 +73,7 @@ export function assessBackupRestore(
     );
   }
   for (const transaction of candidates.transactions) {
-    if (transaction.cashSessionId && !cloudId.has(transaction.cashSessionId) &&
-        !backupId.has(transaction.cashSessionId)) {
+    if (transaction.cashSessionId && !cloudId.has(transaction.cashSessionId)) {
       throw new Error('Backup-Import gesperrt: Buchung ' + transaction.id +
         ' verweist auf eine fehlende Kassensitzung. Kein unvollständiges Journal übernehmen.');
     }
