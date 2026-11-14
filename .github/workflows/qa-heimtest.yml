@@ -1,0 +1,36 @@
+name: WOODMO V3 Heimtest – Typecheck, Tests, Build, Lint (kein Deployment)
+
+on:
+  push:
+    branches: [woodmo-v3-heimtest]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: woodmo-v3-heimtest-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefung:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Quellen laden
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: npm clean install
+        run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Gesamttests
+        run: npm test
+      - name: Build ohne Veröffentlichung
+        run: npm run build
+      - name: ESLint
+        run: npm run lint
