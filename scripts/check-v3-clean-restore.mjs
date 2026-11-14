@@ -164,6 +164,41 @@ try {
   await test('15 SQL-Trigger bewahrt Stornos unveränderlich',async()=>{
     await assert.rejects(db.exec('DELETE FROM public.pos_stornos'),/nicht geändert oder gelöscht/);
   });
+  await test('16 Dritter Reset schafft saubere Generation trotz Historie',async()=>{
+    await db.exec(`INSERT INTO public.pos_booking_resets(reset_at) VALUES(${now+60000})`);
+    assert.deepEqual(await counts(5),{t:0,s:0,z:0});
+    assert.deepEqual(await counts(4),{t:6,s:2,z:1});
+  });
+  await test('17 Fehler nach begonnenem DB-Import rollt ALLE Zeilen zurück',async()=>{
+    const broken=prepareCleanGenerationRestore(backup,makeId);
+    broken.stornos[0].employeeId='keine-uuid';
+    await assert.rejects(restore(broken,5),/invalid input syntax for type uuid|ungültige Eingabesyntax/i);
+    assert.deepEqual(await counts(5),{t:0,s:0,z:0});
+  });
+  await test('18 Auch abgeschlossene Kasse mit unveränderlichem Storno-Snapshot',async()=>{
+    const closedFN={...baseSession,closed:true,closedAt:now+20000,
+      dailyCloseFinalizedAt:now+20000,closingBalance:547,
+      dailyCloseSnapshot:{transactions:originalSales,stornos:[originalStorno],finalizedAt:now+20000}};
+    const closedBackup={...backup,cashSessions:[closedFN,session('orig-br','Bregenz',true)]};
+    const mapped=prepareCleanGenerationRestore(closedBackup,makeId);
+    await restore(mapped,5);
+    assert.deepEqual(await counts(5),{t:6,s:2,z:1});
+    const q=await db.query(`SELECT data FROM public.pos_cash_sessions WHERE booking_generation=5 AND location='Friedrichshafen'`);
+    const after=q.rows[0].data;
+    assert.equal(after.closed,true);
+    assert.equal(after.dailyCloseSnapshot.stornos.length,1);
+    assert.equal(after.dailyCloseSnapshot.transactions.length,6);
+    assert.equal(after.dailyCloseSnapshot.stornos[0].originalTransactionId,
+      after.dailyCloseSnapshot.transactions[0].id);
+  });
+  await test('19 Wiederholter Reset und historische Datei beliebigen Exportdatums',async()=>{
+    await db.exec(`INSERT INTO public.pos_booking_resets(reset_at) VALUES(${now+80000})`);
+    const mapped=prepareCleanGenerationRestore(backup,makeId);
+    await db.query('SELECT public.restore_pos_clean_backup_v3($1::jsonb,$2::bigint,$3::timestamptz)',
+      [JSON.stringify(mapped),6,'2010-01-01T00:00:00Z']);
+    assert.deepEqual(await counts(6),{t:6,s:2,z:1});
+    assert.deepEqual(await counts(5),{t:6,s:2,z:1});
+  });
   console.log('WOODMO V3: ',passed,'/ ',passed,'ISOLIERTE CLEANUP-/RESTORE-TESTS BESTANDEN; KEINE ECHTE CLOUD VERÄNDERT.');
 } finally {
   await db.close();
