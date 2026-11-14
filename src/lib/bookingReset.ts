@@ -16,10 +16,11 @@ export function rememberBookingReset(reset: BookingReset): void {
   saveJSON(STORAGE_KEYS.bookingResetAt, reset);
 }
 
-// Clears sales and cash sessions in the cloud. Throws unless the cloud confirms the reset.
+// Opens a fresh V3 booking generation without deleting historic sales, sessions, or stornos.
+// Stale offline clients are rejected by generation guards. The catalog and staff are untouched.
 export async function resetCloudBookings(): Promise<BookingReset> {
   if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
-  const { data, error } = await supabase.rpc('reset_pos_bookings_v2');
+  const { data, error } = await supabase.rpc('reset_pos_bookings_v3');
   if (error) throw error;
   if (!data || typeof data !== 'object') throw new Error('Unerwartete Antwort der Cloud.');
   const resetAt = Number((data as { reset_at?: unknown }).reset_at);
