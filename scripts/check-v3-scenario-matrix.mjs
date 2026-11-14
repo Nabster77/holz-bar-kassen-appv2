@@ -1,7 +1,23 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { activeSessionForLocation } from '../src/lib/cashSessionSelection.ts';
-import { openingBalanceForLocation } from '../src/lib/cashBalanceCarry.ts';
+import ts from 'typescript';
+
+// The existing cash-carry module has Vite aliases, so load the SAME source
+// through the tested Node-only TypeScript harness; do not replace it with a mock.
+const cache = {};
+function loadLib(name) {
+  if (cache[name]) return cache[name];
+  if (name === 'journalPdfFile') return { buildJournalFileName: () => 'test.pdf' };
+  if (name === 'dailyCloseReceipt') return { formatDailyCloseReceiptNumber: () => 'test' };
+  const exports = cache[name] = {};
+  const code = ts.transpileModule(readFileSync(new URL('../src/lib/' + name + '.ts', import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  new Function('require', 'exports', code)(id => loadLib(id.replace('@/lib/', '')), exports);
+  return exports;
+}
+const { openingBalanceForLocation } = loadLib('cashBalanceCarry');
 import { assessBackupRestore, backupMergeConfirmation } from '../src/lib/backupRestoreSafety.ts';
 import { recoverableCashSessions, recoverableTransactions } from '../src/lib/recoveryGuards.ts';
 
