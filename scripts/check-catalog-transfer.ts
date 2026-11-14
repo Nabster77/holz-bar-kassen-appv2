@@ -5,7 +5,8 @@ import { seedCategories, seedProducts } from '../src/lib/seed';
 import { DEFAULT_SHOTS, normalizeCategories } from '../src/lib/shotCatalog';
 import { taxRateForProduct } from '../src/lib/tax';
 import type { LocalCatalog } from '../src/lib/catalogSync';
-import { zipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
+import { buildCatalogBundle } from '../src/lib/catalogBundleExport';
 const base: LocalCatalog = {categories:normalizeCategories(seedCategories),products:structuredClone(seedProducts),shotOptions:structuredClone(DEFAULT_SHOTS),pfandSettings:{Friedrichshafen:.25,Bregenz:.2}};
 const headers = ['Produktname App','VK 2026','Warengruppe','Preis durch Mitarbeiter oder fix','Steuer DE in %','Steuer AT in %'];
 const product = ['Neu',4,'Neue Gruppe','fix',19,20];
@@ -68,3 +69,35 @@ if (process.argv[2]) {
  console.log(`Originaldateien: ${actual.next.products.length-base.products.length} Artikel, ${actual.rows.filter(r=>r.kind==='SCHUSS'&&r.status==='geändert').length} SCHUSS-Änderungen, ${Object.keys(actual.images).length} Bildzuordnungen, ${actual.warnings.length} Bildhinweise.`);
 }
 console.log('Katalogtests erfolgreich: Vorschau, Duplikate, Preis-/Steuervalidierung, SCHUSS-Schutz, ZIP-Unterordner, Bildschutz und vollständiger Excel-Roundtrip.');
+
+// V3 reverse workflow: Excel + correctly named image ZIP in one export package.
+const imageProduct = {...base.products[0], imageUrl:'https://example.invalid/woodmo-roundtrip.png'};
+const roundtripCatalog: LocalCatalog = {...base, products:[imageProduct, {...base.products[1], imageUrl:''}]};
+const realFetch = globalThis.fetch;
+try {
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    assert.equal(String(url), imageProduct.imageUrl);
+    return new Response(validPng, {status:200, headers:{'content-type':'image/png'}});
+  }) as typeof fetch;
+  const packageResult = await buildCatalogBundle(roundtripCatalog);
+  assert.equal(packageResult.exportedImages, 1);
+  assert.equal(packageResult.missingImages.length, 1);
+  const files = unzipSync(packageResult.bytes);
+  assert(files['WOODMO_Katalog.xlsx']);
+  assert(files['WOODMO_Bilder.zip']);
+  const inside = readImageZip(files['WOODMO_Bilder.zip']);
+  assert.equal(inside.length,1);
+  assert(inside[0].path.includes(imageProduct.name + '.png'));
+  const excelBytes = files['WOODMO_Katalog.xlsx'];
+  const imported = buildImportPlan(
+    await readWorkbook(excelBytes.buffer.slice(excelBytes.byteOffset,excelBytes.byteOffset+excelBytes.byteLength) as ArrayBuffer),
+    roundtripCatalog,inside,true);
+  assert.deepEqual(imported.errors,[]);
+  assert(imported.images[imageProduct.id]);
+  // A missing remote image must not create a seemingly complete backup.
+  globalThis.fetch = (async () => new Response('Not Found',{status:404})) as typeof fetch;
+  await assert.rejects(buildCatalogBundle(roundtripCatalog),/nicht exportiert werden/);
+  console.log('V3-EXCEL+BILDER-RÜCKIMPORT: Paket, Dateiname, ZIP, Vorschau und Fehlerfall bestanden.');
+} finally {
+  globalThis.fetch = realFetch;
+}
