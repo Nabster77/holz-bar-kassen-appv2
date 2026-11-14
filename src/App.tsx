@@ -22,6 +22,8 @@ import { ManagerPasswordPanel } from '@/components/Admin/ManagerPasswordPanel';
 import { changeManagerPassword, loadManagerCredential, restoreManagerCredential, type ManagerCredential } from '@/lib/managerAuth';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchCatalogRows } from '@/lib/catalogCloud';
+import { fetchCloudData } from '@/lib/cloudPull';
+import { fetchLatestBookingReset } from '@/lib/bookingReset';
 import { pfandCloudMatches } from '@/lib/pfandValidation';
 import type { PfandSettings } from '@/types';
 import type { Location, StaffUser } from '@/types';
@@ -835,19 +837,47 @@ export default function App() {
               onToggleMode={() => setModeConfirm(testMode ? 'to-active' : 'to-test')}
               onExportBackup={async () => {
                 try {
-                const recoveryMetadata = await exportRecoveryMetadata();
-                // Include Cloud-confirmed append-only financial evidence in a
-                // full backup. Test-mode simulated records are never exported
-                // as genuine sales or storno documents.
-                const backedUpStornos = await loadCloudStornos();
+                // The download must reflect the confirmed V3 Cloud ledger,
+                // not just this browser's potentially stale local snapshot.
+                if (testMode) throw new Error('Eine vollständige Cloud-Sicherung ist nur im Aktivmodus möglich. Testbuchungen werden nicht als echte Buchungen gesichert.');
+                if (!online || !navigator.onLine) throw new Error('Für die vollständige Sicherung ist eine aktive Cloud-Verbindung erforderlich.');
+                const sync = await syncNow();
+                if (!sync.ok) throw new Error('Backup abgebrochen: Synchronisierung unvollständig. ' + (sync.error || ''));
+                const pending = await readPendingOutbox();
+                if (pending.length) throw new Error('Backup abgebrochen: Noch nicht bestätigte lokale Buchungen vorhanden.');
+                const reset = await fetchLatestBookingReset();
+                const generation = reset?.generation ?? 0;
+                const cloudBookings = await fetchCloudData(null, generation);
+                const backedUpStornos = await loadCloudStornos(generation);
                 const coreBackup = store.exportBackup();
-                // A backup represents this installation as a whole. Passwords are
-                // stored only as protected proofs; no readable password is exported.
+                const cloudTransactionIds = new Set(cloudBookings.transactions.map(transaction => transaction.id));
+                const cloudSessionIds = new Set(cloudBookings.cashSessions.map(session => session.id));
+                if (store.transactions.some(transaction => !cloudTransactionIds.has(transaction.id)) ||
+                    store.cashSessions.some(session => !cloudSessionIds.has(session.id))) {
+                  throw new Error('Backup abgebrochen: Nicht alle lokalen Kassenbuchungen wurden in der Cloud gefunden. Bitte synchronisieren und erneut sichern.');
+                }
+                const recoveryMetadata = await exportRecoveryMetadata();
+                // A second read detects changes while the backup is being
+                // assembled on this device. Fail closed rather than download
+                // a mixed-generation, internally inconsistent file.
+                const latestAgain = await fetchLatestBookingReset();
+                const verifiedBookings = await fetchCloudData(null, latestAgain?.generation ?? 0);
+                const verifiedStornos = await loadCloudStornos(latestAgain?.generation ?? 0);
+                const financialSignature = (data: unknown) => JSON.stringify(data);
+                if ((latestAgain?.generation ?? 0) !== generation ||
+                    financialSignature(verifiedBookings.transactions) !== financialSignature(cloudBookings.transactions) ||
+                    financialSignature(verifiedBookings.cashSessions) !== financialSignature(cloudBookings.cashSessions) ||
+                    financialSignature(verifiedStornos) !== financialSignature(backedUpStornos)) {
+                  throw new Error('Backup abgebrochen: Die Kassenbuchungen haben sich während der Sicherung geändert. Bitte erneut sichern.');
+                }
+                // Passwords are stored only as protected proofs, not plain text.
                 const payload: CompleteBackup = {
                   ...coreBackup,
                   version: 5,
                   data: {
                     ...coreBackup.data,
+                    transactions: cloudBookings.transactions,
+                    cashSessions: cloudBookings.cashSessions,
                     ...recoveryMetadata,
                     stornos: backedUpStornos,
                     staffUsers: staff.users,
