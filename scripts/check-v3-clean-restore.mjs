@@ -199,6 +199,17 @@ try {
     assert.deepEqual(await counts(6),{t:6,s:2,z:1});
     assert.deepEqual(await counts(5),{t:6,s:2,z:1});
   });
+  await test('20 Alte Bons ohne cashSessionId werden bei eindeutiger Kasse korrekt zugeordnet',()=>{
+    const legacy={transactions:[{...originalSales[0],cashSessionId:undefined}],
+      cashSessions:[baseSession],stornos:[]};
+    const mapped=prepareCleanGenerationRestore(legacy,makeId);
+    assert.equal(mapped.transactions[0].cashSessionId,mapped.cashSessions[0].id);
+  });
+  await test('21 Uneindeutige historische Kassenzuordnung wird nicht geraten',()=>{
+    const legacy={transactions:[{...originalSales[0],cashSessionId:undefined}],
+      cashSessions:[baseSession,{...baseSession,id:'another-open'}],stornos:[]};
+    assert.throws(()=>prepareCleanGenerationRestore(legacy,makeId),/Zwei verschiedene Kassen/);
+  });
   console.log('WOODMO V3: ',passed,'/ ',passed,'ISOLIERTE CLEANUP-/RESTORE-TESTS BESTANDEN; KEINE ECHTE CLOUD VERÄNDERT.');
 } finally {
   await db.close();
