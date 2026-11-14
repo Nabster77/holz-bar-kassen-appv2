@@ -5,7 +5,7 @@ import { buildImportPlan, exportWorkbook, exportTemplateWorkbook, readImageZip, 
 import { uploadArticleImage } from '@/lib/imageUpload';
 import { supabase } from '@/lib/supabaseClient';
 import { createCatalogIllustration } from '@/lib/catalogIllustration';
-import { buildCatalogBundle } from '@/lib/catalogBundleExport';
+import { buildCatalogBundle, buildCatalogImagesZip } from '@/lib/catalogBundleExport';
 
 const MAX_IMAGE_BYTES = 500 * 1024;
 const MAX_IMAGE_SIDE = 800;
@@ -194,6 +194,21 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       const a = document.createElement('a'); a.href = url; a.download = `Sicherung_WOODMO-Katalog-${new Date().toLocaleDateString('en-CA')}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {setMessage((e as Error).message);} finally {setBusy(false);}
   }
+  async function downloadImagesOnly() {
+    setBusy(true); setMessage('');
+    try {
+      const result = await buildCatalogImagesZip(catalog, import.meta.env.VITE_SUPABASE_URL, stage => setMessage(stage));
+      const url = URL.createObjectURL(new Blob([new Uint8Array(result.bytes)], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `WOODMO_Bilder_${new Date().toLocaleDateString('en-CA')}.zip`;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setMessage(`Bilder-ZIP gespeichert: ${result.exportedImages} echte Bilder. ${result.missingImages.length} nicht gesichert/ohne Bild. Details in FEHLENDE_BILDER.txt im ZIP. ${result.missingImages.slice(0, 5).join('; ')}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Bilder-ZIP konnte nicht erstellt werden.');
+    } finally { setBusy(false); }
+  }
   async function downloadBundle() {
     setBusy(true); setMessage('');
     try {
@@ -205,7 +220,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
       a.download = `WOODMO_Katalog_mit_Bildern_${new Date().toLocaleDateString('en-CA')}.zip`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setMessage(`Exportpaket erstellt: Excel und Bilder-ZIP mit ${result.exportedImages} Bildern. ${result.missingImages.length} Artikel haben kein Bild. Zum Bearbeiten zuerst die äußere ZIP entpacken.`);
+      setMessage(`Exportpaket erstellt: Excel und Bilder-ZIP mit ${result.exportedImages} Bildern. ${result.missingImages.length} Artikel ohne gesichertes Bild; Details in FEHLENDE_BILDER.txt im inneren ZIP. Zum Bearbeiten zuerst die äußere ZIP entpacken.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Katalogpaket konnte nicht erstellt werden.');
     } finally { setBusy(false); }
@@ -223,7 +238,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         </div>
       </div>}
       <div className="mt-3 overflow-auto space-y-4">
-        <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert. Der Paketexport liefert eine Excel-Datei und eine separate Bilder-ZIP zum späteren Rückimport.</p>
+        <p className="text-sm">Artikel, Warengruppen, Standortpreise, Preisarten, Pfand und Steuern für DE / AT. SCHUSS-Sorten werden ausschließlich in der zentralen SCHUSS-Verwaltung gespeichert. Einträge, die in Excel fehlen, bleiben erhalten. Buchungen und Kassensitzungen werden nicht verändert. Der Paketexport liefert eine Excel-Datei und eine separate Bilder-ZIP zum späteren Rückimport. Die eigentliche Backup-JSON enthält nur Bildverweise; sichere Bilder zusätzlich als ZIP. Nicht verfügbare Fotos werden in FEHLENDE_BILDER.txt dokumentiert.</p>
         <div className="rounded-xl border-2 border-red-600 p-3 text-sm text-red-700 dark:text-red-300" role="note">
           <strong>WICHTIG – Import richtig vorbereiten:</strong> Lade zuerst die „Excel-Mustervorlage“ herunter. Du darfst Artikel, Preise und Pfandbeträge ändern oder weitere Artikelzeilen ergänzen. Behalte die Pfandzeilen oberhalb der Tabelle und die acht Spaltenüberschriften bei.
           <p className="mt-2"><strong>Dateien:</strong> Produktbilder in einem ZIP-Archiv (.zip) speichern; Unterordner mit Bildern sind erlaubt. Bilder werden bei Bedarf automatisch auf max. 500 KB und 800 × 800 Pixel verkleinert; erlaubt sind PNG, JPG/JPEG, WebP und BMP.</p>
@@ -235,6 +250,7 @@ export function CatalogTransferDialog({ catalog, testMode, onPrepare, onCommit, 
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} onClick={download} className={button}>Vollständigen Katalog als Excel exportieren</button>
           <button disabled={busy} onClick={downloadBundle} className={button}>Excel + alle Produktbilder als ZIP-Paket exportieren</button>
+          <button disabled={busy} onClick={downloadImagesOnly} className={button}>Nur Artikelbilder als ZIP sichern (inklusive Fehlerliste)</button>
           <button disabled={busy} onClick={downloadTemplate} className={button}>Excel-Mustervorlage herunterladen</button>
           <button type="button" aria-expanded={helpOpen} onClick={() => setHelpOpen(v => !v)} className={button}>{helpOpen ? 'Excel- & Bilder-Anleitung schließen' : 'Wie muss ich meine Excel-Tabelle und Bilder-ZIP vorbereiten?'}</button>
         </div>
