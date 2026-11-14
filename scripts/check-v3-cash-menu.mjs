@@ -7,7 +7,6 @@ const open = readFileSync('src/components/POS/CashOpeningDialog.tsx','utf8');
 
 const header = app.slice(app.indexOf('<header className='), app.indexOf('</header>'));
 const menu = app.slice(app.indexOf('aria-label="Kassenmenü"'), app.indexOf('</nav>',app.indexOf('aria-label="Kassenmenü"')));
-const toolbar = pos.slice(pos.indexOf('Small operational strip'),pos.indexOf('Portrait tablet:'));
 const cartActions = pos.slice(pos.indexOf('{/* Right: cart */}'),pos.indexOf('{/* Dialogs */}'));
 
 assert(header.includes('setCashierLoginRequest((n) => n + 1)'),
@@ -24,19 +23,27 @@ assert(app.includes('loginRequest={cashierLoginRequest}'));
 assert(app.includes('if (!store.activeSession || !currentStaff) setCashierLoginRequest((n) => n + 1)'), 'Home tile reopens cashier login');
 assert(pos.includes('if (!activeSession || !currentStaff) setShowOpenDialog(true)'),
   'Header login must open existing protected login dialog');
-assert(!toolbar.includes('>Mitarbeiter anmelden</button>'),
-  'No additional employee login button in POS strip');
-assert(toolbar.includes('Über Home → Kasse oder oben neben Menü eröffnen'),
-  'POS strip directs opening to Home or the compact header shortcut');
-assert(!toolbar.includes('onClick={() => setShowOpenDialog(true)}'),
-  'Redundant green cash opening button was removed from sales surface');
+assert(!pos.includes('Small operational strip') &&
+  !pos.includes('formatDateLong(activeSession.openedAt)'),
+  'Redundant POS location/date/staff strip must be removed');
+assert(header.includes('headerDateLong(headerNow)') &&
+  header.includes('headerDateShort(headerNow)') &&
+  header.includes('store.activeSession?.location ?? store.selectedLocation'),
+  'POS toolbar shows current local shop date and correct active location');
+assert(header.includes('min-[1500px]:inline') &&
+  header.includes('min-[1100px]:inline min-[1500px]:hidden') &&
+  header.includes('min-[1100px]:hidden') &&
+  header.includes('min-[700px]:flex-1'),
+  'Long German date becomes shorter based on viewport width, never clipped over controls');
+assert(header.includes('Angemeldeter Mitarbeiter:') &&
+  header.includes('currentStaff.name') && header.includes('<UserRound') &&
+  header.indexOf('aria-label={currentStaff ? \'Mitarbeiter abmelden\'') <
+    header.indexOf('Angemeldeter Mitarbeiter:'),
+  'Operator label is clear, beside the existing logout control');
 assert(header.includes('aria-label="Kasse eröffnen"') &&
   header.includes("tab === 'pos' && !store.activeSession") &&
   header.includes('setCashierLoginRequest((request) => request + 1)'),
   'Compact opening shortcut beside menu appears only without an open till');
-assert(!toolbar.includes('onClick={() => void requestDailyClose()}'),
-  'Day close must live in menu only');
-assert(!toolbar.includes('Tagesabschluss'));
 assert(pos.includes('{showOpenDialog && (') && !pos.includes('{(showOpenDialog || !activeSession) && ('),
   'Logout must not automatically summon the login modal');
 
