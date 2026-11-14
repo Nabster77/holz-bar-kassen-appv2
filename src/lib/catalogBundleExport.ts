@@ -59,7 +59,7 @@ export interface CatalogBundle {
  */
 export async function buildCatalogImagesZip(
   catalog: LocalCatalog,
-  storageOrigin: string = import.meta.env.VITE_SUPABASE_URL,
+  storageOrigin: string = import.meta.env?.VITE_SUPABASE_URL ?? '',
   onProgress?: (message: string) => void,
   fetchImage: typeof fetch = fetch,
 ): Promise<CatalogBundle> {
@@ -110,7 +110,7 @@ export async function buildCatalogImagesZip(
 /** Existing catalog bundle: Excel plus the same restorable, audited image ZIP. */
 export async function buildCatalogBundle(
   catalog: LocalCatalog, onProgress?: (message: string) => void,
-  storageOrigin: string = import.meta.env.VITE_SUPABASE_URL,
+  storageOrigin: string = import.meta.env?.VITE_SUPABASE_URL ?? '',
   fetchImage: typeof fetch = fetch,
 ): Promise<CatalogBundle> {
   const picturesResult = await buildCatalogImagesZip(catalog, storageOrigin, onProgress, fetchImage);
