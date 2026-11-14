@@ -69,6 +69,7 @@ export async function buildCatalogBundle(catalog: LocalCatalog, onProgress?: (me
   onProgress?.('Excel und Bilder-ZIP erstellen');
   const excel = new Uint8Array(await exportWorkbook(catalog));
   const pictures = zipSync(Object.fromEntries(imageEntries.map(({fileName, bytes}) => ['Bilder/' + fileName, bytes])), { level: 0 });
+  if (pictures.byteLength > 100 * 1024 * 1024) throw new Error('Bilder-ZIP ist größer als das Importlimit von 100 MB. Bilder verkleinern.');
   const manual = strToU8(
     'WOODMO Kassen-App 3.0: Katalog-Export mit Bildern\n\n' +
     '1. Dieses Paket entpacken.\n' +
