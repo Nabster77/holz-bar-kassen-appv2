@@ -49,6 +49,7 @@ import { isTestMode, setTestMode, clearBookings, loadJSON, saveJSON, STORAGE_KEY
 import { formatDateISO } from '@/lib/format';
 import { headerDateLong, headerDateShort } from '@/lib/headerDate';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
+import { requireValidBackupIntegrity } from '@/lib/backupIntegrity';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle,
@@ -849,6 +850,12 @@ export default function App() {
                 const generation = reset?.generation ?? 0;
                 const cloudBookings = await fetchCloudData(null, generation);
                 const backedUpStornos = await loadCloudStornos(generation);
+                // Verify the entire cloud ledger. Conflicts are shown, never saved silently.
+                requireValidBackupIntegrity({
+                  transactions: cloudBookings.transactions,
+                  cashSessions: cloudBookings.cashSessions,
+                  stornos: backedUpStornos,
+                }, 'Backup-Export');
                 const coreBackup = store.exportBackup();
                 const cloudTransactionIds = new Set(cloudBookings.transactions.map(transaction => transaction.id));
                 const cloudSessionIds = new Set(cloudBookings.cashSessions.map(session => session.id));
@@ -911,7 +918,18 @@ export default function App() {
                     return;
                   }
 
-                  // Der Wiederherstellungsdienst gleicht die Daten bereits
+                  // Financial inconsistencies are rejected before any restore or cloud writes.
+                   const imported = (parsed as CompleteBackup).data!;
+                   if (!Array.isArray(imported.transactions) || !Array.isArray(imported.cashSessions)) {
+                     throw new Error('Backup enthält keine vollständigen Buchungs- und Kassensitzungslisten.');
+                   }
+                   requireValidBackupIntegrity({
+                     transactions: imported.transactions,
+                     cashSessions: imported.cashSessions,
+                     stornos: imported.stornos ?? [],
+                   }, 'Backup-Import');
+
+                   // Der Wiederherstellungsdienst gleicht die Daten bereits
                   // gezielt mit der Cloud ab. Die normale Hintergrund-
                   // synchronisation darf dabei nicht parallel weitere
                   // Änderungen einreihen.
