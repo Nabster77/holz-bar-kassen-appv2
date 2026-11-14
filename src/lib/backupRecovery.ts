@@ -8,6 +8,7 @@ import { loadJSON, STORAGE_KEYS } from '@/lib/storage';
 import { fetchCloudData } from '@/lib/cloudPull';
 import { loadCloudStornos } from '@/lib/stornoCloud';
 import { assertBackupStornosPresent } from '@/lib/stornoBackupIntegrity';
+import { assessBackupRestore, backupMergeConfirmation } from '@/lib/backupRestoreSafety';
 import type { StornoRecord } from '@/lib/stornoRules';
 import { discardEntriesBeforeGeneration, enqueueEntries, flushOutbox, type OutboxEntry } from '@/lib/outbox';
 import { recoverableTransactions, recoverableCashSessions } from '@/lib/recoveryGuards';
@@ -130,12 +131,26 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
   if (!Number.isFinite(backupTime)) throw new Error('Ungültige Backup-Datei: Exportzeit ist nicht lesbar.');
   if (!navigator.onLine) throw new Error('Eine Wiederherstellung ist nur online möglich, damit neuere Cloud-Daten geschützt bleiben.');
 
-  const [reset, catalogRows, staffRows, authoritativeStornos] = await Promise.all([
+  const [reset, catalogRows, staffRows] = await Promise.all([
     fetchLatestBookingReset(),
     fetchCatalogRows(),
     fetchAllStaffRows(),
-    loadCloudStornos(),
   ]);
+  const resetAt = reset?.resetAt ?? 0;
+  // A pre-reset financial backup must never be silently "successfully"
+  // imported without its sales/session history. Check before ANY writes.
+  if (backupTime <= resetAt &&
+      ((backup.data.transactions?.length ?? 0) > 0 ||
+       (backup.data.cashSessions?.length ?? 0) > 0)) {
+    assessBackupRestore({
+      transactions: backup.data.transactions ?? [],
+      cashSessions: backup.data.cashSessions ?? [],
+    }, { transactions: [], cashSessions: [] }, backupTime, resetAt,
+    { transactions: [], cashSessions: [] });
+  }
+  // Query the authoritative generation, not the browser's possibly stale
+  // knownBookingReset() value after a reset on another device.
+  const authoritativeStornos = await loadCloudStornos(reset?.generation ?? 0);
   // Fail BEFORE modifying articles, staff, sessions or sales. A browser may
   // never synthesize immutable cloud Stornos from a backup JSON file.
   assertBackupStornosPresent(backup.data.stornos, authoritativeStornos);
@@ -182,7 +197,6 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
 
   // Restoring an old archive after a booking reset must not resurrect sales
   // deleted by that reset. Immutable cloud transactions always win.
-  const resetAt = reset?.resetAt ?? 0;
   const canReplayBookings = backupTime > resetAt;
   const restorableTransactions = canReplayBookings
     ? recoverableTransactions(backupTransactions, cloud.transactions, resetAt)
@@ -190,6 +204,40 @@ export async function restoreBackupSafely(backup: CompleteBackup): Promise<Resto
   const restorableSessions = canReplayBookings
     ? recoverableCashSessions(backupSessions, cloud.cashSessions, resetAt, newestSessionTime)
     : [];
+
+  // This is an APPEND/MERGE, not a replacement. Never surprise an operator
+  // with extra revenue or another open till from a backup.
+  const assessment = assessBackupRestore(
+    { transactions: backupTransactions, cashSessions: backupSessions },
+    { transactions: cloud.transactions, cashSessions: cloud.cashSessions },
+    backupTime, resetAt,
+    { transactions: restorableTransactions, cashSessions: restorableSessions },
+  );
+  // Primary keys are global across generations. A backup row with an ID
+  // already archived in an older generation cannot be upserted into the
+  // current generation without violating immutable fiscal records.
+  if (restorableTransactions.length || restorableSessions.length) {
+    if (!supabase) throw new Error('Cloud ist nicht konfiguriert.');
+    for (let offset = 0; offset < restorableTransactions.length; offset += 100) {
+      const ids = restorableTransactions.slice(offset, offset + 100).map(row => row.id);
+      const { data, error } = await supabase.from('pos_transactions').select('id,booking_generation').in('id', ids);
+      if (error) throw new Error('Backup-Bon-IDs konnten nicht überprüft werden: ' + error.message);
+      if ((data ?? []).some(row => row.booking_generation !== (reset?.generation ?? 0))) {
+        throw new Error('Backup-Import gesperrt: Ein Bon aus einer archivierten Generation hat dieselbe ID. Alte Belege dürfen nicht überschrieben werden.');
+      }
+    }
+    for (let offset = 0; offset < restorableSessions.length; offset += 100) {
+      const ids = restorableSessions.slice(offset, offset + 100).map(row => row.id);
+      const { data, error } = await supabase.from('pos_cash_sessions').select('id,booking_generation').in('id', ids);
+      if (error) throw new Error('Backup-Kassensitzungs-IDs konnten nicht überprüft werden: ' + error.message);
+      if ((data ?? []).some(row => row.booking_generation !== (reset?.generation ?? 0))) {
+        throw new Error('Backup-Import gesperrt: Eine Kassensitzung aus einer archivierten Generation hat dieselbe ID.');
+      }
+    }
+  }
+  if (assessment.requiresConfirmation && !window.confirm(backupMergeConfirmation(assessment))) {
+    throw new Error('Backup-Import abgebrochen. Die Cloud-Daten wurden nicht verändert.');
+  }
 
   // Only records that are missing in the cloud or are newer in the backup are
   // written. Cloud-only records are never deleted by a restore.
