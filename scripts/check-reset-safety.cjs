@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
 const recovery = fs.readFileSync(path.join(root, 'src/lib/backupRecovery.ts'), 'utf8');
 
-const start = app.indexOf('  async function resetBookings() {');
+const start = app.indexOf('  async function resetBookings(adminPassword: string) {');
 const end = app.indexOf('  function navigateTo(', start);
 assert.ok(start >= 0 && end > start, 'Buchungs-Reset muss vorhanden sein');
 const body = app.slice(start, end);
