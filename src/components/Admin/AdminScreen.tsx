@@ -1505,9 +1505,10 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
   testMode: boolean;
 }) {
   const [busy, setBusy] = useState(false);
-  const [checking, setChecking] = useState(false);
+  const [checking, setChecking] = useState(!testMode);
   const [report, setReport] = useState<ResetSafetyResult | null>(null);
   const [savedBackup, setSavedBackup] = useState(false);
+  const [backupRequested, setBackupRequested] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -1518,6 +1519,8 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
     if (!checkRef.current || testMode) return;
     setChecking(true);
     setReport(null);
+    setSavedBackup(false);
+    setBackupRequested(false);
     setConfirmed(false);
     setError(null);
     try {
@@ -1531,8 +1534,12 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
 
   // First opening performs a real scan; clicking "Erneut prüfen" reruns it.
   useEffect(() => {
-    if (!testMode) void checkRef.current?.(setReport).catch(cause =>
-      setError('Prüfung fehlgeschlagen: ' + (cause instanceof Error ? cause.message : String(cause))));
+    if (!testMode) {
+      void checkRef.current?.(setReport)
+        .catch(cause => setError('Prüfung fehlgeschlagen: ' +
+          (cause instanceof Error ? cause.message : String(cause))))
+        .finally(() => setChecking(false));
+    }
   }, [testMode]);
 
   const completed = !!report && report.completed === report.total;
@@ -1547,8 +1554,10 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
       await onExport();
       // A download request is NOT proof that the file was saved. The user
       // must expressly tick the confirmation once the file is on disk.
+      setBackupRequested(true);
       setSavedBackup(false);
     } catch (cause) {
+      setBackupRequested(false);
       setSavedBackup(false);
       setError('Backup konnte nicht erstellt werden: ' +
         (cause instanceof Error ? cause.message : String(cause)));
@@ -1653,7 +1662,7 @@ function ResetConfirmDialog({ onExport, onCheck, onCancel, onConfirm, transactio
           {!testMode && <>
             <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
               <input type="checkbox" checked={savedBackup} onChange={e => setSavedBackup(e.target.checked)}
-                disabled={!canBackup || busy || checking} />
+                disabled={!canBackup || !backupRequested || busy || checking} />
               Backup-Datei heruntergeladen und sicher aufbewahrt.
             </label>
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
