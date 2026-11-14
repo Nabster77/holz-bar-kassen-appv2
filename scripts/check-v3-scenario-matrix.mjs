@@ -96,7 +96,8 @@ check('11 Archivierte Buchungen gehen beim Cloud-Reset nicht verloren',()=>{
 check('12 Offline-Geraet gleicht Generation vor Upload ab',()=>{
   const src=readFileSync('src/hooks/useCloudSync.ts','utf8');
   assert(src.indexOf('await reconcileReset()') < src.indexOf('await flushOutbox()'));
-  assert.match(src,/discardEntriesBeforeGeneration\(latestReset\.generation\)/);
+  assert.match(src,/await quarantineEntriesBeforeGeneration\(/);
+  assert(src.indexOf('await quarantineEntriesBeforeGeneration(') < src.indexOf('applyCloudBookingReset('));
 });
 check('13 Sicherung nach Reset alt: expliziter Fehler statt Teil-Erfolg',()=>{
   assert.throws(()=>assess({transactions:[fnSale],cashSessions:[fnOpened]},empty,1000,2000),
