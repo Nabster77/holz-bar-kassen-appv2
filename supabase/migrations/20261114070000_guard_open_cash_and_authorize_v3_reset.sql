@@ -68,12 +68,24 @@ $woodmo_safe_reset$;
 
 -- Old clients must no longer reach an unprotected reset (or an RPC that
 -- physically deletes financial evidence). Keep the old code for audit only.
-REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings_v3()
-  FROM PUBLIC,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings_v2()
-  FROM PUBLIC,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings()
-  FROM PUBLIC,anon,authenticated;
+DO $woodmo_disable_legacy$
+BEGIN
+  -- In the V3 test cloud these old RPCs exist; on a fresh migration-only
+  -- installation the no-argument V3 version may never have been created.
+  IF to_regprocedure('public.reset_pos_bookings_v3()') IS NOT NULL THEN
+    REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings_v3()
+      FROM PUBLIC,anon,authenticated;
+  END IF;
+  IF to_regprocedure('public.reset_pos_bookings_v2()') IS NOT NULL THEN
+    REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings_v2()
+      FROM PUBLIC,anon,authenticated;
+  END IF;
+  IF to_regprocedure('public.reset_pos_bookings()') IS NOT NULL THEN
+    REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings()
+      FROM PUBLIC,anon,authenticated;
+  END IF;
+END;
+$woodmo_disable_legacy$;
 REVOKE EXECUTE ON FUNCTION public.reset_pos_bookings_v3(text)
   FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.reset_pos_bookings_v3(text)
