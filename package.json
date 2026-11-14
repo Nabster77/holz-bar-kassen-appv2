@@ -44,7 +44,7 @@
     "test:pdf-local-only": "node --experimental-strip-types scripts/check-local-pdf-policy.mjs",
     "test:year-boundary": "node --experimental-strip-types scripts/check-daily-close-year.mjs",
     "test:reset-numbering": "node --experimental-strip-types scripts/check-reset-and-year.mjs",
-    "test:image-backup": "node --import tsx scripts/check-v3-image-backup.mjs"
+    "test:image-backup": "node scripts/run-image-backup.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
