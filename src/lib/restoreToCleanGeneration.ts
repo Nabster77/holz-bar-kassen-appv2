@@ -90,9 +90,14 @@ export async function restoreToCleanGeneration(backup: CompleteBackup): Promise<
   const [written, writtenStornos] = await Promise.all([
     fetchCloudData(null,generation), loadCloudStornos(generation),
   ]);
+  const expectedStornos = prepared.stornos.map(record => {
+    const clone = structuredClone(record) as StornoRecord & { restoreSourceId?: string };
+    delete clone.restoreSourceId; // immutable server decoder returns only audited fields
+    return clone;
+  });
   if (!exactSame(written.transactions,prepared.transactions) ||
       !exactSame(written.cashSessions,prepared.cashSessions) ||
-      !exactSame(writtenStornos,prepared.stornos)) {
+      !exactSame(writtenStornos,expectedStornos)) {
     throw new Error('Finanzdaten wurden zurückgespielt, aber die Gegenprüfung ist fehlgeschlagen. ' +
       'Bitte NICHT zurücksetzen, sondern zuerst das Cloud-Journal kontrollieren.');
   }
