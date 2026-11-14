@@ -276,17 +276,32 @@ export default function App() {
   }
 
   async function resetBookings() {
-    // Reset only booking/cash-session data. Credentials, staff identities,
-    // device preferences, local document archives and catalog remain unchanged.
-    // In test mode the reset is local only, exactly like test bookings.
+    // In test mode only ephemeral local test bookings are cleared.
+    // Active mode must prove Cloud sync and storno visibility BEFORE
+    // committing a new generation; never discard unsent financial entries.
     if (!testMode) {
+      if (!online || !navigator.onLine) throw new Error('Buchungs-Reset benötigt eine aktive Cloud-Verbindung.');
+      const synced = await syncNow();
+      if (!synced.ok) throw new Error(synced.error || 'Cloud-Abgleich vor dem Reset fehlgeschlagen.');
+      const pending = await readPendingOutbox();
+      if (pending.some((entry) => entry.table === 'pos_transactions' || entry.table === 'pos_cash_sessions')) {
+        throw new Error('Noch nicht bestätigte Buchungen oder Kassensitzungen vorhanden. Reset gesperrt, bitte synchronisieren.');
+      }
+      const verifiedStornos = await loadCloudStornos();
+      if (verifiedStornos.length !== stornoLedger.records.length) {
+        void stornoLedger.refresh().catch(() => undefined);
+        throw new Error('Die Anzahl der Stornobelege hat sich geändert. Bitte den Reset-Dialog schließen und erneut öffnen.');
+      }
       const reset = await resetCloudBookings();
-      // Prevent queued entries from a previous booking generation being
-      // re-uploaded by a device that was offline during the reset.
+      // Drop stale offline writes only AFTER the Cloud has committed the new
+      // generation. Archived transactions, sessions and storno evidence stay.
       await discardEntriesBeforeGeneration(reset.generation);
       rememberBookingReset(reset);
     }
     store.resetAllData();
+    // Refresh the immutable ledger asynchronously. Do not report an already
+    // committed Cloud reset as failed because a secondary refresh is offline.
+    if (!testMode) void stornoLedger.refresh().catch(() => undefined);
   }
 
   function navigateTo(nextTab: Tab) {
@@ -787,6 +802,7 @@ export default function App() {
               categories={store.categories}
               products={store.products}
               transactions={store.transactions}
+              stornos={stornoLedger.records}
               cashSessions={store.cashSessions}
               activeSession={store.activeSession}
               selectedLocation={store.selectedLocation}
