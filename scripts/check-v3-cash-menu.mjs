@@ -51,7 +51,7 @@ assert(pos.includes('<PfandRetoureDialog') && pos.includes('addPfandRetoureToCar
   'Deposit return still enters existing cart accounting path');
 
 assert(menu.indexOf('Startseite') < menu.indexOf('> Kasse'),
-  'The centred Startseite button is first in the menu');
+  'Startseite appears first alongside Kasse in the menu');
 assert(menu.indexOf('> Kasse') < menu.indexOf('> Journal') &&
        menu.indexOf('> Journal') < menu.indexOf('> Verwaltung'),
   'The menu navigation is Kasse, Journal, Verwaltung');
@@ -60,9 +60,11 @@ assert(menu.includes("currentStaff?.role === 'administrator'") && menu.includes(
 assert(!menu.includes('Pfand-Retoure'), 'Deposit return is not in the popup menu');
 assert(menu.includes('> Bestandskorrektur'));
 assert(!menu.includes('> Anfangsbestand'));
-assert(menu.includes('LockKeyhole') && menu.includes('<span>Tagesabschluss</span>') &&
-  menu.includes('Nach Bestätigung unwiderruflich'),
-  'Irreversible day close has a visible locked warning in the popup');
+assert(menu.includes('LockKeyhole') && menu.includes('Tagesabschlussbuchung vornehmen') &&
+  !menu.includes('Nach Bestätigung unwiderruflich') && menu.includes('min-h-24 w-full'),
+  'Day-close menu tile is larger with approachable text; actual confirmation still applies');
+assert(menu.includes('grid-cols-2 sm:grid-cols-4') && menu.includes('<Home className="h-6 w-6" />'),
+  'Employee menu shows balanced Home and Kasse tiles; administrator sees all four');
 assert(menu.includes("chooseCashAction('close')") && pos.includes('requestDailyClose()'),
   'Day close still uses the existing confirmation dialog');
 assert(pos.includes('<DailyCloseDialog') && app.includes('persistFinalizedCashSession(closed)'),
@@ -76,4 +78,4 @@ assert(pos.includes('if (!activeSession) { const ok = await onOpenCash(loc, bal)
   pos.includes('setShowOpenDialog(false); return true;'),
   'Re-login does not open a new session; failed cloud preflight keeps login dialog open');
 assert(open.includes("existingSession ? 'Mitarbeiter anmelden' : 'Kasseneröffnung'"));
-console.log('V3-KASSENMENUE: Einzelner Login/Logout-Knopf, Pfand im Verkauf, Startseite oben, Navigation, Bestandskorrektur und gesicherter Tagesabschluss geprüft.');
+console.log('V3-KASSENMENUE: Einzelner Login/Logout-Knopf, Pfand im Verkauf, Startseite/Kasse nebeneinander, Navigation, Bestandskorrektur und gesicherter Tagesabschluss geprüft.');
