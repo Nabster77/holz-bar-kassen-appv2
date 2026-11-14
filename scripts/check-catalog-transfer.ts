@@ -71,7 +71,8 @@ if (process.argv[2]) {
 console.log('Katalogtests erfolgreich: Vorschau, Duplikate, Preis-/Steuervalidierung, SCHUSS-Schutz, ZIP-Unterordner, Bildschutz und vollständiger Excel-Roundtrip.');
 
 // V3 reverse workflow: Excel + correctly named image ZIP in one export package.
-const imageProduct = {...base.products[0], imageUrl:'https://example.invalid/woodmo-roundtrip.png'};
+const ownStorage = 'https://my-test-project.supabase.co';
+const imageProduct = {...base.products[0], imageUrl:ownStorage+'/storage/v1/object/public/article-images/woodmo-roundtrip.png'};
 const roundtripCatalog: LocalCatalog = {...base, products:[imageProduct, {...base.products[1], imageUrl:''}]};
 const realFetch = globalThis.fetch;
 try {
@@ -79,7 +80,7 @@ try {
     assert.equal(String(url), imageProduct.imageUrl);
     return new Response(validPng, {status:200, headers:{'content-type':'image/png'}});
   }) as typeof fetch;
-  const packageResult = await buildCatalogBundle(roundtripCatalog);
+  const packageResult = await buildCatalogBundle(roundtripCatalog,undefined,ownStorage);
   assert.equal(packageResult.exportedImages, 1);
   assert.equal(packageResult.missingImages.length, 1);
   const files = unzipSync(packageResult.bytes);
@@ -94,9 +95,15 @@ try {
     roundtripCatalog,inside,true);
   assert.deepEqual(imported.errors,[]);
   assert(imported.images[imageProduct.id]);
-  // A missing remote image must not create a seemingly complete backup.
+  // A missing image MUST be listed inside the exported ZIP, not silently
+  // omitted or allowed to abort the other valid images.
   globalThis.fetch = (async () => new Response('Not Found',{status:404})) as typeof fetch;
-  await assert.rejects(buildCatalogBundle(roundtripCatalog),/nicht exportiert werden/);
+  const missingResult = await buildCatalogBundle(roundtripCatalog,undefined,ownStorage);
+  assert.equal(missingResult.exportedImages,0);
+  assert.equal(missingResult.missingImages.length,2);
+  const missingZip = unzipSync(unzipSync(missingResult.bytes)['WOODMO_Bilder.zip']);
+  assert(missingZip['FEHLENDE_BILDER.txt']);
+  assert.match(new TextDecoder().decode(missingZip['FEHLENDE_BILDER.txt']),new RegExp(imageProduct.name));
   console.log('V3-EXCEL+BILDER-RÜCKIMPORT: Paket, Dateiname, ZIP, Vorschau und Fehlerfall bestanden.');
 } finally {
   globalThis.fetch = realFetch;
