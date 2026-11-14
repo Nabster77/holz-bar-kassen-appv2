@@ -50,6 +50,31 @@ export function assessBackupRestore(
       'Bitte zuerst eine gesonderte, geprüfte Archiv-Wiederherstellung einrichten.',
     );
   }
+  const cloudTransactionIds = new Set(cloud.transactions.map(record => record.id));
+  const restorableTransactionIds = new Set(candidates.transactions.map(record => record.id));
+  const missingReceipts = backup.transactions.filter(record =>
+    !cloudTransactionIds.has(record.id) && !restorableTransactionIds.has(record.id));
+  if (missingReceipts.length) throw new Error(
+    'Backup-Import abgebrochen: ' + missingReceipts.length +
+    ' gesicherte Buchung(en) könnten nicht vollständig wiederhergestellt werden. ' +
+    'Eine Teilwiederherstellung darf nicht als erfolgreich gemeldet werden.',
+  );
+  const cloudSessionIds = new Set(cloud.cashSessions.map(session => session.id));
+  const restorableSessionIds = new Set(candidates.cashSessions.map(session => session.id));
+  const missingSessions = backup.cashSessions.filter(session =>
+    !cloudSessionIds.has(session.id) && !restorableSessionIds.has(session.id));
+  if (missingSessions.length) throw new Error(
+    'Backup-Import abgebrochen: ' + missingSessions.length +
+    ' Kassensitzung(en) fehlen nach der Wiederherstellungsplanung.',
+  );
+  // Updating an existing till from a JSON backup can replace its cash
+  // movements; only the normal audited outbox may reconcile that version.
+  const overwritten = candidates.cashSessions.find(session => cloudSessionIds.has(session.id));
+  if (overwritten) throw new Error(
+    'Backup-Import gesperrt: Kassensitzung ' + overwritten.id +
+    ' existiert bereits in der Cloud und würde durch die Sicherung überschrieben. ' +
+    'Bitte diese Kasse gesondert abgleichen.',
+  );
   const cloudId = new Set([
     ...cloud.cashSessions.map(s => s.id),
     ...candidates.cashSessions.map(s => s.id),
