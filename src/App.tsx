@@ -523,16 +523,14 @@ export default function App() {
                     className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-5 w-5" /></button>
                 </div>
 
-                <div className="mb-3 flex justify-center">
+                {/* Home and Kasse stay together, also in the employee-only menu. */}
+                <div className={`grid gap-2 ${(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
                   <button type="button" onClick={goHome}
-                    className="flex min-h-16 w-full max-w-[12rem] flex-col items-center justify-center gap-1 rounded-xl border border-sky-500/45 bg-sky-100 px-3 py-2 text-sm font-bold text-sky-900 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-100 dark:hover:bg-sky-900/65">
-                    <Home className="h-5 w-5" /> Startseite
+                    className="flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border border-sky-500/45 bg-sky-100 px-3 py-3 text-center text-sm font-bold text-sky-900 transition hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-100 dark:hover:bg-sky-900/65">
+                    <Home className="h-6 w-6" /> <span>Startseite</span>
                   </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={() => navigateTo('pos')} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-2 text-center text-sm font-bold dark:bg-slate-800">
-                    <ShoppingCart className="h-5 w-5" /> Kasse
+                  <button type="button" onClick={() => navigateTo('pos')} className="flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-3 text-center text-sm font-bold transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700">
+                    <ShoppingCart className="h-6 w-6" /> Kasse
                   </button>
                   {(currentStaff?.role === 'administrator' || (adminUnlocked && currentStaff?.role !== 'employee')) && (
                     <>
@@ -561,12 +559,9 @@ export default function App() {
                       </button>
                     </div>
                     <button type="button" onClick={() => chooseCashAction('close')}
-                      className="mt-3 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50">
-                      <LockKeyhole className="h-6 w-6 shrink-0" />
-                      <span className="flex flex-col items-start gap-0.5">
-                        <span>Tagesabschluss</span>
-                        <span className="text-xs font-normal">Nach Bestätigung unwiderruflich</span>
-                      </span>
+                      className="mt-3 flex min-h-24 w-full items-center justify-center gap-3 rounded-xl border border-amber-500/50 bg-amber-50 px-4 py-4 text-base font-bold text-amber-900 transition hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50">
+                      <LockKeyhole className="h-7 w-7 shrink-0" />
+                      <span>Tagesabschlussbuchung vornehmen</span>
                     </button>
                   </>
                 )}
