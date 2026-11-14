@@ -912,7 +912,8 @@ export default function App() {
               onImportBackup={async (file) => {
                 let restoreSyncPaused = false;
                 try {
-                  const text = await file.text();
+                  if (testMode) throw new Error('Rücksicherung aktiver Cloud-Buchungen ist im Testmodus gesperrt. Bitte zum Aktivmodus wechseln.');
+                   const text = await file.text();
                   const parsed = JSON.parse(text);
                   if (!parsed || typeof parsed !== 'object' || !parsed.data) {
                     alert('Ungültige Backup-Datei: Format nicht erkannt.');
