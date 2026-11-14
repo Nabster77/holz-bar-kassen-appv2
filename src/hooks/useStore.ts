@@ -1,4 +1,5 @@
 import { canDiscardCashSession } from '@/lib/cashBalanceCarry';
+import { activeSessionForLocation } from '@/lib/cashSessionSelection';
 import { useCallback, useEffect, useState } from 'react';
 import { sessionTransactions } from '@/lib/sessionTransactions';
 import type { StornoRecord } from '@/lib/stornoRules';
@@ -163,22 +164,8 @@ export function useStore() {
   // Cash session management
   // An open till survives midnight: it remains active until an actual
   // daily close, independently for Friedrichshafen and Bregenz.
-  // Only the newest session per location may be resumed.
-  const latestSessionsByLocation = new Map<Location, CashSession>();
-  for (const session of cashSessions.filter((s) => !s.discarded)) {
-    const latest = latestSessionsByLocation.get(session.location);
-    if (!latest || session.openedAt > latest.openedAt ||
-        (session.openedAt === latest.openedAt && session.closed)) {
-      latestSessionsByLocation.set(session.location, session);
-    }
-  }
-  const openSessions = [...latestSessionsByLocation.values()].filter((s) =>
-    !s.closed && !s.closedAt && !s.dailyCloseFinalizedAt && !s.dailyCloseSnapshot);
-  // The selected location is authoritative. Never silently switch from
-  // Bregenz to Friedrichshafen (or vice versa) just because only one is open.
-  // This permits one active till at EACH location independently.
-  const activeSession =
-    openSessions.find((s) => s.location === selectedLocation) ?? null;
+  // Only the selected site's most recent unfinished till may be resumed.
+  const activeSession = activeSessionForLocation(cashSessions, selectedLocation);
 
   const openCashSession = useCallback((location: Location, openingBalance: number, staff?: StaffUser) => {
     if (!Number.isFinite(openingBalance) || openingBalance <= 0) return;
