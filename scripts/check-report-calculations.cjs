@@ -16,6 +16,7 @@ function load(name) {
 }
 const { closedSessionReport } = load('dailyReport');
 const { buildJournalHTML } = load('journalPdf');
+const { formatCashSessionTimestamp } = load('cashSessionTimes');
 const { movementStyle, hasNegativeMoney } = load('movementStyle');
 const movementKinds = ['Pfandausgabe', 'Bareinnahme', 'Karteneinnahme', 'Einlage', 'Ausgabe', 'Korrektur'];
 assert.equal(new Set(movementKinds.map(kind => movementStyle(kind).ink)).size, 6);
@@ -50,6 +51,23 @@ assert.deepEqual(reportAfterLaterSale.yearlyPfandOverview, report.yearlyPfandOve
 assert.equal(reportAfterLaterSale.dailyCloseCash.remainingBalance, report.dailyCloseCash.remainingBalance);
 assert.ok(buildJournalHTML(report).includes('data-pdf-page-header="Tagesabschluss · Friedrichshafen · 9.11.2026 · 12:01 Uhr"'));
 assert.ok(buildJournalHTML(report).includes('data-pdf-page-location="Friedrichshafen"'));
+assert.equal(report.cashSessionPeriod.openedAt, session.openedAt);
+assert.equal(report.cashSessionPeriod.closedAt, session.closedAt);
+assert.ok(buildJournalHTML(report).includes('Kasseneröffnung: ' + formatCashSessionTimestamp(session.openedAt)));
+assert.ok(buildJournalHTML(report).includes('Endgültiger Tagesabschluss: ' + formatCashSessionTimestamp(session.closedAt)));
+assert.throws(() => closedSessionReport({ ...session, closedAt: undefined }, rows, []),
+  /Abschlusszeitpunkt/, 'A finalized PDF must never invent a missing close timestamp');
+const acrossMidnight = closedSessionReport({
+  ...session,
+  openedAt: Date.parse('2026-11-14T22:45:00Z'),
+  closedAt: Date.parse('2026-11-16T00:15:00Z'),
+}, [], []);
+const overnightPdf = buildJournalHTML(acrossMidnight);
+assert.equal(formatCashSessionTimestamp(acrossMidnight.cashSessionPeriod.openedAt), '14.11.2026, 23:45:00 Uhr');
+assert.equal(formatCashSessionTimestamp(acrossMidnight.cashSessionPeriod.closedAt), '16.11.2026, 01:15:00 Uhr');
+assert(overnightPdf.includes('Kasseneröffnung: 14.11.2026, 23:45:00 Uhr'));
+assert(overnightPdf.includes('Endgültiger Tagesabschluss: 16.11.2026, 01:15:00 Uhr'));
+
 assert.ok(buildJournalHTML(report).includes('class="audit-totals"'));
 assert.ok(buildJournalHTML(report).includes('class="audit-note"'));
 assert.equal(report.transactions.length, 3);
