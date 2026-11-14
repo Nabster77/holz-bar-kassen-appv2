@@ -50,6 +50,7 @@ import { formatDateISO } from '@/lib/format';
 import { headerDateLong, headerDateShort } from '@/lib/headerDate';
 import { exportRecoveryMetadata, restoreBackupSafely, type CompleteBackup } from '@/lib/backupRecovery';
 import { requireValidBackupIntegrity } from '@/lib/backupIntegrity';
+import { restoreToCleanGeneration } from '@/lib/restoreToCleanGeneration';
 import {
   ShoppingCart, Settings, Receipt, Sun, Moon,
   ArrowDownCircle, ArrowUpCircle,
@@ -935,7 +936,9 @@ export default function App() {
                   // Änderungen einreihen.
                   await pauseSyncForRestore();
                   restoreSyncPaused = true;
-                  const restored = await restoreBackupSafely(parsed as CompleteBackup);
+                  const selectedBackup = parsed as CompleteBackup;
+                   const restored = (await restoreToCleanGeneration(selectedBackup)) ??
+                     (await restoreBackupSafely(selectedBackup));
                   // The Cloud remains authoritative for immutable storno
                   // records. Refresh before announcing recovery success.
                   await stornoLedger.refresh();
