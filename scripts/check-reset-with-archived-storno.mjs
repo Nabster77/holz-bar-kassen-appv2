@@ -49,7 +49,7 @@ try {
   await assert.rejects(db.exec("DELETE FROM public.pos_cash_sessions WHERE id='cash-1'"), /darf nicht gelöscht/);
   await assert.rejects(db.exec('DELETE FROM public.pos_stornos'), /nicht geändert/);
   // Corrupt references are still protected: the new rule is not a blanket bypass.
-  await db.exec(`INSERT INTO public.pos_stornos(id, original_transaction_id, cash_session_id,
+  await db.query(`INSERT INTO public.pos_stornos(id, original_transaction_id, cash_session_id,
     booking_generation, location, employee_id, employee_name, reason, payment_method,
     gross_amount_cents, cash_effect_cents, card_effect_cents, original_receipt_snapshot)
     VALUES ('d629facf-80ba-4f09-b2b5-4048e896b37b','missing-bon','cash-1',2,
