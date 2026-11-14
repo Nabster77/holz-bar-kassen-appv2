@@ -21,7 +21,7 @@ REVOKE ALL ON woodmo_private.pos_clean_restore_audit FROM PUBLIC;
 CREATE OR REPLACE FUNCTION public.restore_pos_clean_backup_v3(
   p_financial jsonb, p_expected_generation bigint, p_backup_exported_at timestamptz
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
-AS $woodmo_restore$
+AS $
 DECLARE
   v_generation bigint;
   v_sessions jsonb;
@@ -208,7 +208,7 @@ BEGIN
     'transactions',v_sales_count,'cash_sessions',v_sessions_count,'stornos',v_storno_count
   );
 END;
-$woodmo_restore$;
+$;
 REVOKE ALL ON FUNCTION public.restore_pos_clean_backup_v3(jsonb,bigint,timestamptz)
   FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.restore_pos_clean_backup_v3(jsonb,bigint,timestamptz)
